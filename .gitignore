@@ -1,0 +1,30 @@
+# Rust
+/server/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node/Bun
+/client/node_modules/
+/client/bun.lockb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime
+*.log
+*.wal
+magic-queue.wal
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
