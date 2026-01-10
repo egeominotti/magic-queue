@@ -1,6 +1,11 @@
 mod protocol;
 mod queue;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
@@ -33,9 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let qm = Arc::clone(&queue_manager);
             tokio::spawn(async move {
                 let (reader, writer) = socket.into_split();
-                if let Err(e) = handle_connection(reader, writer, qm).await {
-                    eprintln!("Connection error: {}", e);
-                }
+                let _ = handle_connection(reader, writer, qm).await;
             });
         }
     } else {
@@ -49,13 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         loop {
             let (socket, _) = listener.accept().await?;
-            socket.set_nodelay(true)?; // Disable Nagle for lower latency
+            socket.set_nodelay(true)?;
             let qm = Arc::clone(&queue_manager);
             tokio::spawn(async move {
                 let (reader, writer) = socket.into_split();
-                if let Err(e) = handle_connection(reader, writer, qm).await {
-                    // Silent close
-                }
+                let _ = handle_connection(reader, writer, qm).await;
             });
         }
     }
@@ -70,9 +71,9 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
-    let mut reader = BufReader::with_capacity(64 * 1024, reader);
-    let mut writer = BufWriter::with_capacity(64 * 1024, writer);
-    let mut line = String::with_capacity(4096);
+    let mut reader = BufReader::with_capacity(128 * 1024, reader);
+    let mut writer = BufWriter::with_capacity(128 * 1024, writer);
+    let mut line = String::with_capacity(8192);
 
     loop {
         line.clear();
@@ -92,7 +93,7 @@ where
     Ok(())
 }
 
-#[inline]
+#[inline(always)]
 async fn process_command(line: &str, queue_manager: &Arc<QueueManager>) -> Response {
     let command: Command = match serde_json::from_str(line.trim()) {
         Ok(cmd) => cmd,
@@ -121,15 +122,15 @@ async fn process_command(line: &str, queue_manager: &Arc<QueueManager>) -> Respo
             let jobs = queue_manager.pull_batch(&queue, count).await;
             Response::jobs(jobs)
         }
-        Command::Ack { id } => match queue_manager.ack(&id).await {
+        Command::Ack { id } => match queue_manager.ack(id).await {
             Ok(()) => Response::ok(),
             Err(e) => Response::error(e),
         },
         Command::Ackb { ids } => {
             let count = queue_manager.ack_batch(&ids).await;
-            Response::batch(vec![count.to_string()])
+            Response::batch(vec![count as u64])
         }
-        Command::Fail { id, error } => match queue_manager.fail(&id, error).await {
+        Command::Fail { id, error } => match queue_manager.fail(id, error).await {
             Ok(()) => Response::ok(),
             Err(e) => Response::error(e),
         },

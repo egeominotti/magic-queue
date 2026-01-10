@@ -1,7 +1,7 @@
 import { MagicQueueClient, ClientOptions } from "./client";
 
 export interface Job<T = any> {
-  id: string;
+  id: number;
   queue: string;
   data: T;
   priority: number;
@@ -23,7 +23,7 @@ export type JobHandler<T = any> = (job: Job<T>) => Promise<void> | void;
 
 export interface WorkerOptions extends ClientOptions {
   concurrency?: number;
-  batchSize?: number; // Jobs per batch pull
+  batchSize?: number;
 }
 
 export class Worker<T = any> {
@@ -54,7 +54,6 @@ export class Worker<T = any> {
       `Worker started: queue="${this.queueName}" concurrency=${this.concurrency} batchSize=${this.batchSize}`
     );
 
-    // Usa batch processing per massima efficienza
     if (this.batchSize > 1) {
       await this.batchProcessLoop();
     } else {
@@ -68,7 +67,6 @@ export class Worker<T = any> {
   private async batchProcessLoop(): Promise<void> {
     while (this.running) {
       try {
-        // Pull batch di job
         const response = await this.client.send<PullBatchResponse<T>>({
           cmd: "PULLB",
           queue: this.queueName,
@@ -78,7 +76,6 @@ export class Worker<T = any> {
         const jobs = response.jobs;
         if (!jobs || jobs.length === 0) continue;
 
-        // Process in parallel
         const results = await Promise.allSettled(
           jobs.map(async (job) => {
             await this.handler(job);
@@ -86,9 +83,8 @@ export class Worker<T = any> {
           })
         );
 
-        // Collect successful job IDs for batch ACK
-        const successIds: string[] = [];
-        const failedJobs: { id: string; error: string }[] = [];
+        const successIds: number[] = [];
+        const failedJobs: { id: number; error: string }[] = [];
 
         results.forEach((result, idx) => {
           if (result.status === "fulfilled") {
@@ -101,12 +97,10 @@ export class Worker<T = any> {
           }
         });
 
-        // Batch ACK successful jobs
         if (successIds.length > 0) {
           await this.client.send({ cmd: "ACKB", ids: successIds });
         }
 
-        // Individual FAIL for failed jobs
         for (const failed of failedJobs) {
           await this.client.send({
             cmd: "FAIL",

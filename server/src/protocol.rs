@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Fast atomic ID generator - much faster than UUID
+static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[inline(always)]
+pub fn next_id() -> u64 {
+    ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "UPPERCASE")]
@@ -19,20 +28,18 @@ pub enum Command {
     Pull {
         queue: String,
     },
-    /// Pull batch - prende N job in una volta
     Pullb {
         queue: String,
         count: usize,
     },
     Ack {
-        id: String,
+        id: u64,
     },
-    /// Batch ACK - conferma multipli job
     Ackb {
-        ids: Vec<String>,
+        ids: Vec<u64>,
     },
     Fail {
-        id: String,
+        id: u64,
         error: Option<String>,
     },
     Stats,
@@ -49,7 +56,7 @@ pub struct JobInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
-    pub id: String,
+    pub id: u64,
     pub queue: String,
     pub data: Value,
     pub priority: i32,
@@ -58,7 +65,7 @@ pub struct Job {
 }
 
 impl Job {
-    #[inline]
+    #[inline(always)]
     pub fn is_ready(&self, now: u64) -> bool {
         self.run_at <= now
     }
@@ -67,12 +74,14 @@ impl Job {
 impl Eq for Job {}
 
 impl PartialEq for Job {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
 impl Ord for Job {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         other
             .priority
@@ -82,6 +91,7 @@ impl Ord for Job {
 }
 
 impl PartialOrd for Job {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -93,11 +103,11 @@ pub enum Response {
     Ok {
         ok: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        id: Option<String>,
+        id: Option<u64>,
     },
     Batch {
         ok: bool,
-        ids: Vec<String>,
+        ids: Vec<u64>,
     },
     Job {
         ok: bool,
@@ -120,32 +130,32 @@ pub enum Response {
 }
 
 impl Response {
-    #[inline]
+    #[inline(always)]
     pub fn ok() -> Self {
         Response::Ok { ok: true, id: None }
     }
 
-    #[inline]
-    pub fn ok_with_id(id: String) -> Self {
+    #[inline(always)]
+    pub fn ok_with_id(id: u64) -> Self {
         Response::Ok { ok: true, id: Some(id) }
     }
 
-    #[inline]
-    pub fn batch(ids: Vec<String>) -> Self {
+    #[inline(always)]
+    pub fn batch(ids: Vec<u64>) -> Self {
         Response::Batch { ok: true, ids }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn job(job: Job) -> Self {
         Response::Job { ok: true, job }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn jobs(jobs: Vec<Job>) -> Self {
         Response::Jobs { ok: true, jobs }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn stats(queued: usize, processing: usize, delayed: usize) -> Self {
         Response::Stats {
             ok: true,
@@ -155,7 +165,7 @@ impl Response {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn error(msg: impl Into<String>) -> Self {
         Response::Error {
             ok: false,

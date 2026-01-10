@@ -7,4 +7,12 @@ edition = "2021"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
+parking_lot = "0.12"            # Faster locks than std
+mimalloc = { version = "0.1", default-features = false }  # Fast allocator
+
+[profile.release]
+lto = "fat"                     # Link-time optimization
+codegen-units = 1               # Better optimization
+panic = "abort"                 # No unwinding overhead
+strip = true                    # Smaller binary
+opt-level = 3                   # Maximum optimization

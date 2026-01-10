@@ -2,7 +2,7 @@ import { MagicQueueClient, ClientOptions } from "./client";
 
 export interface PushOptions {
   priority?: number;
-  delay?: number; // millisecondi
+  delay?: number;
 }
 
 export interface JobInput<T = any> {
@@ -13,12 +13,12 @@ export interface JobInput<T = any> {
 
 export interface PushResponse {
   ok: boolean;
-  id: string;
+  id: number;
 }
 
 export interface BatchResponse {
   ok: boolean;
-  ids: string[];
+  ids: number[];
 }
 
 export class Queue<T = any> {
@@ -42,10 +42,7 @@ export class Queue<T = any> {
     }
   }
 
-  /**
-   * Push singolo job
-   */
-  async push(data: T, options: PushOptions = {}): Promise<string> {
+  async push(data: T, options: PushOptions = {}): Promise<number> {
     await this.ensureConnected();
 
     const response = await this.client.send<PushResponse>({
@@ -59,10 +56,7 @@ export class Queue<T = any> {
     return response.id;
   }
 
-  /**
-   * Batch push - più job in una richiesta (molto più veloce)
-   */
-  async pushBatch(jobs: JobInput<T>[]): Promise<string[]> {
+  async pushBatch(jobs: JobInput<T>[]): Promise<number[]> {
     await this.ensureConnected();
 
     const response = await this.client.send<BatchResponse>({
@@ -78,10 +72,7 @@ export class Queue<T = any> {
     return response.ids;
   }
 
-  /**
-   * Push multipli come array semplice (usa batch internamente)
-   */
-  async pushMany(items: T[], options: PushOptions = {}): Promise<string[]> {
+  async pushMany(items: T[], options: PushOptions = {}): Promise<number[]> {
     const jobs = items.map((data) => ({
       data,
       priority: options.priority,

@@ -8,11 +8,19 @@ No Redis. No dependencies. Pure performance.
 
 | Metric | Throughput |
 |--------|------------|
-| Push (batch) | **550,000+ jobs/sec** |
-| Processing (batch) | **250,000+ jobs/sec** |
-| End-to-end | **170,000+ jobs/sec** |
+| Push (batch) | **1,900,000+ jobs/sec** |
+| Processing (no-op) | **280,000+ jobs/sec** |
+| Processing (CPU work) | **196,000+ jobs/sec** |
 
 *Benchmarked with 100k jobs on Apple Silicon*
+
+### Optimizations
+
+- **mimalloc** - High-performance memory allocator
+- **parking_lot** - Faster locks than std
+- **Atomic u64 IDs** - No UUID overhead
+- **32 shards** - Minimized lock contention
+- **LTO** - Link-Time Optimization for smaller, faster binary
 
 ## Features
 
@@ -21,7 +29,7 @@ No Redis. No dependencies. Pure performance.
 - **Delayed Jobs** - Schedule jobs to run in the future
 - **Persistence** - Optional WAL (Write-Ahead Log) for durability
 - **Unix Socket** - Lower latency than TCP
-- **Sharded Architecture** - 16 shards reduce lock contention
+- **Sharded Architecture** - 32 shards reduce lock contention
 
 ## Quick Start
 
@@ -141,7 +149,7 @@ JSON over TCP/Unix socket, newline-delimited.
                     │      MagicQueue Server      │
                     │           (Rust)            │
 ┌─────────┐        ├─────────────────────────────┤
-│Producer │──TCP──▶│  16 Sharded Queues          │
+│Producer │──TCP──▶│  32 Sharded Queues          │
 │  (Bun)  │        │  ├─ BinaryHeap (priority)   │
 └─────────┘        │  ├─ Delayed job support     │
                    │  └─ Processing tracker      │
