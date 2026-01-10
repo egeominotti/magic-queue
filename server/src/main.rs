@@ -101,14 +101,25 @@ async fn process_command(line: &str, queue_manager: &Arc<QueueManager>) -> Respo
     };
 
     match command {
+        // === Core Commands ===
         Command::Push {
             queue,
             data,
             priority,
             delay,
+            ttl,
+            max_attempts,
+            backoff,
+            unique_key,
+            depends_on,
         } => {
-            let job = queue_manager.push(queue, data, priority, delay).await;
-            Response::ok_with_id(job.id)
+            match queue_manager
+                .push(queue, data, priority, delay, ttl, max_attempts, backoff, unique_key, depends_on)
+                .await
+            {
+                Ok(job) => Response::ok_with_id(job.id),
+                Err(e) => Response::error(e),
+            }
         }
         Command::Pushb { queue, jobs } => {
             let ids = queue_manager.push_batch(queue, jobs).await;
@@ -134,9 +145,71 @@ async fn process_command(line: &str, queue_manager: &Arc<QueueManager>) -> Respo
             Ok(()) => Response::ok(),
             Err(e) => Response::error(e),
         },
+
+        // === New Commands ===
+        Command::Cancel { id } => match queue_manager.cancel(id).await {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
+        Command::Progress { id, progress, message } => {
+            match queue_manager.update_progress(id, progress, message).await {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
+        }
+        Command::GetProgress { id } => match queue_manager.get_progress(id).await {
+            Ok((progress, message)) => Response::progress(id, progress, message),
+            Err(e) => Response::error(e),
+        },
+        Command::Dlq { queue, count } => {
+            let jobs = queue_manager.get_dlq(&queue, count).await;
+            Response::jobs(jobs)
+        }
+        Command::RetryDlq { queue, id } => {
+            let count = queue_manager.retry_dlq(&queue, id).await;
+            Response::batch(vec![count as u64])
+        }
+        Command::Subscribe { .. } => {
+            // TODO: Implement pub/sub with channels
+            Response::ok()
+        }
+        Command::Unsubscribe { .. } => {
+            Response::ok()
+        }
+        Command::Metrics => {
+            let metrics = queue_manager.get_metrics().await;
+            Response::metrics(metrics)
+        }
         Command::Stats => {
-            let (queued, processing, delayed) = queue_manager.stats().await;
-            Response::stats(queued, processing, delayed)
+            let (queued, processing, delayed, dlq) = queue_manager.stats().await;
+            Response::stats(queued, processing, delayed, dlq)
+        }
+
+        // === Cron Jobs ===
+        Command::Cron { name, queue, data, schedule, priority } => {
+            queue_manager.add_cron(name, queue, data, schedule, priority).await;
+            Response::ok()
+        }
+        Command::CronDelete { name } => {
+            if queue_manager.delete_cron(&name).await {
+                Response::ok()
+            } else {
+                Response::error("Cron job not found")
+            }
+        }
+        Command::CronList => {
+            let crons = queue_manager.list_crons().await;
+            Response::cron_list(crons)
+        }
+
+        // === Rate Limiting ===
+        Command::RateLimit { queue, limit } => {
+            queue_manager.set_rate_limit(queue, limit).await;
+            Response::ok()
+        }
+        Command::RateLimitClear { queue } => {
+            queue_manager.clear_rate_limit(&queue).await;
+            Response::ok()
         }
     }
 }

@@ -7,6 +7,9 @@ export interface Job<T = any> {
   priority: number;
   created_at: number;
   run_at: number;
+  attempts: number;
+  max_attempts: number;
+  progress: number;
 }
 
 export interface PullResponse<T = any> {
@@ -19,7 +22,12 @@ export interface PullBatchResponse<T = any> {
   jobs: Job<T>[];
 }
 
-export type JobHandler<T = any> = (job: Job<T>) => Promise<void> | void;
+export interface JobContext<T = any> {
+  job: Job<T>;
+  updateProgress: (progress: number, message?: string) => Promise<void>;
+}
+
+export type JobHandler<T = any> = (job: Job<T>, ctx: JobContext<T>) => Promise<void> | void;
 
 export interface WorkerOptions extends ClientOptions {
   concurrency?: number;
@@ -64,6 +72,20 @@ export class Worker<T = any> {
     }
   }
 
+  private createContext(job: Job<T>): JobContext<T> {
+    return {
+      job,
+      updateProgress: async (progress: number, message?: string) => {
+        await this.client.send({
+          cmd: "PROGRESS",
+          id: job.id,
+          progress: Math.min(100, Math.max(0, progress)),
+          message,
+        });
+      },
+    };
+  }
+
   private async batchProcessLoop(): Promise<void> {
     while (this.running) {
       try {
@@ -78,7 +100,8 @@ export class Worker<T = any> {
 
         const results = await Promise.allSettled(
           jobs.map(async (job) => {
-            await this.handler(job);
+            const ctx = this.createContext(job);
+            await this.handler(job, ctx);
             return job.id;
           })
         );
@@ -126,9 +149,10 @@ export class Worker<T = any> {
         });
 
         const job = response.job;
+        const ctx = this.createContext(job);
 
         try {
-          await this.handler(job);
+          await this.handler(job, ctx);
           await this.client.send({ cmd: "ACK", id: job.id });
         } catch (error) {
           const errorMsg =
