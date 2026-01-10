@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 MagicQueue is a high-performance job queue system with:
 - **Server**: Rust async TCP/Unix socket server using Tokio
-- **Client**: TypeScript library for Bun runtime
+- **TypeScript SDK**: For Bun/Node.js runtime
+- **Python SDK**: Full feature parity
 
 ## Key Commands
 
@@ -26,83 +27,133 @@ PERSIST=1 cargo run --release
 
 # With Unix socket
 UNIX_SOCKET=1 cargo run --release
+
+# Run tests
+cargo test
 ```
 
-### Client (TypeScript/Bun)
+### TypeScript SDK
 
 ```bash
 cd client
-
-# Install dependencies
 bun install
-
-# Run examples
 bun run examples/producer.ts
 bun run examples/worker.ts
 bun run examples/benchmark.ts
 ```
 
+### Python SDK
+
+```bash
+cd python
+pip install -e .
+python examples/producer.py
+python examples/worker.py
+python examples/benchmark.py
+```
+
 ## Architecture
 
-### Server Components
+### Server Structure (< 350 lines per file)
 
-- `main.rs` - TCP/Unix socket server, connection handling
-- `protocol.rs` - Command/Response types, JSON serialization
-- `queue.rs` - Sharded queue manager with BinaryHeap for priority
+```
+server/src/
+├── main.rs           # TCP/Unix socket server, command routing
+├── protocol.rs       # Command/Response types, Job struct
+└── queue/
+    ├── mod.rs        # Module exports
+    ├── types.rs      # WalEvent, RateLimiter, Shard, GlobalMetrics
+    ├── manager.rs    # QueueManager struct, WAL, utilities
+    ├── core.rs       # Core ops: push, pull, ack, fail
+    ├── features.rs   # Advanced: cancel, progress, DLQ, cron, metrics
+    ├── background.rs # Background tasks: cleanup, cron runner
+    └── tests.rs      # Unit tests
+```
 
-### Client Components
+### Key Design Decisions
 
-- `client.ts` - Low-level TCP connection
-- `queue.ts` - Producer API (push, pushBatch, pushMany)
-- `worker.ts` - Consumer API with batch processing
+1. **Global Processing Map**: Jobs in processing are stored globally (not sharded) to avoid shard lookup issues on ack/fail
+2. **32 Shards**: Queues are sharded by queue name for parallel access
+3. **BinaryHeap Priority**: Higher priority = larger in Ord (popped first)
+4. **parking_lot Locks**: Faster than std::sync
 
-## Protocol
-
-JSON over TCP, newline-delimited. Commands:
+## Protocol Commands
 
 | Command | Description |
 |---------|-------------|
-| PUSH | Single job push |
+| PUSH | Push job with options (priority, delay, ttl, etc.) |
 | PUSHB | Batch push |
-| PULL | Single job pull (blocking) |
+| PULL | Pull single job (blocking) |
 | PULLB | Batch pull |
-| ACK | Acknowledge job |
+| ACK | Acknowledge job completion |
 | ACKB | Batch acknowledge |
-| FAIL | Fail job (returns to queue) |
-| STATS | Get queue statistics |
+| FAIL | Fail job (retry or DLQ) |
+| CANCEL | Cancel pending job |
+| PROGRESS | Update job progress |
+| GETPROGRESS | Get job progress |
+| DLQ | Get dead letter queue jobs |
+| RETRYDLQ | Retry DLQ jobs |
+| RATELIMIT | Set queue rate limit |
+| RATELIMITCLEAR | Clear rate limit |
+| CRON | Add cron job |
+| CRONDELETE | Delete cron job |
+| CRONLIST | List cron jobs |
+| STATS | Get queue stats |
+| METRICS | Get detailed metrics |
 
-## Performance Optimizations
+## Features
 
-1. **Sharding** - 16 shards reduce lock contention
-2. **Batch operations** - Reduce round-trips
-3. **BinaryHeap** - O(log n) priority queue
-4. **Buffer pooling** - 64KB read/write buffers
-5. **TCP_NODELAY** - Disable Nagle's algorithm
+### Core
+- Batch operations (PUSH/PULL/ACK)
+- Job priorities (BinaryHeap)
+- Delayed jobs (run_at timestamp)
+- WAL persistence
+
+### Advanced
+- **Dead Letter Queue**: max_attempts → DLQ
+- **Exponential Backoff**: backoff * 2^attempts
+- **Job TTL**: Automatic expiration
+- **Unique Jobs**: Deduplication by key
+- **Job Dependencies**: depends_on array
+- **Rate Limiting**: Token bucket per queue
+- **Progress Tracking**: 0-100% with message
+- **Cron Jobs**: */N second intervals
 
 ## Common Tasks
 
 ### Adding a new command
 
 1. Add variant to `Command` enum in `protocol.rs`
-2. Add response type if needed in `Response` enum
+2. Add response type if needed
 3. Handle in `process_command()` in `main.rs`
-4. Implement logic in `queue.rs`
-5. Add client method in TypeScript
+4. Implement in appropriate `queue/*.rs` file
+5. Add to TypeScript SDK in `client/src/queue.ts`
+6. Add to Python SDK in `python/magicqueue/queue.py`
 
-### Modifying queue behavior
+### Adding tests
 
-- Priority logic: `Ord` impl for `Job` in `protocol.rs`
-- Delayed jobs: `is_ready()` method and `delayed_promoter()` task
-- Persistence: `WalEvent` and `write_wal()` in `queue.rs`
+Add to `server/src/queue/tests.rs`:
 
-## Testing
-
-```bash
-# Terminal 1: Start server
-cd server && cargo run --release
-
-# Terminal 2: Run benchmark
-cd client && bun run examples/benchmark.ts
+```rust
+#[tokio::test]
+async fn test_feature_name() {
+    let qm = setup();
+    // Test logic
+    assert!(result.is_ok());
+}
 ```
 
-Expected results: ~170k+ jobs/sec end-to-end throughput.
+## Performance
+
+| Metric | Throughput |
+|--------|------------|
+| Push (batch) | 1.9M jobs/sec |
+| Processing (no-op) | 280k jobs/sec |
+| Processing (CPU work) | 196k jobs/sec |
+
+### Optimizations
+- mimalloc allocator
+- parking_lot locks
+- Atomic u64 IDs
+- 32 shards
+- LTO build

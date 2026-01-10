@@ -24,6 +24,8 @@ pub enum Command {
         #[serde(default)]
         ttl: Option<u64>,           // Job expires after N ms
         #[serde(default)]
+        timeout: Option<u64>,       // Auto-fail after N ms in processing
+        #[serde(default)]
         max_attempts: Option<u32>,  // Max retries before DLQ
         #[serde(default)]
         backoff: Option<u64>,       // Base backoff in ms (exponential)
@@ -45,6 +47,8 @@ pub enum Command {
     },
     Ack {
         id: u64,
+        #[serde(default)]
+        result: Option<Value>,  // Store job result
     },
     Ackb {
         ids: Vec<u64>,
@@ -52,6 +56,9 @@ pub enum Command {
     Fail {
         id: u64,
         error: Option<String>,
+    },
+    GetResult {
+        id: u64,
     },
 
     // === New Commands ===
@@ -108,6 +115,27 @@ pub enum Command {
     RateLimitClear {
         queue: String,
     },
+
+    // === Queue Control ===
+    Pause {
+        queue: String,
+    },
+    Resume {
+        queue: String,
+    },
+    SetConcurrency {
+        queue: String,
+        limit: u32,       // Max concurrent jobs in processing
+    },
+    ClearConcurrency {
+        queue: String,
+    },
+    ListQueues,
+
+    // === Authentication ===
+    Auth {
+        token: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +147,8 @@ pub struct JobInput {
     pub delay: Option<u64>,
     #[serde(default)]
     pub ttl: Option<u64>,
+    #[serde(default)]
+    pub timeout: Option<u64>,
     #[serde(default)]
     pub max_attempts: Option<u32>,
     #[serde(default)]
@@ -137,7 +167,8 @@ pub struct Job {
     pub priority: i32,
     pub created_at: u64,
     pub run_at: u64,
-    // New fields
+    #[serde(default)]
+    pub started_at: u64,        // When job started processing
     #[serde(default)]
     pub attempts: u32,
     #[serde(default)]
@@ -146,6 +177,8 @@ pub struct Job {
     pub backoff: u64,           // Base backoff ms
     #[serde(default)]
     pub ttl: u64,               // 0 = no expiration
+    #[serde(default)]
+    pub timeout: u64,           // 0 = no timeout
     #[serde(default)]
     pub unique_key: Option<String>,
     #[serde(default)]
@@ -165,6 +198,11 @@ impl Job {
     #[inline(always)]
     pub fn is_expired(&self, now: u64) -> bool {
         self.ttl > 0 && now > self.created_at + self.ttl
+    }
+
+    #[inline(always)]
+    pub fn is_timed_out(&self, now: u64) -> bool {
+        self.timeout > 0 && self.started_at > 0 && now > self.started_at + self.timeout
     }
 
     #[inline(always)]
@@ -194,10 +232,11 @@ impl PartialEq for Job {
 impl Ord for Job {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other
-            .priority
-            .cmp(&self.priority)
-            .then_with(|| self.run_at.cmp(&other.run_at))
+        // Higher priority = greater (popped first from max-heap)
+        // Earlier run_at = greater (popped first)
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| other.run_at.cmp(&self.run_at))
     }
 }
 
@@ -288,10 +327,30 @@ pub enum Response {
         queue: String,
         job: Job,
     },
+    Result {
+        ok: bool,
+        id: u64,
+        result: Option<Value>,
+    },
+    Queues {
+        ok: bool,
+        queues: Vec<QueueInfo>,
+    },
     Error {
         ok: bool,
         error: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueInfo {
+    pub name: String,
+    pub pending: usize,
+    pub processing: usize,
+    pub dlq: usize,
+    pub paused: bool,
+    pub rate_limit: Option<u32>,
+    pub concurrency_limit: Option<u32>,
 }
 
 impl Response {
@@ -356,6 +415,16 @@ impl Response {
             queue: queue.to_string(),
             job,
         }
+    }
+
+    #[inline(always)]
+    pub fn result(id: u64, result: Option<Value>) -> Self {
+        Response::Result { ok: true, id, result }
+    }
+
+    #[inline(always)]
+    pub fn queues(queues: Vec<QueueInfo>) -> Self {
+        Response::Queues { ok: true, queues }
     }
 
     #[inline(always)]

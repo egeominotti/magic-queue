@@ -9,6 +9,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 parking_lot = "0.12"            # Faster locks than std
 mimalloc = { version = "0.1", default-features = false }  # Fast allocator
+axum = "0.8"                    # HTTP API
+tower-http = { version = "0.6", features = ["cors"] }  # CORS middleware
 
 [profile.release]
 lto = "fat"                     # Link-time optimization

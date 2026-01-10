@@ -4,15 +4,28 @@ A high-performance job queue system built from scratch with **Rust** and **TypeS
 
 No Redis. No dependencies. Pure performance.
 
-## Performance
+## Benchmarks
 
-| Metric | Throughput |
-|--------|------------|
-| Push (batch) | **1,900,000+ jobs/sec** |
-| Processing (no-op) | **280,000+ jobs/sec** |
-| Processing (CPU work) | **196,000+ jobs/sec** |
+Tested on MacOS Apple Silicon with Node.js client, single MagicQueue server instance.
 
-*Benchmarked with 100k jobs on Apple Silicon*
+### Throughput
+
+| Benchmark | Operations | Time | Throughput |
+|-----------|------------|------|------------|
+| Sequential PUSH | 10,000 | 627ms | **15,949 ops/sec** |
+| PUSH → PULL → ACK | 5,000 | 855ms | **5,848 cycles/sec** |
+| Batch PUSH (100x100) | 10,000 | 35ms | **285,714 ops/sec** |
+| Concurrent (10 conn) | 10,000 | 135ms | **74,074 ops/sec** |
+
+### Latency (PUSH operation)
+
+| Percentile | Latency |
+|------------|---------|
+| Min | 34 µs |
+| P50 | 47 µs |
+| P95 | 71 µs |
+| P99 | 93 µs |
+| Max | 129 µs |
 
 ### Optimizations
 
@@ -21,6 +34,7 @@ No Redis. No dependencies. Pure performance.
 - **Atomic u64 IDs** - No UUID overhead
 - **32 shards** - Minimized lock contention
 - **LTO** - Link-Time Optimization for smaller, faster binary
+- **Buffered I/O** - 128KB read/write buffers
 
 ## Features
 
@@ -36,13 +50,23 @@ No Redis. No dependencies. Pure performance.
 - **Dead Letter Queue** - Jobs that fail N times go to DLQ
 - **Retry with Backoff** - Exponential backoff on failures
 - **Job TTL** - Jobs expire after a specified time
+- **Job Timeout** - Auto-fail jobs after N ms
 - **Unique Jobs** - Deduplication based on custom keys
 - **Job Cancellation** - Cancel pending jobs
-- **Rate Limiting** - Limit processing rate per queue
-- **Job Progress** - Track progress of long-running jobs
+- **Rate Limiting** - Limit processing rate per queue (token bucket)
+- **Concurrency Control** - Limit concurrent processing per queue
+- **Pause/Resume** - Pause and resume queues dynamically
+- **Job Progress** - Track progress of long-running jobs (0-100%)
+- **Job Results** - Store and retrieve job results
 - **Job Dependencies** - Job B runs only after Job A completes
 - **Cron Jobs** - Scheduled recurring jobs
+- **Pub/Sub Events** - Subscribe to job events
 - **Metrics** - Detailed statistics and throughput metrics
+
+### HTTP API & Dashboard
+- **REST API** - Full HTTP API alongside TCP protocol
+- **Web Dashboard** - Real-time monitoring UI with Tailwind CSS
+- **Authentication** - Optional token-based auth
 
 ## SDKs
 
@@ -60,14 +84,87 @@ cargo run --release
 
 Server listens on port `6789` by default.
 
-### TypeScript/Bun
+### With HTTP API & Dashboard
+
+```bash
+HTTP=1 cargo run --release
+```
+
+- TCP API: `localhost:6789`
+- HTTP API: `localhost:6790`
+- Dashboard: `http://localhost:6790`
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | TCP server port | 6789 |
+| `HTTP` | Enable HTTP API | disabled |
+| `HTTP_PORT` | HTTP API port | 6790 |
+| `PERSIST` | Enable WAL persistence | disabled |
+| `AUTH_TOKENS` | Comma-separated auth tokens | disabled |
+| `UNIX_SOCKET` | Use Unix socket instead of TCP | disabled |
+
+## HTTP API
+
+When started with `HTTP=1`, the server exposes a REST API.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Dashboard UI |
+| GET | `/queues` | List all queues |
+| POST | `/queues/{queue}/jobs` | Push a job |
+| GET | `/queues/{queue}/jobs?count=N` | Pull jobs |
+| POST | `/queues/{queue}/pause` | Pause queue |
+| POST | `/queues/{queue}/resume` | Resume queue |
+| GET | `/queues/{queue}/dlq` | Get DLQ jobs |
+| POST | `/queues/{queue}/dlq/retry` | Retry DLQ jobs |
+| POST | `/queues/{queue}/rate-limit` | Set rate limit |
+| DELETE | `/queues/{queue}/rate-limit` | Clear rate limit |
+| POST | `/queues/{queue}/concurrency` | Set concurrency |
+| DELETE | `/queues/{queue}/concurrency` | Clear concurrency |
+| POST | `/jobs/{id}/ack` | Acknowledge job |
+| POST | `/jobs/{id}/fail` | Fail job |
+| POST | `/jobs/{id}/cancel` | Cancel job |
+| POST | `/jobs/{id}/progress` | Update progress |
+| GET | `/jobs/{id}/progress` | Get progress |
+| GET | `/jobs/{id}/result` | Get result |
+| GET | `/crons` | List cron jobs |
+| POST | `/crons/{name}` | Create cron job |
+| DELETE | `/crons/{name}` | Delete cron job |
+| GET | `/stats` | Get statistics |
+| GET | `/metrics` | Get metrics |
+
+### Example: Push a job
+
+```bash
+curl -X POST http://localhost:6790/queues/emails/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"to": "user@example.com"}, "priority": 5}'
+```
+
+### Example: Pull and ack
+
+```bash
+# Pull a job
+curl http://localhost:6790/queues/emails/jobs
+
+# Acknowledge with result
+curl -X POST http://localhost:6790/jobs/1/ack \
+  -H "Content-Type: application/json" \
+  -d '{"result": {"status": "sent"}}'
+```
+
+## TypeScript/Bun
 
 ```bash
 cd client
 bun install
 ```
 
-#### Producer
+### Producer
 
 ```typescript
 import { Queue } from "./src";
@@ -82,6 +179,7 @@ await queue.push({ task: "process" }, {
   priority: 10,           // Higher = more urgent
   delay: 5000,            // Run after 5 seconds
   ttl: 60000,             // Expire after 60 seconds
+  timeout: 30000,         // Auto-fail after 30 seconds
   maxAttempts: 3,         // Retry up to 3 times before DLQ
   backoff: 1000,          // Exponential backoff (1s, 2s, 4s...)
   uniqueKey: "task-123",  // Deduplication key
@@ -95,7 +193,7 @@ await queue.pushBatch([
 ]);
 ```
 
-#### Worker
+### Worker
 
 ```typescript
 import { Worker } from "./src";
@@ -111,6 +209,9 @@ const worker = new Worker(
     // Do work...
 
     await ctx.updateProgress(100, "Complete");
+
+    // Return result (stored on server)
+    return { status: "sent" };
   },
   { batchSize: 50 }
 );
@@ -118,14 +219,14 @@ const worker = new Worker(
 await worker.start();
 ```
 
-### Python
+## Python
 
 ```bash
 cd python
 pip install -e .
 ```
 
-#### Producer
+### Producer
 
 ```python
 from magicqueue import Queue
@@ -150,7 +251,7 @@ job_id = queue.push(
 queue.close()
 ```
 
-#### Worker
+### Worker
 
 ```python
 from magicqueue import Worker, Job, JobContext
@@ -204,14 +305,20 @@ const crons = await queue.listCrons();
 await queue.deleteCron("cleanup");
 ```
 
-### Rate Limiting
+### Rate Limiting & Concurrency
 
 ```typescript
 // Limit to 100 jobs/second
 await queue.setRateLimit(100);
 
-// Clear rate limit
-await queue.clearRateLimit();
+// Limit to 5 concurrent jobs
+await queue.setConcurrency(5);
+
+// Pause queue
+await queue.pause();
+
+// Resume queue
+await queue.resume();
 ```
 
 ### Metrics & Stats
@@ -226,23 +333,7 @@ const metrics = await queue.metrics();
 // { total_pushed: 1000, total_completed: 950, avg_latency_ms: 5.2, ... }
 ```
 
-## Server Options
-
-```bash
-# Standard TCP (port 6789)
-cargo run --release
-
-# With persistence (WAL)
-PERSIST=1 cargo run --release
-
-# Unix socket (lower latency)
-UNIX_SOCKET=1 cargo run --release
-
-# Custom port
-PORT=7000 cargo run --release
-```
-
-## Protocol
+## TCP Protocol
 
 JSON over TCP/Unix socket, newline-delimited.
 
@@ -250,19 +341,19 @@ JSON over TCP/Unix socket, newline-delimited.
 
 ```json
 // Push with all options
-{"cmd": "PUSH", "queue": "jobs", "data": {...}, "priority": 0, "delay": 1000, "ttl": 60000, "max_attempts": 3, "backoff": 1000, "unique_key": "key", "depends_on": [1, 2]}
+{"cmd": "PUSH", "queue": "jobs", "data": {...}, "priority": 0, "delay": 1000, "ttl": 60000, "timeout": 30000, "max_attempts": 3, "backoff": 1000, "unique_key": "key", "depends_on": [1, 2]}
 
 // Batch push
 {"cmd": "PUSHB", "queue": "jobs", "jobs": [{"data": {...}, "priority": 0}]}
 
-// Pull single job (blocking)
+// Pull single job
 {"cmd": "PULL", "queue": "jobs"}
 
 // Batch pull
 {"cmd": "PULLB", "queue": "jobs", "count": 50}
 
-// Acknowledge job
-{"cmd": "ACK", "id": 123}
+// Acknowledge job with result
+{"cmd": "ACK", "id": 123, "result": {"status": "done"}}
 
 // Batch acknowledge
 {"cmd": "ACKB", "ids": [1, 2, 3]}
@@ -279,50 +370,65 @@ JSON over TCP/Unix socket, newline-delimited.
 // Get progress
 {"cmd": "GETPROGRESS", "id": 123}
 
+// Get job result
+{"cmd": "GETRESULT", "id": 123}
+
 // Get DLQ jobs
 {"cmd": "DLQ", "queue": "jobs", "count": 10}
 
 // Retry DLQ jobs
 {"cmd": "RETRYDLQ", "queue": "jobs", "id": 123}
 
-// Set rate limit
+// Queue control
+{"cmd": "PAUSE", "queue": "jobs"}
+{"cmd": "RESUME", "queue": "jobs"}
 {"cmd": "RATELIMIT", "queue": "jobs", "limit": 100}
-
-// Clear rate limit
 {"cmd": "RATELIMITCLEAR", "queue": "jobs"}
+{"cmd": "SETCONCURRENCY", "queue": "jobs", "limit": 5}
+{"cmd": "CLEARCONCURRENCY", "queue": "jobs"}
+{"cmd": "LISTQUEUES"}
 
-// Add cron job
+// Cron jobs
 {"cmd": "CRON", "name": "cleanup", "queue": "jobs", "data": {...}, "schedule": "*/60", "priority": 0}
-
-// Delete cron job
 {"cmd": "CRONDELETE", "name": "cleanup"}
-
-// List cron jobs
 {"cmd": "CRONLIST"}
 
-// Get stats
+// Stats & Metrics
 {"cmd": "STATS"}
-
-// Get metrics
 {"cmd": "METRICS"}
+
+// Authentication (if enabled)
+{"cmd": "AUTH", "token": "secret"}
 ```
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────┐
-                    │      MagicQueue Server      │
-                    │           (Rust)            │
-┌─────────┐        ├─────────────────────────────┤
-│Producer │──TCP──▶│  32 Sharded Queues          │
-│(Bun/Py) │        │  ├─ BinaryHeap (priority)   │
-└─────────┘        │  ├─ Dead Letter Queue       │
-                   │  ├─ Delayed job support     │
-┌─────────┐        │  ├─ Dependencies tracker    │
-│ Worker  │◀─TCP──▶│  └─ Processing tracker      │
-│(Bun/Py) │        ├─────────────────────────────┤
-└─────────┘        │  Optional WAL persistence   │
-                   └─────────────────────────────┘
+                    ┌─────────────────────────────────┐
+                    │       MagicQueue Server         │
+                    │            (Rust)               │
+┌─────────┐        ├─────────────────────────────────┤
+│Producer │──TCP──▶│  TCP Server (port 6789)         │
+│(Bun/Py) │        │  HTTP Server (port 6790)        │
+└─────────┘        ├─────────────────────────────────┤
+                   │  QueueManager                    │
+┌─────────┐        │  ├─ 32 Sharded Queues           │
+│ Worker  │◀─TCP──▶│  ├─ BinaryHeap (priority)       │
+│(Bun/Py) │        │  ├─ Dead Letter Queue           │
+└─────────┘        │  ├─ Rate Limiters               │
+                   │  ├─ Concurrency Limiters        │
+┌─────────┐        │  ├─ Job Results                 │
+│Dashboard│◀─HTTP─▶│  ├─ Dependencies tracker        │
+│(Browser)│        │  └─ Processing tracker          │
+└─────────┘        ├─────────────────────────────────┤
+                   │  Background Tasks               │
+                   │  ├─ Delayed Job Processor       │
+                   │  ├─ Dependency Resolver         │
+                   │  ├─ Timeout Checker             │
+                   │  └─ Cron Executor               │
+                   ├─────────────────────────────────┤
+                   │  Optional: WAL Persistence      │
+                   └─────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -333,8 +439,15 @@ magic-queue/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         # TCP/Unix socket server
+│       ├── http.rs         # HTTP REST API (axum)
+│       ├── dashboard.rs    # Web dashboard
 │       ├── protocol.rs     # Commands & responses
-│       └── queue.rs        # Sharded queue manager
+│       └── queue/          # Queue implementation
+│           ├── mod.rs
+│           ├── manager.rs  # QueueManager
+│           ├── core.rs     # Push/Pull/Ack
+│           ├── features.rs # Rate limit, pause, etc.
+│           └── background.rs
 │
 ├── client/                 # TypeScript/Bun SDK
 │   ├── package.json
@@ -343,25 +456,24 @@ magic-queue/
 │       ├── queue.ts        # Producer API
 │       └── worker.ts       # Consumer API
 │
-└── python/                 # Python SDK
-    ├── pyproject.toml
-    └── magicqueue/
-        ├── client.py       # TCP connection
-        ├── queue.py        # Producer API
-        └── worker.py       # Consumer API
+├── python/                 # Python SDK
+│   ├── pyproject.toml
+│   └── magicqueue/
+│       ├── client.py       # TCP connection
+│       ├── queue.py        # Producer API
+│       └── worker.py       # Consumer API
+│
+└── benchmark.js            # Benchmark script
 ```
 
-## Benchmarks
+## Run Benchmarks
 
 ```bash
-# Terminal 1
-cd server && cargo run --release
+# Start server
+cd server && HTTP=1 cargo run --release
 
-# Terminal 2 (TypeScript)
-cd client && bun run examples/benchmark.ts
-
-# Terminal 2 (Python)
-cd python && python examples/benchmark.py
+# Run benchmark (another terminal)
+node benchmark.js
 ```
 
 ## License
