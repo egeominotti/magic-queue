@@ -4,10 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-MagicQueue is a high-performance job queue system with:
-- **Server**: Rust async TCP/Unix socket server using Tokio
-- **TypeScript SDK**: For Bun/Node.js runtime
-- **Python SDK**: Full feature parity
+MagicQueue is a high-performance job queue server built with Rust.
 
 ## Key Commands
 
@@ -25,6 +22,9 @@ cargo run --release
 # With persistence
 PERSIST=1 cargo run --release
 
+# With HTTP API & Dashboard
+HTTP=1 cargo run --release
+
 # With Unix socket
 UNIX_SOCKET=1 cargo run --release
 
@@ -32,24 +32,15 @@ UNIX_SOCKET=1 cargo run --release
 cargo test
 ```
 
-### TypeScript SDK
+### Docker
 
 ```bash
-cd client
-bun install
-bun run examples/producer.ts
-bun run examples/worker.ts
-bun run examples/benchmark.ts
-```
+# Build and run
+docker build -t magic-queue .
+docker run -p 6789:6789 magic-queue
 
-### Python SDK
-
-```bash
-cd python
-pip install -e .
-python examples/producer.py
-python examples/worker.py
-python examples/benchmark.py
+# With persistence
+docker run -p 6789:6789 -e PERSIST=1 -v $(pwd)/data:/app magic-queue
 ```
 
 ## Architecture
@@ -59,11 +50,13 @@ python examples/benchmark.py
 ```
 server/src/
 ├── main.rs           # TCP/Unix socket server, command routing
-├── protocol.rs       # Command/Response types, Job struct
+├── http.rs           # HTTP REST API (axum)
+├── dashboard.rs      # Web dashboard
+├── protocol.rs       # Command/Response types, Job struct, JobState enum
 └── queue/
     ├── mod.rs        # Module exports
     ├── types.rs      # WalEvent, RateLimiter, Shard, GlobalMetrics
-    ├── manager.rs    # QueueManager struct, WAL, utilities
+    ├── manager.rs    # QueueManager struct, WAL, get_job, get_state
     ├── core.rs       # Core ops: push, pull, ack, fail
     ├── features.rs   # Advanced: cancel, progress, DLQ, cron, metrics
     ├── background.rs # Background tasks: cleanup, cron runner
@@ -76,6 +69,7 @@ server/src/
 2. **32 Shards**: Queues are sharded by queue name for parallel access
 3. **BinaryHeap Priority**: Higher priority = larger in Ord (popped first)
 4. **parking_lot Locks**: Faster than std::sync
+5. **Implicit Job State**: State is determined by job location (queues, processing, dlq, etc.)
 
 ## Protocol Commands
 
@@ -88,6 +82,9 @@ server/src/
 | ACK | Acknowledge job completion |
 | ACKB | Batch acknowledge |
 | FAIL | Fail job (retry or DLQ) |
+| GETJOB | Get job with its current state |
+| GETSTATE | Get job state only |
+| GETRESULT | Get job result |
 | CANCEL | Cancel pending job |
 | PROGRESS | Update job progress |
 | GETPROGRESS | Get job progress |
@@ -95,11 +92,27 @@ server/src/
 | RETRYDLQ | Retry DLQ jobs |
 | RATELIMIT | Set queue rate limit |
 | RATELIMITCLEAR | Clear rate limit |
+| SETCONCURRENCY | Set concurrency limit |
+| CLEARCONCURRENCY | Clear concurrency limit |
+| PAUSE | Pause queue |
+| RESUME | Resume queue |
+| LISTQUEUES | List all queues |
 | CRON | Add cron job |
 | CRONDELETE | Delete cron job |
 | CRONLIST | List cron jobs |
 | STATS | Get queue stats |
 | METRICS | Get detailed metrics |
+
+## Job States
+
+| State | Location | Description |
+|-------|----------|-------------|
+| waiting | queues (BinaryHeap) | Ready to be processed |
+| delayed | queues (run_at > now) | Scheduled for future |
+| active | processing (HashMap) | Being processed |
+| completed | completed_jobs (Set) | Successfully done |
+| failed | dlq (VecDeque) | In dead letter queue |
+| waiting-children | waiting_deps (HashMap) | Waiting for dependencies |
 
 ## Features
 
@@ -107,6 +120,7 @@ server/src/
 - Batch operations (PUSH/PULL/ACK)
 - Job priorities (BinaryHeap)
 - Delayed jobs (run_at timestamp)
+- Job state tracking (GETJOB/GETSTATE)
 - WAL persistence
 
 ### Advanced
@@ -116,8 +130,10 @@ server/src/
 - **Unique Jobs**: Deduplication by key
 - **Job Dependencies**: depends_on array
 - **Rate Limiting**: Token bucket per queue
+- **Concurrency Control**: Limit parallel processing
 - **Progress Tracking**: 0-100% with message
 - **Cron Jobs**: */N second intervals
+- **Pause/Resume**: Dynamic queue control
 
 ## Common Tasks
 
@@ -127,8 +143,6 @@ server/src/
 2. Add response type if needed
 3. Handle in `process_command()` in `main.rs`
 4. Implement in appropriate `queue/*.rs` file
-5. Add to TypeScript SDK in `client/src/queue.ts`
-6. Add to Python SDK in `python/magicqueue/queue.py`
 
 ### Adding tests
 
@@ -157,3 +171,5 @@ async fn test_feature_name() {
 - Atomic u64 IDs
 - 32 shards
 - LTO build
+- Coarse timestamps (cached)
+- String interning

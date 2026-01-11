@@ -5,6 +5,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Fast atomic ID generator
 static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// Job state enum - similar to BullMQ states
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JobState {
+    Waiting,          // In queue, ready to be processed
+    Delayed,          // In queue, but run_at is in the future
+    Active,           // Currently being processed
+    Completed,        // Successfully completed
+    Failed,           // In DLQ after max_attempts
+    WaitingChildren,  // Waiting for dependencies to complete
+    Unknown,          // Job not found or state cannot be determined
+}
+
 #[inline(always)]
 pub fn next_id() -> u64 {
     ID_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -58,6 +71,12 @@ pub enum Command {
         error: Option<String>,
     },
     GetResult {
+        id: u64,
+    },
+    GetJob {
+        id: u64,
+    },
+    GetState {
         id: u64,
     },
 
@@ -331,6 +350,16 @@ pub enum Response {
         ok: bool,
         queues: Vec<QueueInfo>,
     },
+    JobWithState {
+        ok: bool,
+        job: Option<Job>,
+        state: JobState,
+    },
+    State {
+        ok: bool,
+        id: u64,
+        state: JobState,
+    },
     Error {
         ok: bool,
         error: String,
@@ -411,6 +440,16 @@ impl Response {
     #[inline(always)]
     pub fn queues(queues: Vec<QueueInfo>) -> Self {
         Response::Queues { ok: true, queues }
+    }
+
+    #[inline(always)]
+    pub fn job_with_state(job: Option<Job>, state: JobState) -> Self {
+        Response::JobWithState { ok: true, job, state }
+    }
+
+    #[inline(always)]
+    pub fn state(id: u64, state: JobState) -> Self {
+        Response::State { ok: true, id, state }
     }
 
     #[inline(always)]

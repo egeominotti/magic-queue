@@ -10,7 +10,7 @@ use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 
-use crate::protocol::{CronJob, Job};
+use crate::protocol::{CronJob, Job, JobState};
 use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, Shard, Subscriber, WalEvent};
 
 const WAL_PATH: &str = "magic-queue.wal";
@@ -272,5 +272,120 @@ impl QueueManager {
     #[inline]
     pub(crate) fn notify_shard(&self, idx: usize) {
         self.shards[idx].read().notify.notify_waiters();
+    }
+
+    /// Notify all shards - wakes up workers that may have missed push notifications
+    #[inline]
+    pub(crate) fn notify_all(&self) {
+        for shard in &self.shards {
+            shard.read().notify.notify_waiters();
+        }
+    }
+
+    /// Get job by ID with its current state
+    /// Searches all locations: processing, queues, dlq, waiting_deps, completed
+    pub fn get_job(&self, id: u64) -> (Option<Job>, JobState) {
+        let now = now_ms();
+
+        // Check processing (Active)
+        {
+            let processing = self.processing.read();
+            if let Some(job) = processing.get(&id) {
+                return (Some(job.clone()), JobState::Active);
+            }
+        }
+
+        // Check completed jobs
+        {
+            let completed = self.completed_jobs.read();
+            if completed.contains(&id) {
+                return (None, JobState::Completed);
+            }
+        }
+
+        // Search through all shards
+        for shard in &self.shards {
+            let s = shard.read();
+
+            // Check queues (Waiting/Delayed)
+            for heap in s.queues.values() {
+                for job in heap.iter() {
+                    if job.id == id {
+                        let state = if job.run_at > now {
+                            JobState::Delayed
+                        } else {
+                            JobState::Waiting
+                        };
+                        return (Some(job.clone()), state);
+                    }
+                }
+            }
+
+            // Check DLQ (Failed)
+            for dlq in s.dlq.values() {
+                for job in dlq.iter() {
+                    if job.id == id {
+                        return (Some(job.clone()), JobState::Failed);
+                    }
+                }
+            }
+
+            // Check waiting_deps (WaitingChildren)
+            if let Some(job) = s.waiting_deps.get(&id) {
+                return (Some(job.clone()), JobState::WaitingChildren);
+            }
+        }
+
+        // Not found
+        (None, JobState::Unknown)
+    }
+
+    /// Get only the state of a job by ID (lighter than get_job)
+    pub fn get_state(&self, id: u64) -> JobState {
+        let now = now_ms();
+
+        // Check processing (Active)
+        if self.processing.read().contains_key(&id) {
+            return JobState::Active;
+        }
+
+        // Check completed jobs
+        if self.completed_jobs.read().contains(&id) {
+            return JobState::Completed;
+        }
+
+        // Search through all shards
+        for shard in &self.shards {
+            let s = shard.read();
+
+            // Check queues (Waiting/Delayed)
+            for heap in s.queues.values() {
+                for job in heap.iter() {
+                    if job.id == id {
+                        return if job.run_at > now {
+                            JobState::Delayed
+                        } else {
+                            JobState::Waiting
+                        };
+                    }
+                }
+            }
+
+            // Check DLQ (Failed)
+            for dlq in s.dlq.values() {
+                for job in dlq.iter() {
+                    if job.id == id {
+                        return JobState::Failed;
+                    }
+                }
+            }
+
+            // Check waiting_deps (WaitingChildren)
+            if s.waiting_deps.contains_key(&id) {
+                return JobState::WaitingChildren;
+            }
+        }
+
+        JobState::Unknown
     }
 }

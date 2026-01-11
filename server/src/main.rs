@@ -211,6 +211,14 @@ async fn process_command(
             let result = queue_manager.get_result(id).await;
             Response::result(id, result)
         }
+        Command::GetJob { id } => {
+            let (job, state) = queue_manager.get_job(id);
+            Response::job_with_state(job, state)
+        }
+        Command::GetState { id } => {
+            let state = queue_manager.get_state(id);
+            Response::state(id, state)
+        }
 
         // === New Commands ===
         Command::Cancel { id } => match queue_manager.cancel(id).await {

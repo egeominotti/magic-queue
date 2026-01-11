@@ -8,7 +8,7 @@ use super::types::{intern, cleanup_interned_strings, WalEvent};
 
 impl QueueManager {
     pub async fn background_tasks(self: Arc<Self>) {
-        let mut dep_ticker = interval(Duration::from_millis(100)); // Check dependencies
+        let mut wakeup_ticker = interval(Duration::from_millis(100)); // Wake up waiting workers
         let mut cron_ticker = interval(Duration::from_secs(1));
         let mut cleanup_ticker = interval(Duration::from_secs(60));
         let mut timeout_ticker = interval(Duration::from_millis(500));
@@ -16,8 +16,9 @@ impl QueueManager {
 
         loop {
             tokio::select! {
-                _ = dep_ticker.tick() => {
-                    // Only check dependencies, no wasteful notify_all
+                _ = wakeup_ticker.tick() => {
+                    // Wake up workers that may have missed push notifications
+                    self.notify_all();
                     self.check_dependencies().await;
                 }
                 _ = timeout_ticker.tick() => {
