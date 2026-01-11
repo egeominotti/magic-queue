@@ -388,14 +388,14 @@ interface MLInferenceJob {
 }
 
 async function mlInferenceExample(client: MagicQueue) {
-  console.log('\n5. ML Model Inference (1000 samples)');
+  console.log('\n5. ML Model Inference (500 samples)');
   console.log('-'.repeat(50));
 
-  // Generate 1000 inference requests
-  const inputs = Array.from({ length: 1000 }, (_, i) => ({
+  // Generate 500 inference requests (staying under 1MB limit)
+  const inputs = Array.from({ length: 500 }, (_, i) => ({
     id: `sample-${i.toString().padStart(5, '0')}`,
-    features: Array.from({ length: 128 }, () => Math.random()), // 128-dim vector
-    metadata: { source: 'batch-job', timestamp: Date.now() }
+    features: Array.from({ length: 64 }, () => Math.round(Math.random() * 1000) / 1000), // 64-dim vector
+    metadata: { source: 'batch-job' }
   }));
 
   const inferenceJob: MLInferenceJob = {
@@ -416,7 +416,7 @@ async function mlInferenceExample(client: MagicQueue) {
   const payloadSize = JSON.stringify(inferenceJob).length;
   console.log(`   Payload size: ${(payloadSize / 1024).toFixed(2)} KB`);
   console.log(`   Samples: ${inputs.length}`);
-  console.log(`   Features per sample: 128`);
+  console.log(`   Features per sample: 64`);
 
   const job = await client.push('ml-inference', inferenceJob, {
     priority: 8,
