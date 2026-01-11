@@ -1,10 +1,12 @@
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
+use croner::Cron;
 use tokio::time::{interval, Duration};
 
 use super::manager::QueueManager;
-use super::types::{intern, cleanup_interned_strings, WalEvent};
+use super::types::{intern, cleanup_interned_strings};
 
 impl QueueManager {
     pub async fn background_tasks(self: Arc<Self>) {
@@ -12,7 +14,6 @@ impl QueueManager {
         let mut cron_ticker = interval(Duration::from_secs(1));
         let mut cleanup_ticker = interval(Duration::from_secs(60));
         let mut timeout_ticker = interval(Duration::from_millis(500));
-        let mut wal_ticker = interval(Duration::from_secs(300)); // WAL compaction check every 5 min
 
         loop {
             tokio::select! {
@@ -31,9 +32,6 @@ impl QueueManager {
                     self.cleanup_completed_jobs();
                     self.cleanup_job_results();
                     cleanup_interned_strings();
-                }
-                _ = wal_ticker.tick() => {
-                    self.compact_wal();
                 }
             }
         }
@@ -68,23 +66,29 @@ impl QueueManager {
                 job.attempts += 1;
 
                 if job.should_go_to_dlq() {
-                    self.write_wal(&WalEvent::Dlq(job.clone()));
                     self.notify_subscribers("timeout", &job.queue, &job);
-                    self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job);
+                    self.index_job(job_id, super::types::JobLocation::Dlq { shard_idx: idx });
+                    self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job.clone());
                     self.metrics.record_timeout();
+
+                    // Persist to PostgreSQL
+                    self.persist_dlq(&job, Some("Job timed out"));
                 } else {
                     let backoff = job.next_backoff();
-                    if backoff > 0 {
-                        job.run_at = now + backoff;
-                    }
+                    let new_run_at = if backoff > 0 { now + backoff } else { job.run_at };
+                    job.run_at = new_run_at;
                     job.started_at = 0;
                     job.progress_msg = Some("Job timed out".to_string());
 
-                    self.write_wal(&WalEvent::Fail(job_id));
+                    self.index_job(job_id, super::types::JobLocation::Queue { shard_idx: idx });
                     self.shards[idx].write().queues
                         .entry(queue_arc)
                         .or_insert_with(BinaryHeap::new)
-                        .push(job);
+                        .push(job.clone());
+
+                    // Persist to PostgreSQL
+                    self.persist_fail(job_id, new_run_at, job.attempts);
+
                     self.notify_shard(idx);
                 }
             }
@@ -145,15 +149,23 @@ impl QueueManager {
     pub(crate) async fn run_cron_jobs(&self) {
         let now = Self::now_ms();
         let mut to_run = Vec::new();
+        let mut next_run_updates = Vec::new();
 
         {
             let mut crons = self.cron_jobs.write();
             for cron in crons.values_mut() {
                 if cron.next_run <= now {
                     to_run.push((cron.queue.clone(), cron.data.clone(), cron.priority));
-                    cron.next_run = Self::parse_next_cron_run(&cron.schedule, now);
+                    let new_next_run = Self::parse_next_cron_run(&cron.schedule, now);
+                    cron.next_run = new_next_run;
+                    next_run_updates.push((cron.name.clone(), new_next_run));
                 }
             }
+        }
+
+        // Persist next_run updates to PostgreSQL
+        for (name, next_run) in next_run_updates {
+            self.persist_cron_next_run(&name, next_run);
         }
 
         for (queue, data, priority) in to_run {
@@ -161,12 +173,49 @@ impl QueueManager {
         }
     }
 
+    /// Parse cron expression and calculate next run time.
+    /// Supports:
+    /// - Legacy format: `*/N` (every N seconds)
+    /// - Full 6-field cron: `sec min hour day month weekday`
+    /// - Standard 5-field cron: `min hour day month weekday` (assumes 0 seconds)
     pub(crate) fn parse_next_cron_run(schedule: &str, now: u64) -> u64 {
+        // Backwards compatibility: */N format (simple interval in seconds)
         if let Some(interval_str) = schedule.strip_prefix("*/") {
             if let Ok(secs) = interval_str.parse::<u64>() {
                 return now + secs * 1000;
             }
         }
+
+        // Full cron expression parsing with croner
+        match Cron::new(schedule).parse() {
+            Ok(cron) => {
+                let now_secs = (now / 1000) as i64;
+                if let Some(now_dt) = DateTime::<Utc>::from_timestamp(now_secs, 0) {
+                    if let Ok(next) = cron.find_next_occurrence(&now_dt, false) {
+                        return (next.timestamp() as u64) * 1000;
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+
+        // Default fallback: 1 minute
         now + 60_000
+    }
+
+    /// Validate a cron expression before saving.
+    /// Returns Ok(()) if valid, Err(message) if invalid.
+    pub(crate) fn validate_cron(schedule: &str) -> Result<(), String> {
+        // Allow legacy */N format
+        if let Some(interval_str) = schedule.strip_prefix("*/") {
+            return interval_str.parse::<u64>()
+                .map(|_| ())
+                .map_err(|_| format!("Invalid interval format: {}", schedule));
+        }
+
+        // Validate full cron expression
+        Cron::new(schedule).parse()
+            .map(|_| ())
+            .map_err(|e| format!("Invalid cron expression '{}': {}", schedule, e))
     }
 }

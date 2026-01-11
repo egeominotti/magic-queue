@@ -1,29 +1,23 @@
 use std::collections::BinaryHeap;
-use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 
 use crate::protocol::{CronJob, Job, JobEvent, JobState, WebhookConfig, WorkerInfo};
-use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, JobLocation, Shard, Subscriber, WalEvent, Webhook, Worker};
+use super::postgres::PostgresStorage;
+use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, JobLocation, Shard, Subscriber, Webhook, Worker};
 use tokio::sync::broadcast;
 
-const WAL_PATH: &str = "magic-queue.wal";
-const WAL_MAX_SIZE: u64 = 100 * 1024 * 1024; // 100MB max before compaction
 pub const NUM_SHARDS: usize = 32;
 
 pub struct QueueManager {
     pub(crate) shards: Vec<RwLock<Shard>>,
     pub(crate) processing: RwLock<FxHashMap<u64, Job>>,
-    pub(crate) wal: Mutex<Option<BufWriter<File>>>,
-    pub(crate) wal_size: AtomicU64,
-    pub(crate) persistence: bool,
+    /// PostgreSQL storage (replaces WAL)
+    pub(crate) storage: Option<Arc<PostgresStorage>>,
     pub(crate) cron_jobs: RwLock<FxHashMap<String, CronJob>>,
     pub(crate) completed_jobs: RwLock<FxHashSet<u64>>,
     pub(crate) job_results: RwLock<FxHashMap<u64, Value>>,
@@ -41,26 +35,50 @@ pub struct QueueManager {
 }
 
 impl QueueManager {
-    pub fn new(persistence: bool) -> Arc<Self> {
+    /// Create a new QueueManager without persistence.
+    pub fn new(_persistence: bool) -> Arc<Self> {
+        // For backwards compatibility, this creates a manager without PostgreSQL
+        // Use `with_postgres` for PostgreSQL persistence
+        Self::create(None)
+    }
+
+    /// Create a new QueueManager with PostgreSQL persistence.
+    pub async fn with_postgres(database_url: &str) -> Arc<Self> {
+        match PostgresStorage::new(database_url).await {
+            Ok(storage) => {
+                // Run migrations
+                if let Err(e) = storage.migrate().await {
+                    eprintln!("Failed to run migrations: {}", e);
+                }
+
+                let storage = Arc::new(storage);
+                let manager = Self::create(Some(storage.clone()));
+
+                // Recover from PostgreSQL
+                manager.recover_from_postgres(&storage).await;
+
+                manager
+            }
+            Err(e) => {
+                eprintln!("Failed to connect to PostgreSQL: {}, running without persistence", e);
+                Self::create(None)
+            }
+        }
+    }
+
+    /// Internal constructor.
+    fn create(storage: Option<Arc<PostgresStorage>>) -> Arc<Self> {
         // Initialize coarse timestamp
         init_coarse_time();
 
         let shards = (0..NUM_SHARDS).map(|_| RwLock::new(Shard::new())).collect();
-        let (wal, wal_size) = if persistence {
-            let (file, size) = Self::open_wal();
-            (file.map(|f| BufWriter::new(f)), size)
-        } else {
-            (None, 0)
-        };
-
         let (event_tx, _) = broadcast::channel(1024);
+        let has_storage = storage.is_some();
 
         let manager = Arc::new(Self {
             shards,
             processing: RwLock::new(FxHashMap::with_capacity_and_hasher(4096, Default::default())),
-            wal: Mutex::new(wal),
-            wal_size: AtomicU64::new(wal_size),
-            persistence,
+            storage,
             cron_jobs: RwLock::new(FxHashMap::default()),
             completed_jobs: RwLock::new(FxHashSet::default()),
             job_results: RwLock::new(FxHashMap::default()),
@@ -73,23 +91,37 @@ impl QueueManager {
             event_tx,
         });
 
-        if persistence {
-            manager.replay_wal_sync();
-        }
-
         let mgr = Arc::clone(&manager);
         tokio::spawn(async move { mgr.background_tasks().await; });
+
+        if has_storage {
+            println!("PostgreSQL persistence enabled");
+        }
 
         manager
     }
 
-    pub fn with_auth_tokens(persistence: bool, tokens: Vec<String>) -> Arc<Self> {
-        let manager = Self::new(persistence);
+    pub fn with_auth_tokens(_persistence: bool, tokens: Vec<String>) -> Arc<Self> {
+        let manager = Self::new(false);
         {
             let mut auth = manager.auth_tokens.write();
             for token in tokens {
                 auth.insert(token);
             }
+        }
+        manager
+    }
+
+    pub async fn with_postgres_and_auth(database_url: &str, tokens: Vec<String>) -> Arc<Self> {
+        let manager = Self::with_postgres(database_url).await;
+        {
+            let mut auth = manager.auth_tokens.write();
+            for token in tokens {
+                auth.insert(token);
+            }
+        }
+        if !manager.auth_tokens.read().is_empty() {
+            println!("Authentication enabled with {} token(s)", manager.auth_tokens.read().len());
         }
         manager
     }
@@ -112,170 +144,258 @@ impl QueueManager {
         now_ms()
     }
 
-    fn open_wal() -> (Option<File>, u64) {
-        match OpenOptions::new().create(true).append(true).open(WAL_PATH) {
-            Ok(file) => {
-                let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-                (Some(file), size)
-            }
-            Err(_) => (None, 0)
-        }
-    }
+    /// Recover state from PostgreSQL on startup.
+    async fn recover_from_postgres(&self, storage: &PostgresStorage) {
+        let mut job_count = 0;
 
-    pub(crate) fn replay_wal_sync(&self) {
-        if !Path::new(WAL_PATH).exists() { return; }
-        let file = match File::open(WAL_PATH) { Ok(f) => f, Err(_) => return };
-        let reader = BufReader::new(file);
-        let mut count = 0;
+        // Load pending jobs
+        if let Ok(jobs) = storage.load_pending_jobs().await {
+            for (job, state) in jobs {
+                let job_id = job.id;
+                let idx = Self::shard_index(&job.queue);
+                let queue_name = intern(&job.queue);
 
-        for line in reader.lines().flatten() {
-            let event: WalEvent = match serde_json::from_str(&line) {
-                Ok(e) => e, Err(_) => continue
-            };
-
-            match event {
-                WalEvent::Push(job) => {
-                    let job_id = job.id;
-                    let idx = Self::shard_index(&job.queue);
-                    let queue_name = intern(&job.queue);
-                    let mut shard = self.shards[idx].write();
-                    shard.queues.entry(queue_name)
-                        .or_insert_with(BinaryHeap::new).push(job);
-                    self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
-                    count += 1;
-                }
-                WalEvent::Ack(id) => {
-                    self.processing.write().remove(&id);
-                    self.index_job(id, JobLocation::Completed);
-                    self.completed_jobs.write().insert(id);
-                }
-                WalEvent::AckWithResult { id, result } => {
-                    self.processing.write().remove(&id);
-                    self.job_results.write().insert(id, result);
-                    self.index_job(id, JobLocation::Completed);
-                    self.completed_jobs.write().insert(id);
-                }
-                WalEvent::Fail(id) => {
-                    if let Some(job) = self.processing.write().remove(&id) {
-                        let idx = Self::shard_index(&job.queue);
-                        let queue_name = intern(&job.queue);
-                        self.shards[idx].write().queues
-                            .entry(queue_name)
+                match state.as_str() {
+                    "waiting" | "delayed" => {
+                        let mut shard = self.shards[idx].write();
+                        shard.queues.entry(queue_name)
                             .or_insert_with(BinaryHeap::new).push(job);
-                        self.index_job(id, JobLocation::Queue { shard_idx: idx });
+                        self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
+                        job_count += 1;
                     }
-                }
-                WalEvent::Cancel(id) => {
-                    self.processing.write().remove(&id);
-                    self.unindex_job(id);
-                }
-                WalEvent::Dlq(job) => {
-                    let job_id = job.id;
-                    let idx = Self::shard_index(&job.queue);
-                    let queue_name = intern(&job.queue);
-                    self.shards[idx].write().dlq
-                        .entry(queue_name).or_default().push_back(job);
-                    self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
-                }
-            }
-        }
-
-        if count > 0 { println!("Replayed {} jobs from WAL", count); }
-    }
-
-    #[inline(always)]
-    pub(crate) fn write_wal(&self, event: &WalEvent) {
-        if !self.persistence { return; }
-        let mut wal = self.wal.lock();
-        if let Some(ref mut writer) = *wal {
-            if let Ok(json) = serde_json::to_string(event) {
-                let bytes = json.len() as u64 + 1; // +1 for newline
-                if writeln!(writer, "{}", json).is_ok() {
-                    let _ = writer.flush();
-                    self.wal_size.fetch_add(bytes, Ordering::Relaxed);
+                    "active" => {
+                        // Jobs that were active when server stopped - requeue them
+                        let mut shard = self.shards[idx].write();
+                        shard.queues.entry(queue_name)
+                            .or_insert_with(BinaryHeap::new).push(job);
+                        self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
+                        job_count += 1;
+                    }
+                    "waiting_children" => {
+                        self.shards[idx].write().waiting_deps.insert(job_id, job);
+                        self.index_job(job_id, JobLocation::WaitingDeps { shard_idx: idx });
+                        job_count += 1;
+                    }
+                    _ => {}
                 }
             }
         }
-    }
 
-    pub(crate) fn write_wal_batch(&self, jobs: &[Job]) {
-        if !self.persistence || jobs.is_empty() { return; }
-        let mut wal = self.wal.lock();
-        if let Some(ref mut writer) = *wal {
-            let mut bytes_written = 0u64;
-            for job in jobs {
-                if let Ok(json) = serde_json::to_string(&WalEvent::Push(job.clone())) {
-                    bytes_written += json.len() as u64 + 1;
-                    let _ = writeln!(writer, "{}", json);
-                }
+        // Load DLQ jobs
+        if let Ok(dlq_jobs) = storage.load_dlq_jobs().await {
+            for job in dlq_jobs {
+                let job_id = job.id;
+                let idx = Self::shard_index(&job.queue);
+                let queue_name = intern(&job.queue);
+                self.shards[idx].write().dlq
+                    .entry(queue_name).or_default().push_back(job);
+                self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
             }
-            let _ = writer.flush();
-            self.wal_size.fetch_add(bytes_written, Ordering::Relaxed);
         }
-    }
 
-    pub(crate) fn write_wal_acks(&self, ids: &[u64]) {
-        if !self.persistence { return; }
-        let mut wal = self.wal.lock();
-        if let Some(ref mut writer) = *wal {
-            let mut bytes_written = 0u64;
-            for &id in ids {
-                if let Ok(json) = serde_json::to_string(&WalEvent::Ack(id)) {
-                    bytes_written += json.len() as u64 + 1;
-                    let _ = writeln!(writer, "{}", json);
-                }
+        // Load cron jobs (now persisted!)
+        if let Ok(crons) = storage.load_crons().await {
+            let mut cron_jobs = self.cron_jobs.write();
+            for cron in crons {
+                cron_jobs.insert(cron.name.clone(), cron);
             }
-            let _ = writer.flush();
-            self.wal_size.fetch_add(bytes_written, Ordering::Relaxed);
+            if !cron_jobs.is_empty() {
+                println!("Recovered {} cron jobs from PostgreSQL", cron_jobs.len());
+            }
+        }
+
+        // Load webhooks (now persisted!)
+        if let Ok(webhooks) = storage.load_webhooks().await {
+            let mut wh = self.webhooks.write();
+            for webhook in webhooks {
+                let w = Webhook::new(
+                    webhook.id.clone(),
+                    webhook.url,
+                    webhook.events,
+                    webhook.queue,
+                    webhook.secret,
+                );
+                wh.insert(webhook.id, w);
+            }
+            if !wh.is_empty() {
+                println!("Recovered {} webhooks from PostgreSQL", wh.len());
+            }
+        }
+
+        if job_count > 0 {
+            println!("Recovered {} jobs from PostgreSQL", job_count);
         }
     }
 
-    /// Compact WAL by writing only current state
-    pub(crate) fn compact_wal(&self) {
-        if !self.persistence { return; }
+    // ============== Persistence Methods (PostgreSQL) ==============
 
-        let current_size = self.wal_size.load(Ordering::Relaxed);
-        if current_size < WAL_MAX_SIZE { return; }
-
-        let temp_path = format!("{}.tmp", WAL_PATH);
-
-        // Collect all current jobs from queues
-        let mut all_jobs = Vec::new();
-        for shard in &self.shards {
-            let s = shard.read();
-            for heap in s.queues.values() {
-                all_jobs.extend(heap.iter().cloned());
-            }
-            for dlq in s.dlq.values() {
-                all_jobs.extend(dlq.iter().cloned());
-            }
+    /// Persist a pushed job to PostgreSQL.
+    #[inline]
+    pub(crate) fn persist_push(&self, job: &Job, state: &str) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let job = job.clone();
+            let state = state.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = storage.insert_job(&job, &state).await {
+                    eprintln!("Failed to persist job {}: {}", job.id, e);
+                }
+            });
         }
+    }
 
-        // Write compacted WAL
-        if let Ok(file) = File::create(&temp_path) {
-            let mut writer = BufWriter::new(file);
-            let mut new_size = 0u64;
-
-            for job in &all_jobs {
-                if let Ok(json) = serde_json::to_string(&WalEvent::Push(job.clone())) {
-                    new_size += json.len() as u64 + 1;
-                    let _ = writeln!(writer, "{}", json);
+    /// Persist a batch of jobs to PostgreSQL.
+    #[inline]
+    pub(crate) fn persist_push_batch(&self, jobs: &[Job], state: &str) {
+        if jobs.is_empty() { return; }
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let jobs = jobs.to_vec();
+            let state = state.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = storage.insert_jobs_batch(&jobs, &state).await {
+                    eprintln!("Failed to persist batch: {}", e);
                 }
-            }
-            let _ = writer.flush();
-            drop(writer);
+            });
+        }
+    }
 
-            // Swap files
-            let mut wal = self.wal.lock();
-            *wal = None;
-
-            if std::fs::rename(&temp_path, WAL_PATH).is_ok() {
-                if let Ok(file) = OpenOptions::new().append(true).open(WAL_PATH) {
-                    *wal = Some(BufWriter::new(file));
-                    self.wal_size.store(new_size, Ordering::Relaxed);
-                    println!("WAL compacted: {} -> {} bytes", current_size, new_size);
+    /// Persist job acknowledgment to PostgreSQL.
+    #[inline]
+    pub(crate) fn persist_ack(&self, job_id: u64, result: Option<Value>) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            tokio::spawn(async move {
+                if let Err(e) = storage.ack_job(job_id, result).await {
+                    eprintln!("Failed to persist ack {}: {}", job_id, e);
                 }
-            }
+            });
+        }
+    }
+
+    /// Persist batch acknowledgments to PostgreSQL.
+    #[inline]
+    pub(crate) fn persist_ack_batch(&self, ids: &[u64]) {
+        if ids.is_empty() { return; }
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let ids = ids.to_vec();
+            tokio::spawn(async move {
+                if let Err(e) = storage.ack_jobs_batch(&ids).await {
+                    eprintln!("Failed to persist ack batch: {}", e);
+                }
+            });
+        }
+    }
+
+    /// Persist job failure (retry) to PostgreSQL.
+    #[inline]
+    pub(crate) fn persist_fail(&self, job_id: u64, new_run_at: u64, attempts: u32) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            tokio::spawn(async move {
+                if let Err(e) = storage.fail_job(job_id, new_run_at, attempts).await {
+                    eprintln!("Failed to persist fail {}: {}", job_id, e);
+                }
+            });
+        }
+    }
+
+    /// Persist job moved to DLQ.
+    #[inline]
+    pub(crate) fn persist_dlq(&self, job: &Job, error: Option<&str>) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let job = job.clone();
+            let error = error.map(|s| s.to_string());
+            tokio::spawn(async move {
+                if let Err(e) = storage.move_to_dlq(&job, error.as_deref()).await {
+                    eprintln!("Failed to persist DLQ {}: {}", job.id, e);
+                }
+            });
+        }
+    }
+
+    /// Persist job cancellation.
+    #[inline]
+    pub(crate) fn persist_cancel(&self, job_id: u64) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            tokio::spawn(async move {
+                if let Err(e) = storage.cancel_job(job_id).await {
+                    eprintln!("Failed to persist cancel {}: {}", job_id, e);
+                }
+            });
+        }
+    }
+
+    /// Persist cron job.
+    #[inline]
+    pub(crate) fn persist_cron(&self, cron: &CronJob) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let cron = cron.clone();
+            tokio::spawn(async move {
+                if let Err(e) = storage.save_cron(&cron).await {
+                    eprintln!("Failed to persist cron {}: {}", cron.name, e);
+                }
+            });
+        }
+    }
+
+    /// Persist cron job deletion.
+    #[inline]
+    pub(crate) fn persist_cron_delete(&self, name: &str) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let name = name.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = storage.delete_cron(&name).await {
+                    eprintln!("Failed to persist cron delete {}: {}", name, e);
+                }
+            });
+        }
+    }
+
+    /// Persist cron next_run update.
+    #[inline]
+    pub(crate) fn persist_cron_next_run(&self, name: &str, next_run: u64) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let name = name.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = storage.update_cron_next_run(&name, next_run).await {
+                    eprintln!("Failed to update cron next_run {}: {}", name, e);
+                }
+            });
+        }
+    }
+
+    /// Persist webhook.
+    #[inline]
+    pub(crate) fn persist_webhook(&self, webhook: &WebhookConfig) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let webhook = webhook.clone();
+            tokio::spawn(async move {
+                if let Err(e) = storage.save_webhook(&webhook).await {
+                    eprintln!("Failed to persist webhook {}: {}", webhook.id, e);
+                }
+            });
+        }
+    }
+
+    /// Persist webhook deletion.
+    #[inline]
+    pub(crate) fn persist_webhook_delete(&self, id: &str) {
+        if let Some(ref storage) = self.storage {
+            let storage = Arc::clone(storage);
+            let id = id.to_string();
+            tokio::spawn(async move {
+                if let Err(e) = storage.delete_webhook(&id).await {
+                    eprintln!("Failed to persist webhook delete {}: {}", id, e);
+                }
+            });
         }
     }
 

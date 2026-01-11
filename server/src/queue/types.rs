@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde_json::Value;
 use tokio::sync::Notify;
 
 use crate::protocol::{Job, JobState};
@@ -89,18 +88,6 @@ pub fn cleanup_interned_strings() {
     if removed > 0 {
         println!("Cleaned up {} unused interned strings", removed);
     }
-}
-
-// ============== WAL Events ==============
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub enum WalEvent {
-    Push(Job),
-    Ack(u64),
-    AckWithResult { id: u64, result: Value },
-    Fail(u64),
-    Cancel(u64),
-    Dlq(Job),
 }
 
 // ============== Job Location Index ==============

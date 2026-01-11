@@ -53,7 +53,7 @@ Tested on Apple Silicon M2, single server instance.
 | **Batch Operations** | Push/pull/ack thousands of jobs in single requests |
 | **Job Results** | Store and retrieve job completion results |
 | **Job State** | Query job state (waiting, active, completed, failed, delayed) |
-| **Persistence** | Optional Write-Ahead Log for durability |
+| **Persistence** | PostgreSQL backend for full durability |
 
 ### Reliability
 | Feature | Description |
@@ -71,29 +71,42 @@ Tested on Apple Silicon M2, single server instance.
 | **Concurrency Control** | Limit parallel job processing |
 | **Pause/Resume** | Dynamic queue control |
 | **Job Dependencies** | DAG-style job orchestration |
-| **Cron Jobs** | Scheduled recurring jobs |
+| **Cron Jobs** | Full 6-field cron expressions (sec min hour day month weekday) |
 
 ### Observability
 | Feature | Description |
 |---------|-------------|
 | **Progress Tracking** | Real-time job progress (0-100%) |
 | **Metrics API** | Throughput, latency, queue depths |
+| **Prometheus Metrics** | `/metrics/prometheus` endpoint |
 | **Web Dashboard** | Real-time monitoring UI |
-| **Pub/Sub Events** | Subscribe to job lifecycle events |
+| **SSE Events** | Server-Sent Events for job lifecycle |
+| **WebSocket** | Real-time events with token authentication |
 
 ---
 
 ## Quick Start
 
-### Docker (Recommended)
+### Docker Compose (Recommended)
+
+```bash
+# Start with PostgreSQL persistence
+docker-compose up -d
+
+# View logs
+docker-compose logs -f magicqueue
+```
+
+This starts:
+- **PostgreSQL** on port 5432
+- **MagicQueue** with TCP (6789), HTTP (6790), and gRPC (6791)
+
+### Docker (Standalone)
 
 ```bash
 # Build and run
 docker build -t magic-queue .
 docker run -p 6789:6789 magic-queue
-
-# With persistence
-docker run -p 6789:6789 -e PERSIST=1 -v $(pwd)/data:/app magic-queue
 
 # With HTTP API & Dashboard
 docker run -p 6789:6789 -p 6790:6790 -e HTTP=1 magic-queue
@@ -108,7 +121,14 @@ cargo run --release
 
 The server listens on **port 6789** (TCP) by default.
 
-### Enable HTTP API & Dashboard (Optional)
+### With PostgreSQL Persistence
+
+```bash
+# Set DATABASE_URL to enable PostgreSQL persistence
+DATABASE_URL=postgres://user:pass@localhost/magicqueue HTTP=1 cargo run --release
+```
+
+### Enable HTTP API & Dashboard
 
 ```bash
 HTTP=1 cargo run --release
@@ -116,6 +136,7 @@ HTTP=1 cargo run --release
 
 - **TCP API:** `localhost:6789`
 - **HTTP API:** `localhost:6790`
+- **gRPC API:** `localhost:6791`
 - **Dashboard:** `http://localhost:6790`
 
 ---
@@ -129,7 +150,9 @@ HTTP=1 cargo run --release
 | `PORT` | TCP server port | `6789` |
 | `HTTP` | Enable HTTP API | disabled |
 | `HTTP_PORT` | HTTP API port | `6790` |
-| `PERSIST` | Enable WAL persistence | disabled |
+| `GRPC` | Enable gRPC API | disabled |
+| `GRPC_PORT` | gRPC API port | `6791` |
+| `DATABASE_URL` | PostgreSQL connection URL | disabled |
 | `AUTH_TOKENS` | Comma-separated auth tokens | disabled |
 | `UNIX_SOCKET` | Unix socket path | disabled |
 
@@ -160,6 +183,9 @@ Jobs can be in one of the following states:
 | `GET` | `/jobs/{id}/state` | Get job state only |
 | `GET` | `/stats` | Get statistics |
 | `GET` | `/metrics` | Get metrics |
+| `GET` | `/metrics/prometheus` | Prometheus format metrics |
+| `GET` | `/events` | SSE event stream |
+| `GET` | `/ws?token=xxx` | WebSocket event stream |
 
 <details>
 <summary>View all endpoints</summary>
@@ -238,8 +264,9 @@ JSON messages over TCP, newline-delimited.
 {"cmd": "SETCONCURRENCY", "queue": "jobs", "limit": 5}
 {"cmd": "LISTQUEUES"}
 
-// Cron
-{"cmd": "CRON", "name": "cleanup", "queue": "jobs", "data": {}, "schedule": "*/60"}
+// Cron (supports full 6-field expressions or */N shorthand)
+{"cmd": "CRON", "name": "cleanup", "queue": "jobs", "data": {}, "schedule": "0 30 9 * * MON-FRI"}
+{"cmd": "CRON", "name": "every-minute", "queue": "jobs", "data": {}, "schedule": "*/60"}
 {"cmd": "CRONLIST"}
 {"cmd": "CRONDELETE", "name": "cleanup"}
 
@@ -304,7 +331,8 @@ When pushing a job, you can specify:
 |   +---------------------------------------------------+     |
 |                                                              |
 |   +---------------------------------------------------+     |
-|   |         Write-Ahead Log (Optional)                 |     |
+|   |         PostgreSQL Storage (Optional)             |     |
+|   |  * Jobs, Results, DLQ   * Cron Jobs, Webhooks    |     |
 |   +---------------------------------------------------+     |
 |                                                              |
 +--------------------------------------------------------------+
@@ -328,20 +356,23 @@ When pushing a job, you can specify:
 ```
 magic-queue/
 ├── Dockerfile              # Docker build
+├── docker-compose.yml      # PostgreSQL + MagicQueue
 ├── server/                 # Rust server
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         # Entry point, TCP server
-│       ├── http.rs         # HTTP REST API (axum)
+│       ├── http.rs         # HTTP REST API + WebSocket (axum)
+│       ├── grpc.rs         # gRPC API (tonic)
 │       ├── dashboard.rs    # Web dashboard
 │       ├── protocol.rs     # Commands & responses
 │       └── queue/
-│           ├── manager.rs  # Queue manager, WAL
+│           ├── manager.rs  # Queue manager
+│           ├── postgres.rs # PostgreSQL storage layer
 │           ├── core.rs     # Push/Pull/Ack
 │           ├── features.rs # Rate limit, DLQ, etc.
-│           ├── background.rs # Background tasks
+│           ├── background.rs # Background tasks, cron
 │           ├── types.rs    # Data structures
-│           └── tests.rs    # Test suite (57 tests)
+│           └── tests.rs    # Test suite (75 tests)
 ```
 
 ---
@@ -353,7 +384,7 @@ cd server
 cargo test
 ```
 
-**57 tests** covering:
+**75 tests** covering:
 - Core operations (push, pull, ack, batch)
 - Reliability (DLQ, retries, backoff)
 - Flow control (rate limiting, concurrency, pause)

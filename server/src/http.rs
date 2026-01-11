@@ -2,15 +2,20 @@ use std::sync::Arc;
 use std::convert::Infallible;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     response::{Json, IntoResponse, Sse},
     routing::{delete, get, post},
     Router,
+    http::StatusCode,
 };
 use axum::response::sse::{Event, KeepAlive};
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::dashboard;
@@ -88,6 +93,12 @@ pub struct PullQuery {
 
 fn default_count() -> usize { 1 }
 
+#[derive(Deserialize)]
+pub struct WsQuery {
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct ApiResponse<T> {
     pub ok: bool,
@@ -144,6 +155,9 @@ pub fn create_router(state: AppState) -> Router {
         // SSE Events
         .route("/events", get(sse_events))
         .route("/events/{queue}", get(sse_queue_events))
+        // WebSocket Events
+        .route("/ws", get(ws_handler))
+        .route("/ws/{queue}", get(ws_queue_handler))
         // Workers
         .route("/workers", get(list_workers))
         .route("/workers/{id}/heartbeat", post(worker_heartbeat))
@@ -337,8 +351,10 @@ async fn create_cron(
     Path(name): Path<String>,
     Json(req): Json<CronRequest>,
 ) -> Json<ApiResponse<()>> {
-    qm.add_cron(name, req.queue, req.data, req.schedule, req.priority).await;
-    ApiResponse::success(())
+    match qm.add_cron(name, req.queue, req.data, req.schedule, req.priority).await {
+        Ok(()) => ApiResponse::success(()),
+        Err(e) => ApiResponse::error(e),
+    }
 }
 
 async fn delete_cron(
@@ -460,6 +476,97 @@ async fn sse_queue_events(
         });
 
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+// === WebSocket Events ===
+
+async fn ws_handler(
+    State(qm): State<AppState>,
+    Query(params): Query<WsQuery>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    // Validate token if authentication is enabled
+    let token = params.token.as_deref().unwrap_or("");
+    if !qm.verify_token(token) {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+
+    ws.on_upgrade(move |socket| handle_websocket(socket, qm, None))
+}
+
+async fn ws_queue_handler(
+    State(qm): State<AppState>,
+    Path(queue): Path<String>,
+    Query(params): Query<WsQuery>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    // Validate token if authentication is enabled
+    let token = params.token.as_deref().unwrap_or("");
+    if !qm.verify_token(token) {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+
+    ws.on_upgrade(move |socket| handle_websocket(socket, qm, Some(queue)))
+}
+
+async fn handle_websocket(mut socket: WebSocket, qm: Arc<QueueManager>, queue_filter: Option<String>) {
+    let mut rx = qm.subscribe_events(queue_filter.clone());
+
+    loop {
+        tokio::select! {
+            // Receive events from broadcast channel and send to WebSocket
+            result = rx.recv() => {
+                match result {
+                    Ok(event) => {
+                        // Filter by queue if specified
+                        if let Some(ref filter) = queue_filter {
+                            if event.queue != *filter {
+                                continue;
+                            }
+                        }
+
+                        // Serialize and send event
+                        if let Ok(json) = serde_json::to_string(&event) {
+                            if socket.send(Message::Text(json.into())).await.is_err() {
+                                break; // Client disconnected
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // Missed some messages, log and continue
+                        eprintln!("WebSocket client lagged behind by {} messages", n);
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        break; // Channel closed
+                    }
+                }
+            }
+
+            // Handle incoming WebSocket messages (ping/pong, close)
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Ping(data))) => {
+                        if socket.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        // Pong received, connection is alive
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        break; // Client closed connection
+                    }
+                    Some(Ok(Message::Text(_))) | Some(Ok(Message::Binary(_))) => {
+                        // Ignore client messages (this is a push-only WebSocket)
+                    }
+                    Some(Err(_)) => {
+                        break; // Error reading from socket
+                    }
+                }
+            }
+        }
+    }
 }
 
 // === Workers ===

@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::sync::atomic::Ordering;
 
 use crate::protocol::{CronJob, Job, MetricsData, QueueInfo, QueueMetrics};
-use super::types::{intern, ConcurrencyLimiter, JobLocation, RateLimiter, Subscriber, WalEvent};
+use super::types::{intern, ConcurrencyLimiter, JobLocation, RateLimiter, Subscriber};
 use super::manager::QueueManager;
 
 impl QueueManager {
@@ -31,14 +31,14 @@ impl QueueManager {
                         }
                     }
                     self.unindex_job(job_id);
-                    self.write_wal(&WalEvent::Cancel(job_id));
+                    self.persist_cancel(job_id);
                     return Ok(());
                 }
             }
             Some(JobLocation::WaitingDeps { shard_idx }) => {
                 if self.shards[shard_idx].write().waiting_deps.remove(&job_id).is_some() {
                     self.unindex_job(job_id);
-                    self.write_wal(&WalEvent::Cancel(job_id));
+                    self.persist_cancel(job_id);
                     return Ok(());
                 }
             }
@@ -66,7 +66,7 @@ impl QueueManager {
                     }
                     drop(shard);
                     self.unindex_job(job_id);
-                    self.write_wal(&WalEvent::Cancel(job_id));
+                    self.persist_cancel(job_id);
                     return Ok(());
                 }
             }
@@ -232,16 +232,30 @@ impl QueueManager {
     }
 
     // === Cron Jobs ===
-    pub async fn add_cron(&self, name: String, queue: String, data: Value, schedule: String, priority: i32) {
+    pub async fn add_cron(&self, name: String, queue: String, data: Value, schedule: String, priority: i32) -> Result<(), String> {
+        // Validate cron expression first
+        Self::validate_cron(&schedule)?;
+
         let now = Self::now_ms();
         let next_run = Self::parse_next_cron_run(&schedule, now);
-        self.cron_jobs.write().insert(name.clone(), CronJob {
-            name, queue, data, schedule, priority, next_run,
-        });
+        let cron = CronJob {
+            name: name.clone(), queue, data, schedule, priority, next_run,
+        };
+
+        // Persist to PostgreSQL
+        self.persist_cron(&cron);
+
+        self.cron_jobs.write().insert(name, cron);
+        Ok(())
     }
 
     pub async fn delete_cron(&self, name: &str) -> bool {
-        self.cron_jobs.write().remove(name).is_some()
+        let removed = self.cron_jobs.write().remove(name).is_some();
+        if removed {
+            // Persist deletion to PostgreSQL
+            self.persist_cron_delete(name);
+        }
+        removed
     }
 
     pub async fn list_crons(&self) -> Vec<CronJob> {

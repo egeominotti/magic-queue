@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::time::Duration;
 
 use crate::protocol::{next_id, Job, JobEvent, JobInput};
-use super::types::{intern, now_ms, JobLocation, WalEvent};
+use super::types::{intern, now_ms, JobLocation};
 use super::manager::QueueManager;
 
 impl QueueManager {
@@ -81,8 +81,6 @@ impl QueueManager {
                 keys.insert(key.clone());
             }
 
-            self.write_wal(&WalEvent::Push(job.clone()));
-
             // Check dependencies
             if !job.depends_on.is_empty() {
                 let completed = self.completed_jobs.read();
@@ -91,12 +89,14 @@ impl QueueManager {
                 if !deps_satisfied {
                     shard.waiting_deps.insert(job.id, job.clone());
                     self.index_job(job.id, JobLocation::WaitingDeps { shard_idx: idx });
+                    self.persist_push(&job, "waiting_children");
                     return Ok(job);
                 }
             }
 
             shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new).push(job.clone());
             self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
+            self.persist_push(&job, "waiting");
         }
 
         self.metrics.record_push(1);
@@ -142,20 +142,22 @@ impl QueueManager {
             created_jobs.push(job);
         }
 
-        self.write_wal_batch(&created_jobs);
-
         {
             let mut shard = self.shards[idx].write();
             let heap = shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new);
-            for job in created_jobs {
+            for job in &created_jobs {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
-                heap.push(job);
+                heap.push(job.clone());
             }
-            for job in waiting_jobs {
+            for job in &waiting_jobs {
                 self.index_job(job.id, JobLocation::WaitingDeps { shard_idx: idx });
-                shard.waiting_deps.insert(job.id, job);
+                shard.waiting_deps.insert(job.id, job.clone());
             }
         }
+
+        // Persist to PostgreSQL
+        self.persist_push_batch(&created_jobs, "waiting");
+        self.persist_push_batch(&waiting_jobs, "waiting_children");
 
         self.metrics.record_push(ids.len() as u64);
         self.notify_shard(idx);
@@ -374,13 +376,13 @@ impl QueueManager {
             // Store result if provided
             if let Some(ref res) = result {
                 self.job_results.write().insert(job_id, res.clone());
-                self.write_wal(&WalEvent::AckWithResult { id: job_id, result: res.clone() });
-            } else {
-                self.write_wal(&WalEvent::Ack(job_id));
             }
 
             self.completed_jobs.write().insert(job_id);
             self.index_job(job_id, JobLocation::Completed);
+
+            // Persist to PostgreSQL
+            self.persist_ack(job_id, result.clone());
             self.metrics.record_complete(now_ms() - job.created_at);
             self.notify_subscribers("completed", &job.queue, &job);
 
@@ -429,8 +431,9 @@ impl QueueManager {
         }
         drop(proc);
 
-        if self.persistence && acked > 0 {
-            self.write_wal_acks(ids);
+        // Persist to PostgreSQL
+        if acked > 0 {
+            self.persist_ack_batch(ids);
         }
 
         self.metrics.total_completed.fetch_add(acked as u64, Ordering::Relaxed);
@@ -455,11 +458,13 @@ impl QueueManager {
             job.attempts += 1;
 
             if job.should_go_to_dlq() {
-                self.write_wal(&WalEvent::Dlq(job.clone()));
                 self.notify_subscribers("failed", &job.queue, &job);
                 self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
                 self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job.clone());
                 self.metrics.record_fail();
+
+                // Persist to PostgreSQL
+                self.persist_dlq(&job, error.as_deref());
 
                 // Broadcast failed event
                 self.broadcast_event(JobEvent {
@@ -476,18 +481,24 @@ impl QueueManager {
             }
 
             let backoff = job.next_backoff();
-            if backoff > 0 {
-                job.run_at = now_ms() + backoff;
-            }
+            let new_run_at = if backoff > 0 {
+                now_ms() + backoff
+            } else {
+                job.run_at
+            };
+            job.run_at = new_run_at;
             job.started_at = 0;
 
             if let Some(err) = error {
                 job.progress_msg = Some(err);
             }
 
-            self.write_wal(&WalEvent::Fail(job_id));
             self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
-            self.shards[idx].write().queues.entry(queue_arc).or_insert_with(BinaryHeap::new).push(job);
+            self.shards[idx].write().queues.entry(queue_arc).or_insert_with(BinaryHeap::new).push(job.clone());
+
+            // Persist to PostgreSQL
+            self.persist_fail(job_id, new_run_at, job.attempts);
+
             self.notify_shard(idx);
             return Ok(());
         }

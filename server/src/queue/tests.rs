@@ -690,7 +690,7 @@ mod tests {
             json!({"cron": true}),
             "*/60".to_string(),
             0
-        ).await;
+        ).await.unwrap();
 
         let crons = qm.list_crons().await;
         assert_eq!(crons.len(), 1);
@@ -721,7 +721,7 @@ mod tests {
             json!({}),
             "*/30".to_string(),
             100  // high priority
-        ).await;
+        ).await.unwrap();
 
         let crons = qm.list_crons().await;
         assert_eq!(crons[0].priority, 100);

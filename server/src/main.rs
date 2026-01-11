@@ -31,7 +31,7 @@ struct ConnectionState {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let use_unix = std::env::var("UNIX_SOCKET").is_ok();
-    let persistence = std::env::var("PERSIST").is_ok();
+    let database_url = std::env::var("DATABASE_URL").ok();
     let enable_http = std::env::var("HTTP").is_ok();
     let enable_grpc = std::env::var("GRPC").is_ok();
 
@@ -43,16 +43,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.to_string())
         .collect();
 
-    let queue_manager = if auth_tokens.is_empty() {
-        QueueManager::new(persistence)
-    } else {
-        println!("Authentication enabled with {} token(s)", auth_tokens.len());
-        QueueManager::with_auth_tokens(persistence, auth_tokens)
+    // Create QueueManager with optional PostgreSQL persistence
+    let queue_manager = match (&database_url, auth_tokens.is_empty()) {
+        (Some(url), true) => QueueManager::with_postgres(url).await,
+        (Some(url), false) => QueueManager::with_postgres_and_auth(url, auth_tokens).await,
+        (None, true) => QueueManager::new(false),
+        (None, false) => {
+            println!("Authentication enabled with {} token(s)", auth_tokens.len());
+            QueueManager::with_auth_tokens(false, auth_tokens)
+        }
     };
-
-    if persistence {
-        println!("Persistence enabled (WAL)");
-    }
 
     // Start HTTP server if enabled
     if enable_http {
@@ -299,8 +299,10 @@ async fn process_command(
 
         // === Cron Jobs ===
         Command::Cron { name, queue, data, schedule, priority } => {
-            queue_manager.add_cron(name, queue, data, schedule, priority).await;
-            Response::ok()
+            match queue_manager.add_cron(name, queue, data, schedule, priority).await {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
         }
         Command::CronDelete { name } => {
             if queue_manager.delete_cron(&name).await {

@@ -19,11 +19,14 @@ cargo run
 # Production (optimized)
 cargo run --release
 
-# With persistence
-PERSIST=1 cargo run --release
+# With PostgreSQL persistence
+DATABASE_URL=postgres://user:pass@localhost/magicqueue cargo run --release
 
 # With HTTP API & Dashboard
 HTTP=1 cargo run --release
+
+# With gRPC API
+GRPC=1 cargo run --release
 
 # With Unix socket
 UNIX_SOCKET=1 cargo run --release
@@ -32,15 +35,22 @@ UNIX_SOCKET=1 cargo run --release
 cargo test
 ```
 
-### Docker
+### Docker Compose (Recommended)
+
+```bash
+# Start PostgreSQL + MagicQueue
+docker-compose up -d
+
+# View logs
+docker-compose logs -f magicqueue
+```
+
+### Docker (Standalone)
 
 ```bash
 # Build and run
 docker build -t magic-queue .
 docker run -p 6789:6789 magic-queue
-
-# With persistence
-docker run -p 6789:6789 -e PERSIST=1 -v $(pwd)/data:/app magic-queue
 ```
 
 ## Architecture
@@ -50,17 +60,19 @@ docker run -p 6789:6789 -e PERSIST=1 -v $(pwd)/data:/app magic-queue
 ```
 server/src/
 ├── main.rs           # TCP/Unix socket server, command routing
-├── http.rs           # HTTP REST API (axum)
+├── http.rs           # HTTP REST API + WebSocket (axum)
+├── grpc.rs           # gRPC API (tonic)
 ├── dashboard.rs      # Web dashboard
 ├── protocol.rs       # Command/Response types, Job struct, JobState enum
 └── queue/
     ├── mod.rs        # Module exports
-    ├── types.rs      # WalEvent, RateLimiter, Shard, GlobalMetrics
-    ├── manager.rs    # QueueManager struct, WAL, get_job, get_state
+    ├── types.rs      # RateLimiter, Shard, GlobalMetrics, JobLocation
+    ├── manager.rs    # QueueManager struct, PostgreSQL, get_job, get_state
+    ├── postgres.rs   # PostgreSQL storage layer
     ├── core.rs       # Core ops: push, pull, ack, fail
     ├── features.rs   # Advanced: cancel, progress, DLQ, cron, metrics
     ├── background.rs # Background tasks: cleanup, cron runner
-    └── tests.rs      # Unit tests
+    └── tests.rs      # Unit tests (75 tests)
 ```
 
 ### Key Design Decisions
@@ -121,7 +133,7 @@ server/src/
 - Job priorities (BinaryHeap)
 - Delayed jobs (run_at timestamp)
 - Job state tracking (GETJOB/GETSTATE)
-- WAL persistence
+- PostgreSQL persistence
 
 ### Advanced
 - **Dead Letter Queue**: max_attempts → DLQ
@@ -132,8 +144,12 @@ server/src/
 - **Rate Limiting**: Token bucket per queue
 - **Concurrency Control**: Limit parallel processing
 - **Progress Tracking**: 0-100% with message
-- **Cron Jobs**: */N second intervals
+- **Cron Jobs**: Full 6-field cron expressions (sec min hour day month weekday)
 - **Pause/Resume**: Dynamic queue control
+- **WebSocket**: Real-time events with token auth
+- **SSE**: Server-Sent Events for job lifecycle
+- **Webhooks**: HTTP callbacks on job events
+- **Prometheus Metrics**: `/metrics/prometheus` endpoint
 
 ## Common Tasks
 
