@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MagicQueue - Dashboard</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3', 900: '#312e81' },
+                        dark: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
+                        accent: { cyan: '#06b6d4', emerald: '#10b981', amber: '#f59e0b', rose: '#f43f5e', violet: '#8b5cf6' }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-dark-950 text-slate-200 min-h-screen font-sans antialiased">
+    <!-- Background Effects -->
+    <div class="fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute top-0 -left-40 w-80 h-80 bg-primary-600/20 rounded-full blur-[100px]"></div>
+        <div class="absolute bottom-0 -right-40 w-96 h-96 bg-violet-600/15 rounded-full blur-[120px]"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-600/5 rounded-full blur-[150px]"></div>
+    </div>
+
+    <div class="flex min-h-screen">
+        <!-- Sidebar -->
+        <aside class="fixed left-0 top-0 h-screen w-64 glass border-r border-dark-700/50 flex flex-col z-40">
+            <!-- Logo -->
+            <div class="p-6 border-b border-dark-700/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 gradient-glow rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/25">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-white">MagicQueue</h1>
+                        <p class="text-xs text-slate-500">Job Queue System</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-1">
+                <button onclick="showSection('overview')" id="nav-overview" class="nav-item active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                    Overview
+                </button>
+                <button onclick="showSection('queues')" id="nav-queues" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                    Queues
+                </button>
+                <button onclick="showSection('jobs')" id="nav-jobs" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    Jobs Browser
+                </button>
+                <button onclick="showSection('crons')" id="nav-crons" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Cron Jobs
+                </button>
+                <button onclick="showSection('workers')" id="nav-workers" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    Workers
+                </button>
+                <button onclick="showSection('activity')" id="nav-activity" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Live Activity
+                    <span id="activity-badge" class="ml-auto px-2 py-0.5 bg-primary-500/20 text-primary-400 rounded-full text-xs font-medium hidden">0</span>
+                </button>
+                <button onclick="showSection('analytics')" id="nav-analytics" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    Analytics
+                </button>
+                <button onclick="showSection('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Settings
+                </button>
+            </nav>
+
+            <!-- Status Footer -->
+            <div class="p-4 border-t border-dark-700/50">
+                <div class="glass-light rounded-lg p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-medium text-slate-400">System Status</span>
+                        <div class="flex items-center gap-1.5">
+                            <span id="connection-status" class="status-pulse online w-2 h-2 bg-emerald-500 rounded-full"></span>
+                            <span id="connection-text" class="text-xs text-emerald-400">Connected</span>
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-500">
+                        Last update: <span id="last-update">--:--:--</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 ml-64">
+            <!-- Top Bar -->
+            <header class="sticky top-0 z-30 glass border-b border-dark-700/50">
+                <div class="flex items-center justify-between px-8 py-4">
+                    <div>
+                        <h2 id="page-title" class="text-xl font-semibold text-white">Overview</h2>
+                        <p id="page-subtitle" class="text-sm text-slate-500">Real-time system monitoring</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2 px-3 py-2 glass-light rounded-lg">
+                            <svg class="w-4 h-4 text-slate-400 htmx-indicator spinner" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            <span class="text-xs text-slate-400">Auto-refresh: <span class="text-primary-400">2s</span></span>
+                        </div>
+                        <button onclick="refreshData()" class="btn btn-ghost gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Sections -->
+            <div class="p-8">
+                <!-- Overview Section -->
+                <section id="section-overview" class="space-y-6">
+                    <!-- Stats Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="stat-card card p-6">
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-slate-400">Queued Jobs</p>
+                                    <p class="text-3xl font-bold text-white mt-2" id="stat-queued">-</p>
+                                    <p class="text-xs text-slate-500 mt-1">Ready to process</p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                </div>
+                            </div>
+                            <div class="mt-4 h-1 bg-dark-700 rounded-full overflow-hidden">
+                                <div id="bar-queued" class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card card p-6">
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-slate-400">Processing</p>
+                                    <p class="text-3xl font-bold text-white mt-2" id="stat-processing">-</p>
+                                    <p class="text-xs text-slate-500 mt-1">Currently active</p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                </div>
+                            </div>
+                            <div class="mt-4 h-1 bg-dark-700 rounded-full overflow-hidden">
+                                <div id="bar-processing" class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card card p-6">
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-slate-400">Delayed</p>
+                                    <p class="text-3xl font-bold text-white mt-2" id="stat-delayed">-</p>
+                                    <p class="text-xs text-slate-500 mt-1">Scheduled</p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </div>
+                            </div>
+                            <div class="mt-4 h-1 bg-dark-700 rounded-full overflow-hidden">
+                                <div id="bar-delayed" class="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="stat-card card p-6">
+                            <div class="flex items-start justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-slate-400">Failed (DLQ)</p>
+                                    <p class="text-3xl font-bold text-white mt-2" id="stat-dlq">-</p>
+                                    <p class="text-xs text-slate-500 mt-1">Needs attention</p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-rose-500/10 flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                </div>
+                            </div>
+                            <div class="mt-4 h-1 bg-dark-700 rounded-full overflow-hidden">
+                                <div id="bar-dlq" class="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Row -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="card p-5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-primary-500/10 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Total Pushed</p>
+                                    <p class="text-xl font-semibold text-white" id="metric-pushed">-</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Total Completed</p>
+                                    <p class="text-xl font-semibold text-emerald-400" id="metric-completed">-</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Total Failed</p>
+                                    <p class="text-xl font-semibold text-rose-400" id="metric-failed">-</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card p-5">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-400">Throughput</p>
+                                    <p class="text-xl font-semibold text-cyan-400" id="metric-throughput">-</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="card">
+                            <div class="card-header flex items-center justify-between">
+                                <h3 class="text-lg font-semibold text-white">Throughput</h3>
+                                <div class="flex gap-2">
+                                    <button onclick="setChartRange('5m')" id="range-5m" class="px-2 py-1 text-xs rounded bg-primary-500 text-white">5m</button>
+                                    <button onclick="setChartRange('15m')" id="range-15m" class="px-2 py-1 text-xs rounded bg-dark-700 text-slate-400 hover:bg-dark-600">15m</button>
+                                    <button onclick="setChartRange('1h')" id="range-1h" class="px-2 py-1 text-xs rounded bg-dark-700 text-slate-400 hover:bg-dark-600">1h</button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-64"><canvas id="throughput-chart"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="text-lg font-semibold text-white">Job Distribution</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-64"><canvas id="distribution-chart"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Queue List -->
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-white">Active Queues</h3>
+                            <button onclick="showSection('queues')" class="text-sm text-primary-400 hover:text-primary-300">View All</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-dark-700/50">
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Queue</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Processing</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">DLQ</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="overview-queues" class="divide-y divide-dark-700/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Queues Section -->
+                <section id="section-queues" class="hidden space-y-6">
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Queue Management</h3>
+                                <p class="text-sm text-slate-500 mt-1">Monitor and control your queues</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <input type="text" id="queue-search" placeholder="Search queues..." class="input w-64" oninput="filterQueues()">
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-dark-700/50">
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Queue Name</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Processing</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">DLQ</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Rate Limit</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Concurrency</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queues-table" class="divide-y divide-dark-700/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Jobs Browser Section -->
+                <section id="section-jobs" class="hidden space-y-6">
+                    <!-- Filters -->
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="flex flex-wrap gap-4 items-end">
+                                <div class="flex-1 min-w-[200px]">
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Search Job ID</label>
+                                    <input type="text" id="job-search" placeholder="Enter job ID..." class="input w-full">
+                                </div>
+                                <div class="w-48">
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Queue</label>
+                                    <select id="job-queue-filter" class="input select w-full">
+                                        <option value="">All Queues</option>
+                                    </select>
+                                </div>
+                                <div class="w-48">
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">State</label>
+                                    <select id="job-state-filter" class="input select w-full">
+                                        <option value="">All States</option>
+                                        <option value="waiting">Waiting</option>
+                                        <option value="delayed">Delayed</option>
+                                        <option value="active">Active</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="failed">Failed</option>
+                                    </select>
+                                </div>
+                                <button onclick="searchJobs()" class="btn btn-primary">Search</button>
+                                <button onclick="clearJobFilters()" class="btn btn-ghost">Clear</button>
+                            </div>
+                            <div id="bulk-actions" class="hidden mt-4 pt-4 border-t border-dark-700/50 flex items-center gap-3">
+                                <span class="text-sm text-slate-400"><span id="selected-count">0</span> selected</span>
+                                <button onclick="window.dashboard.bulkCancel()" class="btn btn-danger text-xs py-1.5">Cancel Selected</button>
+                                <button onclick="window.dashboard.bulkRetry()" class="btn btn-success text-xs py-1.5">Retry Selected</button>
+                                <button onclick="clearSelection()" class="btn btn-ghost text-xs py-1.5">Clear Selection</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Jobs Table -->
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div class="flex items-center gap-4">
+                                <h3 class="text-lg font-semibold text-white">Jobs</h3>
+                                <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                                    <input type="checkbox" id="select-all-jobs" onchange="toggleSelectAll()">
+                                    Select All
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span class="text-sm text-slate-500" id="jobs-count">0 jobs</span>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="prevJobPage()" id="prev-page-btn" class="btn btn-ghost py-1.5 px-3 text-xs" disabled>Prev</button>
+                                    <span class="text-sm text-slate-400" id="page-info">Page 1</span>
+                                    <button onclick="nextJobPage()" id="next-page-btn" class="btn btn-ghost py-1.5 px-3 text-xs">Next</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-dark-700/50">
+                                        <th class="px-4 py-3 w-10"></th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Queue</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">State</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Priority</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Attempts</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Created</th>
+                                        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jobs-table" class="divide-y divide-dark-700/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Cron Jobs Section -->
+                <section id="section-crons" class="hidden space-y-6">
+                    <!-- Create Cron Form -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-white">Create Cron Job</h3>
+                            <p class="text-sm text-slate-500 mt-1">Schedule recurring jobs with cron expressions</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Name</label>
+                                    <input type="text" id="cron-name" placeholder="my-cron-job" class="input w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Queue</label>
+                                    <input type="text" id="cron-queue" placeholder="tasks" class="input w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Schedule</label>
+                                    <input type="text" id="cron-schedule" placeholder="*/5 * * * *" class="input w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Priority</label>
+                                    <input type="number" id="cron-priority" value="0" class="input w-full">
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Data (JSON)</label>
+                                    <input type="text" id="cron-data" placeholder='{"key": "value"}' class="input w-full">
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center gap-4">
+                                <button onclick="window.dashboard.createCron()" class="btn btn-primary">Create Cron Job</button>
+                                <span class="text-xs text-slate-500">Format: sec min hour day month weekday (6-field) or min hour day month weekday (5-field)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Crons Table -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-white">Scheduled Cron Jobs</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-dark-700/50">
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Queue</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Schedule</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Priority</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Next Run</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Data</th>
+                                        <th class="px-6 py-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="crons-table" class="divide-y divide-dark-700/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Workers Section -->
+                <section id="section-workers" class="hidden space-y-6">
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Connected Workers</h3>
+                                <p class="text-sm text-slate-500 mt-1">Workers with heartbeat in last 30s are online</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                <span class="text-sm text-slate-400">Online</span>
+                                <span class="w-2 h-2 bg-rose-500 rounded-full ml-4"></span>
+                                <span class="text-sm text-slate-400">Offline</span>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-dark-700/50">
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Worker ID</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Queues</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Concurrency</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Jobs Processed</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Last Heartbeat</th>
+                                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="workers-table" class="divide-y divide-dark-700/30"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Live Activity Section -->
+                <section id="section-activity" class="hidden space-y-6">
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <h3 class="text-lg font-semibold text-white">Live Activity Feed</h3>
+                                <span id="event-count" class="px-2.5 py-1 bg-primary-500/20 text-primary-400 rounded-full text-xs font-medium">0 events</span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <label class="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
+                                    <input type="checkbox" id="auto-scroll" checked>
+                                    Auto-scroll
+                                </label>
+                                <button onclick="clearActivityFeed()" class="btn btn-ghost text-xs py-1.5">Clear</button>
+                            </div>
+                        </div>
+                        <div id="activity-feed" class="h-[600px] overflow-y-auto p-4 space-y-2"></div>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section id="section-analytics" class="hidden space-y-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="text-lg font-semibold text-white">Throughput Over Time</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-72"><canvas id="analytics-throughput"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="text-lg font-semibold text-white">Jobs in System</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-72"><canvas id="analytics-jobs"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="text-lg font-semibold text-white">Completed vs Failed</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-72"><canvas id="analytics-completion"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="text-lg font-semibold text-white">Average Latency (ms)</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="h-72"><canvas id="analytics-latency"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Settings Section -->
+                <section id="section-settings" class="hidden space-y-6">
+                    <!-- Server Info -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-white">Server Information</h3>
+                            <p class="text-sm text-slate-500 mt-1">Current server configuration and status</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div class="glass-light rounded-lg p-4">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <div class="w-8 h-8 rounded-lg bg-primary-500/20 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+                                        </div>
+                                        <span class="text-xs font-medium text-slate-400">TCP Port</span>
+                                    </div>
+                                    <p class="text-xl font-semibold text-white" id="settings-tcp-port">6789</p>
+                                </div>
+                                <div class="glass-light rounded-lg p-4">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+                                        </div>
+                                        <span class="text-xs font-medium text-slate-400">HTTP Port</span>
+                                    </div>
+                                    <p class="text-xl font-semibold text-white" id="settings-http-port">6790</p>
+                                </div>
+                                <div class="glass-light rounded-lg p-4">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <div class="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        </div>
+                                        <span class="text-xs font-medium text-slate-400">Uptime</span>
+                                    </div>
+                                    <p class="text-xl font-semibold text-white" id="settings-uptime">-</p>
+                                </div>
+                                <div class="glass-light rounded-lg p-4">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+                                        </div>
+                                        <span class="text-xs font-medium text-slate-400">Version</span>
+                                    </div>
+                                    <p class="text-xl font-semibold text-white" id="settings-version">0.1.0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Database Configuration -->
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Database / Persistence</h3>
+                                <p class="text-sm text-slate-500 mt-1">PostgreSQL connection for persistent storage</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span id="db-status-indicator" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                <span id="db-status-text" class="text-sm text-slate-400">Not configured</span>
+                            </div>
+                        </div>
+                        <div class="card-body space-y-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-2">Database URL</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settings-db-url" placeholder="postgres://user:password@localhost:5432/magicqueue" class="input flex-1 font-mono text-sm">
+                                    <button onclick="window.dashboard.testDbConnection()" class="btn btn-ghost">Test</button>
+                                    <button onclick="window.dashboard.saveDbSettings()" class="btn btn-primary">Save</button>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2">Format: postgres://user:password@host:port/database</p>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="glass-light rounded-lg p-4">
+                                    <p class="text-xs text-slate-400 mb-1">Connection Pool</p>
+                                    <p class="text-lg font-semibold text-white" id="db-pool-size">-</p>
+                                </div>
+                                <div class="glass-light rounded-lg p-4">
+                                    <p class="text-xs text-slate-400 mb-1">Active Connections</p>
+                                    <p class="text-lg font-semibold text-white" id="db-active-conn">-</p>
+                                </div>
+                                <div class="glass-light rounded-lg p-4">
+                                    <p class="text-xs text-slate-400 mb-1">Last Sync</p>
+                                    <p class="text-lg font-semibold text-white" id="db-last-sync">-</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Authentication -->
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Authentication</h3>
+                                <p class="text-sm text-slate-500 mt-1">API tokens for secure access</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span id="auth-status-indicator" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                                <span id="auth-status-text" class="text-sm text-slate-400">Disabled</span>
+                            </div>
+                        </div>
+                        <div class="card-body space-y-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-2">Auth Tokens (comma-separated)</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="settings-auth-tokens" placeholder="token1,token2,token3" class="input flex-1 font-mono text-sm">
+                                    <button onclick="window.dashboard.toggleTokenVisibility()" class="btn btn-ghost">
+                                        <svg id="token-eye-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                    </button>
+                                    <button onclick="window.dashboard.saveAuthSettings()" class="btn btn-primary">Save</button>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2">Leave empty to disable authentication</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-2">Generate New Token</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="generated-token" class="input flex-1 font-mono text-sm" readonly placeholder="Click Generate to create a new token">
+                                    <button onclick="window.dashboard.generateToken()" class="btn btn-ghost">Generate</button>
+                                    <button onclick="window.dashboard.copyToken()" class="btn btn-ghost">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Queue Defaults -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-white">Queue Defaults</h3>
+                            <p class="text-sm text-slate-500 mt-1">Default settings for new queues</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Default Timeout (ms)</label>
+                                    <input type="number" id="settings-default-timeout" placeholder="30000" class="input w-full" value="30000">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Default Max Attempts</label>
+                                    <input type="number" id="settings-default-attempts" placeholder="3" class="input w-full" value="3">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Default Backoff (ms)</label>
+                                    <input type="number" id="settings-default-backoff" placeholder="1000" class="input w-full" value="1000">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-2">Default TTL (ms)</label>
+                                    <input type="number" id="settings-default-ttl" placeholder="0" class="input w-full" value="0">
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <button onclick="window.dashboard.saveQueueDefaults()" class="btn btn-primary">Save Defaults</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cleanup Settings -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-white">Cleanup & Maintenance</h3>
+                            <p class="text-sm text-slate-500 mt-1">Automatic cleanup and maintenance settings</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-400 mb-2">Max Completed Jobs</label>
+                                        <input type="number" id="settings-max-completed" placeholder="50000" class="input w-full" value="50000">
+                                        <p class="text-xs text-slate-500 mt-1">Jobs cleaned when exceeding this limit</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-400 mb-2">Max Job Results</label>
+                                        <input type="number" id="settings-max-results" placeholder="5000" class="input w-full" value="5000">
+                                        <p class="text-xs text-slate-500 mt-1">Results cleaned when exceeding this limit</p>
+                                    </div>
+                                </div>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-400 mb-2">Cleanup Interval (seconds)</label>
+                                        <input type="number" id="settings-cleanup-interval" placeholder="60" class="input w-full" value="60">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-400 mb-2">Metrics History Size</label>
+                                        <input type="number" id="settings-metrics-history" placeholder="1000" class="input w-full" value="1000">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex items-center gap-4">
+                                <button onclick="window.dashboard.saveCleanupSettings()" class="btn btn-primary">Save Settings</button>
+                                <button onclick="window.dashboard.runCleanupNow()" class="btn btn-ghost">Run Cleanup Now</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Danger Zone -->
+                    <div class="card border-rose-500/30">
+                        <div class="card-header">
+                            <h3 class="text-lg font-semibold text-rose-400">Danger Zone</h3>
+                            <p class="text-sm text-slate-500 mt-1">Destructive actions - use with caution</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="flex flex-wrap gap-4">
+                                <button onclick="window.dashboard.clearAllQueues()" class="btn btn-danger">Clear All Queues</button>
+                                <button onclick="window.dashboard.clearAllDlq()" class="btn btn-danger">Clear All DLQ</button>
+                                <button onclick="window.dashboard.clearCompletedJobs()" class="btn btn-danger">Clear Completed Jobs</button>
+                                <button onclick="window.dashboard.resetMetrics()" class="btn btn-danger">Reset Metrics</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Job Detail Modal -->
+    <div id="job-modal" class="modal-overlay hidden">
+        <div class="card w-full max-w-2xl max-h-[85vh] overflow-hidden modal-content">
+            <div class="card-header flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-white">Job Details</h3>
+                <button onclick="window.dashboard.closeJobModal()" class="p-2 hover:bg-dark-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="card-body overflow-y-auto max-h-[60vh]" id="job-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Queue Settings Modal -->
+    <div id="queue-modal" class="modal-overlay hidden">
+        <div class="card w-full max-w-md modal-content">
+            <div class="card-header flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-white">Queue Settings</h3>
+                <button onclick="window.dashboard.closeQueueModal()" class="p-2 hover:bg-dark-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="card-body space-y-4" id="queue-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Dashboard JavaScript -->
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/settings.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

@@ -68,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 .expect("Failed to bind HTTP listener");
             println!("HTTP API listening on port {}", http_port);
+            println!("Dashboard available at http://localhost:{}", http_port);
             axum::serve(listener, router).await.expect("HTTP server error");
         });
     }
