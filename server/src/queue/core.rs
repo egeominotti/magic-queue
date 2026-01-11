@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::time::Duration;
 
 use crate::protocol::{next_id, Job, JobInput};
-use super::types::{intern, now_ms, WalEvent};
+use super::types::{intern, now_ms, JobLocation, WalEvent};
 use super::manager::QueueManager;
 
 impl QueueManager {
@@ -87,11 +87,13 @@ impl QueueManager {
 
                 if !deps_satisfied {
                     shard.waiting_deps.insert(job.id, job.clone());
+                    self.index_job(job.id, JobLocation::WaitingDeps { shard_idx: idx });
                     return Ok(job);
                 }
             }
 
             shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new).push(job.clone());
+            self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
         }
 
         self.metrics.record_push(1);
@@ -131,9 +133,11 @@ impl QueueManager {
             let mut shard = self.shards[idx].write();
             let heap = shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new);
             for job in created_jobs {
+                self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job);
             }
             for job in waiting_jobs {
+                self.index_job(job.id, JobLocation::WaitingDeps { shard_idx: idx });
                 shard.waiting_deps.insert(job.id, job);
             }
         }
@@ -211,6 +215,7 @@ impl QueueManager {
 
             match pull_result {
                 PullResult::Job(job) => {
+                    self.index_job(job.id, JobLocation::Processing);
                     self.processing.write().insert(job.id, job.clone());
                     return job;
                 }
@@ -310,6 +315,7 @@ impl QueueManager {
                 BatchResult::Jobs(jobs) => {
                     let mut proc = self.processing.write();
                     for job in jobs {
+                        self.index_job(job.id, JobLocation::Processing);
                         proc.insert(job.id, job.clone());
                         result.push(job);
                     }
@@ -359,6 +365,7 @@ impl QueueManager {
             }
 
             self.completed_jobs.write().insert(job_id);
+            self.index_job(job_id, JobLocation::Completed);
             self.metrics.record_complete(now_ms() - job.created_at);
             self.notify_subscribers("completed", &job.queue, &job);
             return Ok(());
@@ -389,6 +396,7 @@ impl QueueManager {
                     }
                 }
                 self.completed_jobs.write().insert(id);
+                self.index_job(id, JobLocation::Completed);
                 acked += 1;
             }
         }
@@ -422,6 +430,7 @@ impl QueueManager {
             if job.should_go_to_dlq() {
                 self.write_wal(&WalEvent::Dlq(job.clone()));
                 self.notify_subscribers("failed", &job.queue, &job);
+                self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
                 self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job);
                 self.metrics.record_fail();
                 return Ok(());
@@ -438,6 +447,7 @@ impl QueueManager {
             }
 
             self.write_wal(&WalEvent::Fail(job_id));
+            self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
             self.shards[idx].write().queues.entry(queue_arc).or_insert_with(BinaryHeap::new).push(job);
             self.notify_shard(idx);
             return Ok(());

@@ -9,7 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 use tokio::sync::Notify;
 
-use crate::protocol::Job;
+use crate::protocol::{Job, JobState};
 
 // ============== Coarse Timestamp ==============
 // Cached timestamp updated every 1ms - avoids syscall per operation
@@ -101,6 +101,43 @@ pub enum WalEvent {
     Fail(u64),
     Cancel(u64),
     Dlq(Job),
+}
+
+// ============== Job Location Index ==============
+// O(1) lookup for job state - avoids scanning all shards
+
+#[derive(Debug, Clone, Copy)]
+pub enum JobLocation {
+    /// Job is in a queue (waiting or delayed)
+    Queue { shard_idx: usize },
+    /// Job is being processed
+    Processing,
+    /// Job is in DLQ
+    Dlq { shard_idx: usize },
+    /// Job is waiting for dependencies
+    WaitingDeps { shard_idx: usize },
+    /// Job completed (may have result stored)
+    Completed,
+}
+
+impl JobLocation {
+    /// Convert location to JobState, checking delayed status if needed
+    #[inline]
+    pub fn to_state(self, run_at: u64, now: u64) -> JobState {
+        match self {
+            JobLocation::Queue { .. } => {
+                if run_at > now {
+                    JobState::Delayed
+                } else {
+                    JobState::Waiting
+                }
+            }
+            JobLocation::Processing => JobState::Active,
+            JobLocation::Dlq { .. } => JobState::Failed,
+            JobLocation::WaitingDeps { .. } => JobState::WaitingChildren,
+            JobLocation::Completed => JobState::Completed,
+        }
+    }
 }
 
 // ============== Rate Limiter ==============

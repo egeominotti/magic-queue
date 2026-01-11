@@ -5,67 +5,75 @@ use serde_json::Value;
 use std::sync::atomic::Ordering;
 
 use crate::protocol::{CronJob, Job, MetricsData, QueueInfo, QueueMetrics};
-use super::types::{intern, ConcurrencyLimiter, RateLimiter, Subscriber, WalEvent};
+use super::types::{intern, ConcurrencyLimiter, JobLocation, RateLimiter, Subscriber, WalEvent};
 use super::manager::QueueManager;
 
 impl QueueManager {
     pub async fn cancel(&self, job_id: u64) -> Result<(), String> {
-        // Try global processing map first
-        if let Some(job) = self.processing.write().remove(&job_id) {
-            // Release concurrency
-            let idx = Self::shard_index(&job.queue);
-            let queue_arc = intern(&job.queue);
-            {
-                let mut shard = self.shards[idx].write();
-                let state = shard.get_state(&queue_arc);
-                if let Some(ref mut conc) = state.concurrency {
-                    conc.release();
-                }
+        // Use job_index for O(1) lookup of location
+        let location = self.job_index.read().get(&job_id).copied();
 
-                if let Some(ref key) = job.unique_key {
-                    if let Some(keys) = shard.unique_keys.get_mut(&queue_arc) {
-                        keys.remove(key);
+        match location {
+            Some(JobLocation::Processing) => {
+                if let Some(job) = self.processing.write().remove(&job_id) {
+                    let idx = Self::shard_index(&job.queue);
+                    let queue_arc = intern(&job.queue);
+                    {
+                        let mut shard = self.shards[idx].write();
+                        let state = shard.get_state(&queue_arc);
+                        if let Some(ref mut conc) = state.concurrency {
+                            conc.release();
+                        }
+                        if let Some(ref key) = job.unique_key {
+                            if let Some(keys) = shard.unique_keys.get_mut(&queue_arc) {
+                                keys.remove(key);
+                            }
+                        }
                     }
+                    self.unindex_job(job_id);
+                    self.write_wal(&WalEvent::Cancel(job_id));
+                    return Ok(());
                 }
             }
-            self.write_wal(&WalEvent::Cancel(job_id));
-            return Ok(());
-        }
-
-        // Try waiting deps in all shards
-        for shard in &self.shards {
-            if shard.write().waiting_deps.remove(&job_id).is_some() {
-                self.write_wal(&WalEvent::Cancel(job_id));
-                return Ok(());
+            Some(JobLocation::WaitingDeps { shard_idx }) => {
+                if self.shards[shard_idx].write().waiting_deps.remove(&job_id).is_some() {
+                    self.unindex_job(job_id);
+                    self.write_wal(&WalEvent::Cancel(job_id));
+                    return Ok(());
+                }
             }
-        }
+            Some(JobLocation::Queue { shard_idx }) => {
+                let mut shard = self.shards[shard_idx].write();
+                let mut found_key: Option<(Arc<str>, Option<String>)> = None;
 
-        // Search in queues (expensive)
-        for shard in &self.shards {
-            let mut shard_w = shard.write();
-            let mut found_job: Option<(Arc<str>, Option<String>)> = None;
-
-            for (queue_name, heap) in shard_w.queues.iter_mut() {
-                let jobs: Vec<_> = std::mem::take(heap).into_vec();
-                for job in jobs {
-                    if job.id == job_id {
-                        found_job = Some((Arc::clone(queue_name), job.unique_key.clone()));
-                    } else {
-                        heap.push(job);
+                for (queue_name, heap) in shard.queues.iter_mut() {
+                    let jobs: Vec<_> = std::mem::take(heap).into_vec();
+                    for job in jobs {
+                        if job.id == job_id {
+                            found_key = Some((Arc::clone(queue_name), job.unique_key.clone()));
+                        } else {
+                            heap.push(job);
+                        }
                     }
+                    if found_key.is_some() { break; }
                 }
-                if found_job.is_some() { break; }
-            }
 
-            if let Some((queue_name, unique_key)) = found_job {
-                if let Some(key) = unique_key {
-                    if let Some(keys) = shard_w.unique_keys.get_mut(&queue_name) {
-                        keys.remove(&key);
+                if let Some((queue_name, unique_key)) = found_key {
+                    if let Some(key) = unique_key {
+                        if let Some(keys) = shard.unique_keys.get_mut(&queue_name) {
+                            keys.remove(&key);
+                        }
                     }
+                    drop(shard);
+                    self.unindex_job(job_id);
+                    self.write_wal(&WalEvent::Cancel(job_id));
+                    return Ok(());
                 }
-                self.write_wal(&WalEvent::Cancel(job_id));
-                return Ok(());
             }
+            Some(JobLocation::Dlq { .. }) | Some(JobLocation::Completed) => {
+                return Err(format!("Job {} cannot be cancelled (already completed/failed)", job_id));
+            }
+            None => {}
         }
 
         Err(format!("Job {} not found", job_id))
@@ -127,6 +135,7 @@ impl QueueManager {
         if retried > 0 {
             let heap = shard.queues.entry(Arc::clone(&queue_arc)).or_insert_with(BinaryHeap::new);
             for job in jobs_to_retry {
+                self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job);
             }
             drop(shard);

@@ -11,7 +11,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 
 use crate::protocol::{CronJob, Job, JobState};
-use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, Shard, Subscriber, WalEvent};
+use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, JobLocation, Shard, Subscriber, WalEvent};
 
 const WAL_PATH: &str = "magic-queue.wal";
 const WAL_MAX_SIZE: u64 = 100 * 1024 * 1024; // 100MB max before compaction
@@ -29,6 +29,8 @@ pub struct QueueManager {
     pub(crate) subscribers: RwLock<Vec<Subscriber>>,
     pub(crate) auth_tokens: RwLock<FxHashSet<String>>,
     pub(crate) metrics: GlobalMetrics,
+    /// O(1) job location index - maps job_id to its current location
+    pub(crate) job_index: RwLock<FxHashMap<u64, JobLocation>>,
 }
 
 impl QueueManager {
@@ -56,6 +58,7 @@ impl QueueManager {
             subscribers: RwLock::new(Vec::new()),
             auth_tokens: RwLock::new(FxHashSet::default()),
             metrics: GlobalMetrics::new(),
+            job_index: RwLock::new(FxHashMap::with_capacity_and_hasher(65536, Default::default())),
         });
 
         if persistence {
@@ -120,19 +123,25 @@ impl QueueManager {
 
             match event {
                 WalEvent::Push(job) => {
+                    let job_id = job.id;
                     let idx = Self::shard_index(&job.queue);
                     let queue_name = intern(&job.queue);
                     let mut shard = self.shards[idx].write();
                     shard.queues.entry(queue_name)
                         .or_insert_with(BinaryHeap::new).push(job);
+                    self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                     count += 1;
                 }
                 WalEvent::Ack(id) => {
                     self.processing.write().remove(&id);
+                    self.index_job(id, JobLocation::Completed);
+                    self.completed_jobs.write().insert(id);
                 }
                 WalEvent::AckWithResult { id, result } => {
                     self.processing.write().remove(&id);
                     self.job_results.write().insert(id, result);
+                    self.index_job(id, JobLocation::Completed);
+                    self.completed_jobs.write().insert(id);
                 }
                 WalEvent::Fail(id) => {
                     if let Some(job) = self.processing.write().remove(&id) {
@@ -141,16 +150,20 @@ impl QueueManager {
                         self.shards[idx].write().queues
                             .entry(queue_name)
                             .or_insert_with(BinaryHeap::new).push(job);
+                        self.index_job(id, JobLocation::Queue { shard_idx: idx });
                     }
                 }
                 WalEvent::Cancel(id) => {
                     self.processing.write().remove(&id);
+                    self.unindex_job(id);
                 }
                 WalEvent::Dlq(job) => {
+                    let job_id = job.id;
                     let idx = Self::shard_index(&job.queue);
                     let queue_name = intern(&job.queue);
                     self.shards[idx].write().dlq
                         .entry(queue_name).or_default().push_back(job);
+                    self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
                 }
             }
         }
@@ -282,110 +295,87 @@ impl QueueManager {
         }
     }
 
-    /// Get job by ID with its current state
-    /// Searches all locations: processing, queues, dlq, waiting_deps, completed
+    /// Get job by ID with its current state - O(1) lookup via job_index
     pub fn get_job(&self, id: u64) -> (Option<Job>, JobState) {
         let now = now_ms();
 
-        // Check processing (Active)
-        {
-            let processing = self.processing.read();
-            if let Some(job) = processing.get(&id) {
-                return (Some(job.clone()), JobState::Active);
+        // O(1) lookup in index
+        let location = match self.job_index.read().get(&id) {
+            Some(&loc) => loc,
+            None => return (None, JobState::Unknown),
+        };
+
+        match location {
+            JobLocation::Processing => {
+                let job = self.processing.read().get(&id).cloned();
+                let state = job.as_ref()
+                    .map(|j| location.to_state(j.run_at, now))
+                    .unwrap_or(JobState::Active);
+                (job, state)
             }
-        }
-
-        // Check completed jobs
-        {
-            let completed = self.completed_jobs.read();
-            if completed.contains(&id) {
-                return (None, JobState::Completed);
-            }
-        }
-
-        // Search through all shards
-        for shard in &self.shards {
-            let s = shard.read();
-
-            // Check queues (Waiting/Delayed)
-            for heap in s.queues.values() {
-                for job in heap.iter() {
-                    if job.id == id {
-                        let state = if job.run_at > now {
-                            JobState::Delayed
-                        } else {
-                            JobState::Waiting
-                        };
-                        return (Some(job.clone()), state);
+            JobLocation::Queue { shard_idx } => {
+                let shard = self.shards[shard_idx].read();
+                for heap in shard.queues.values() {
+                    if let Some(job) = heap.iter().find(|j| j.id == id) {
+                        return (Some(job.clone()), location.to_state(job.run_at, now));
                     }
                 }
+                (None, JobState::Unknown)
             }
-
-            // Check DLQ (Failed)
-            for dlq in s.dlq.values() {
-                for job in dlq.iter() {
-                    if job.id == id {
+            JobLocation::Dlq { shard_idx } => {
+                let shard = self.shards[shard_idx].read();
+                for dlq in shard.dlq.values() {
+                    if let Some(job) = dlq.iter().find(|j| j.id == id) {
                         return (Some(job.clone()), JobState::Failed);
                     }
                 }
+                (None, JobState::Unknown)
             }
-
-            // Check waiting_deps (WaitingChildren)
-            if let Some(job) = s.waiting_deps.get(&id) {
-                return (Some(job.clone()), JobState::WaitingChildren);
+            JobLocation::WaitingDeps { shard_idx } => {
+                let shard = self.shards[shard_idx].read();
+                let job = shard.waiting_deps.get(&id).cloned();
+                (job, JobState::WaitingChildren)
+            }
+            JobLocation::Completed => {
+                // Job completed, no data stored (only result if any)
+                (None, JobState::Completed)
             }
         }
-
-        // Not found
-        (None, JobState::Unknown)
     }
 
-    /// Get only the state of a job by ID (lighter than get_job)
+    /// Get only the state of a job by ID - O(1) lookup
+    #[inline]
     pub fn get_state(&self, id: u64) -> JobState {
         let now = now_ms();
 
-        // Check processing (Active)
-        if self.processing.read().contains_key(&id) {
-            return JobState::Active;
-        }
-
-        // Check completed jobs
-        if self.completed_jobs.read().contains(&id) {
-            return JobState::Completed;
-        }
-
-        // Search through all shards
-        for shard in &self.shards {
-            let s = shard.read();
-
-            // Check queues (Waiting/Delayed)
-            for heap in s.queues.values() {
-                for job in heap.iter() {
-                    if job.id == id {
-                        return if job.run_at > now {
-                            JobState::Delayed
-                        } else {
-                            JobState::Waiting
-                        };
+        match self.job_index.read().get(&id) {
+            Some(&location) => {
+                // For Queue state, we need run_at to determine Waiting vs Delayed
+                if let JobLocation::Queue { shard_idx } = location {
+                    let shard = self.shards[shard_idx].read();
+                    for heap in shard.queues.values() {
+                        if let Some(job) = heap.iter().find(|j| j.id == id) {
+                            return location.to_state(job.run_at, now);
+                        }
                     }
+                    JobState::Unknown
+                } else {
+                    location.to_state(0, now)
                 }
             }
-
-            // Check DLQ (Failed)
-            for dlq in s.dlq.values() {
-                for job in dlq.iter() {
-                    if job.id == id {
-                        return JobState::Failed;
-                    }
-                }
-            }
-
-            // Check waiting_deps (WaitingChildren)
-            if s.waiting_deps.contains_key(&id) {
-                return JobState::WaitingChildren;
-            }
+            None => JobState::Unknown,
         }
+    }
 
-        JobState::Unknown
+    /// Track job location in index
+    #[inline]
+    pub(crate) fn index_job(&self, id: u64, location: JobLocation) {
+        self.job_index.write().insert(id, location);
+    }
+
+    /// Remove job from index
+    #[inline]
+    pub(crate) fn unindex_job(&self, id: u64) {
+        self.job_index.write().remove(&id);
     }
 }
