@@ -1,15 +1,11 @@
-# MagicQueue TypeScript/Node.js SDK
+# MagicQueue TypeScript SDK
 
-Official TypeScript/Node.js client for [MagicQueue](https://github.com/egeominotti/magic-queue) - High-Performance Job Queue.
+Official TypeScript client for [MagicQueue](https://github.com/egeominotti/magic-queue) - High-Performance Job Queue.
 
 ## Installation
 
 ```bash
-npm install magicqueue
-# or
-yarn add magicqueue
-# or
-pnpm add magicqueue
+bun add magicqueue
 ```
 
 ## Quick Start

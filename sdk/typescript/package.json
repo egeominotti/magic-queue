@@ -1,17 +1,18 @@
 {
   "name": "magicqueue",
   "version": "1.0.0",
-  "description": "Official TypeScript/Node.js SDK for MagicQueue - High-Performance Job Queue",
+  "description": "Official TypeScript SDK for MagicQueue - High-Performance Job Queue",
   "main": "dist/index.js",
+  "module": "src/index.ts",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "jest",
-    "prepublishOnly": "npm run build"
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "typecheck": "tsc --noEmit",
+    "example": "bun run examples/01-basic-usage.ts"
   },
   "keywords": [
     "queue",
@@ -19,7 +20,8 @@
     "task-queue",
     "background-jobs",
     "worker",
-    "magicqueue"
+    "magicqueue",
+    "bun"
   ],
   "author": "",
   "license": "MIT",
@@ -30,13 +32,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/ws": "^8.5.10",
     "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "ws": "^8.16.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
   }
 }
