@@ -35,6 +35,18 @@ UNIX_SOCKET=1 cargo run --release
 cargo test
 ```
 
+### TypeScript SDK (Bun)
+
+```bash
+cd sdk/typescript
+
+# Run comprehensive API tests
+bun run examples/comprehensive-test.ts
+
+# Run stress tests
+bun run examples/stress-test.ts
+```
+
 ### Docker Compose (Recommended)
 
 ```bash
@@ -215,3 +227,70 @@ async fn test_feature_name() {
 ### gRPC Streaming
 - Stream connections use timeout-based polling to detect client disconnects
 - Prevents resource leaks from abandoned streams
+
+## Stress Test Results
+
+The system has been validated with 33 stress tests:
+
+| Test | Result |
+|------|--------|
+| Concurrent Push (10 connections) | 59,000 ops/sec |
+| Batch Operations (10K jobs) | Push: 14ms, Pull+Ack: 29ms |
+| Large Payloads (500KB) | Integrity preserved |
+| Many Queues (50 simultaneous) | All processed |
+| Rate Limiting | Enforced correctly |
+| Concurrency Limit (5) | Max concurrent respected |
+| DLQ Flood (100 jobs) | 100% to DLQ, 100% retry |
+| Rapid Cancel (100 concurrent) | 100% cancelled |
+| Invalid Input (7 attacks) | 100% rejected |
+| Connection Churn (50 cycles) | 100% success |
+| Unique Key Collision (50 concurrent) | Deduplication works |
+| Sustained Load (30s) | 22K push/s, 11K pull/s, 0% errors |
+
+## SDK Structure
+
+```
+sdk/typescript/
+├── src/
+│   ├── index.ts    # Main exports
+│   ├── client.ts   # MagicQueue client (TCP/HTTP)
+│   ├── worker.ts   # Worker class for job processing
+│   └── types.ts    # TypeScript type definitions
+└── examples/
+    ├── comprehensive-test.ts  # 34 API tests
+    └── stress-test.ts         # 33 stress tests
+```
+
+### SDK Client Methods
+
+| Method | Description |
+|--------|-------------|
+| `connect()` | Connect to server |
+| `close()` | Close connection |
+| `push(queue, data, options?)` | Push a job |
+| `pushBatch(queue, jobs)` | Push multiple jobs |
+| `pull(queue)` | Pull a job (blocking) |
+| `pullBatch(queue, count)` | Pull multiple jobs |
+| `ack(jobId, result?)` | Acknowledge job |
+| `ackBatch(jobIds)` | Acknowledge multiple jobs |
+| `fail(jobId, error?)` | Fail a job |
+| `cancel(jobId)` | Cancel a pending job |
+| `progress(jobId, progress, message?)` | Update progress |
+| `getProgress(jobId)` | Get job progress |
+| `getJob(jobId)` | Get job with state |
+| `getState(jobId)` | Get job state only |
+| `getResult(jobId)` | Get job result |
+| `getDlq(queue, count?)` | Get DLQ jobs |
+| `retryDlq(queue, jobId?)` | Retry DLQ jobs |
+| `pause(queue)` | Pause a queue |
+| `resume(queue)` | Resume a queue |
+| `setRateLimit(queue, limit)` | Set rate limit |
+| `clearRateLimit(queue)` | Clear rate limit |
+| `setConcurrency(queue, limit)` | Set concurrency limit |
+| `clearConcurrency(queue)` | Clear concurrency limit |
+| `listQueues()` | List all queues |
+| `addCron(name, options)` | Add cron job |
+| `deleteCron(name)` | Delete cron job |
+| `listCrons()` | List cron jobs |
+| `stats()` | Get queue statistics |
+| `metrics()` | Get detailed metrics |

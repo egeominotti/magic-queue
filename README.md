@@ -373,6 +373,16 @@ magic-queue/
 │           ├── background.rs # Background tasks, cron
 │           ├── types.rs    # Data structures
 │           └── tests.rs    # Test suite (81 tests)
+├── sdk/
+│   └── typescript/         # TypeScript/Bun SDK
+│       ├── src/
+│       │   ├── index.ts    # Main exports
+│       │   ├── client.ts   # MagicQueue client
+│       │   ├── worker.ts   # Worker class
+│       │   └── types.ts    # Type definitions
+│       └── examples/
+│           ├── comprehensive-test.ts  # API tests (34)
+│           └── stress-test.ts         # Stress tests (33)
 ```
 
 ---
@@ -394,19 +404,75 @@ MagicQueue includes multiple security measures:
 
 ---
 
+## TypeScript SDK
+
+```bash
+cd sdk/typescript
+bun install
+```
+
+```typescript
+import { MagicQueue } from 'magicqueue';
+
+const client = new MagicQueue({ host: 'localhost', port: 6789 });
+await client.connect();
+
+// Push a job
+const job = await client.push('emails', { to: 'user@example.com' });
+
+// Pull and process
+const pulled = await client.pull('emails');
+await client.ack(pulled.id);
+
+await client.close();
+```
+
+See `sdk/typescript/examples/` for more examples:
+- `comprehensive-test.ts` - Full API test suite (34 tests)
+- `stress-test.ts` - System resilience tests (33 tests)
+
+---
+
 ## Testing
+
+### Server Tests (Rust)
 
 ```bash
 cd server
 cargo test
 ```
 
-**81 tests** covering:
+**81 unit tests** covering:
 - Core operations (push, pull, ack, batch)
 - Reliability (DLQ, retries, backoff)
 - Flow control (rate limiting, concurrency, pause)
 - Job features (dependencies, progress, TTL)
 - Edge cases (unicode, large payloads, concurrency)
+
+### SDK Tests (TypeScript)
+
+```bash
+cd sdk/typescript
+bun run examples/comprehensive-test.ts  # 34 tests
+bun run examples/stress-test.ts         # 33 stress tests
+```
+
+### Stress Test Results
+
+| Test | Result |
+|------|--------|
+| Concurrent Push (10 connections) | **59,000 ops/sec** |
+| Batch Operations (10K jobs) | Push: 14ms, Pull+Ack: 29ms |
+| Large Payloads (500KB) | Integrity preserved |
+| Many Queues (50 simultaneous) | All processed |
+| Rate Limiting | Enforced correctly |
+| Concurrency Limit (5) | Max concurrent: 5 |
+| DLQ Flood (100 jobs) | 100% to DLQ, 100% retry |
+| Rapid Cancel (100 concurrent) | 100% cancelled |
+| Invalid Input (7 attacks) | 100% rejected |
+| Connection Churn (50 cycles) | 100% success |
+| Unique Key Collision (50 concurrent) | 1 accepted |
+| Sustained Load (30s) | 22K push/s, 11K pull/s, 0% errors |
 
 ---
 
