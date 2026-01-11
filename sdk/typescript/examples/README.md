@@ -2,29 +2,40 @@
 
 This folder contains comprehensive examples demonstrating all features of the MagicQueue TypeScript SDK.
 
+**Runtime: Bun** - This SDK is designed for Bun runtime.
+
 ## Prerequisites
 
-1. Start MagicQueue server:
+1. Install [Bun](https://bun.sh):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+
+2. Start MagicQueue server:
    ```bash
    # From project root
    docker-compose up -d
    # Or manually
    cd server && cargo run --release
+
+   # With all features (HTTP Dashboard, gRPC, WebSocket)
+   HTTP=1 GRPC=1 cargo run --release
    ```
 
-2. Install dependencies:
+3. Install dependencies:
    ```bash
    cd sdk/typescript
-   npm install
+   bun install
    ```
 
 ## Running Examples
 
 ```bash
-# Using Bun
+# Run any example with Bun
 bun run examples/01-basic-usage.ts
 bun run examples/02-worker.ts
-# etc.
+bun run examples/13-websocket-events.ts
+bun run examples/14-grpc-client.ts
 ```
 
 ## Examples

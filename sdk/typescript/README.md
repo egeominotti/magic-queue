@@ -2,6 +2,8 @@
 
 Official TypeScript client for [MagicQueue](https://github.com/egeominotti/magic-queue) - High-Performance Job Queue.
 
+**Runtime: [Bun](https://bun.sh)** - This SDK is designed for Bun runtime.
+
 ## Installation
 
 ```bash

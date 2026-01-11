@@ -10,7 +10,7 @@
     "src"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node",
+    "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "example": "bun run examples/01-basic-usage.ts"
   },
@@ -31,10 +31,9 @@
     "directory": "sdk/typescript"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0"
   }

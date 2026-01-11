@@ -6,6 +6,7 @@ Cargo.lock
 # Node/Bun
 /client/node_modules/
 /client/bun.lockb
+/sdk/typescript/node_modules/
 
 # Python
 /python/__pycache__/
