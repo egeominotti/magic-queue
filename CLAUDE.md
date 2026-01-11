@@ -72,7 +72,7 @@ server/src/
     ├── core.rs       # Core ops: push, pull, ack, fail
     ├── features.rs   # Advanced: cancel, progress, DLQ, cron, metrics
     ├── background.rs # Background tasks: cleanup, cron runner
-    └── tests.rs      # Unit tests (75 tests)
+    └── tests.rs      # Unit tests (81 tests)
 ```
 
 ### Key Design Decisions
@@ -189,3 +189,29 @@ async fn test_feature_name() {
 - LTO build
 - Coarse timestamps (cached)
 - String interning
+
+## Security
+
+### Input Validation
+- **Queue names**: Only alphanumeric, underscore, hyphen, dot allowed (max 256 chars)
+- **Job data size**: Max 1MB per job to prevent DoS
+- **Batch limits**: Max 1000 jobs per batch request (gRPC/HTTP)
+- **Cron schedules**: Max 256 chars, validated before saving
+
+### Memory Management
+- **Completed jobs**: Cleanup when exceeding 50K entries (removes oldest 25K)
+- **Job results**: Cleanup when exceeding 5K entries (removes oldest 2.5K)
+- **Job index**: Stale entries cleaned when exceeding 100K
+- **Interned strings**: Limited to 10K unique queue names
+
+### Authentication
+- Token-based auth via `AUTH_TOKENS` env variable
+- WebSocket connections require `?token=xxx` parameter
+- HMAC-SHA256 webhook signatures using `hmac` and `sha2` crates
+
+### Prometheus Metrics
+- Queue names in labels are escaped to prevent injection attacks
+
+### gRPC Streaming
+- Stream connections use timeout-based polling to detect client disconnects
+- Prevents resource leaks from abandoned streams

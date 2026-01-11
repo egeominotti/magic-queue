@@ -46,16 +46,40 @@ impl QueueManager {
                 let mut shard = self.shards[shard_idx].write();
                 let mut found_key: Option<(Arc<str>, Option<String>)> = None;
 
-                for (queue_name, heap) in shard.queues.iter_mut() {
-                    let jobs: Vec<_> = std::mem::take(heap).into_vec();
-                    for job in jobs {
-                        if job.id == job_id {
-                            found_key = Some((Arc::clone(queue_name), job.unique_key.clone()));
-                        } else {
-                            heap.push(job);
-                        }
+                // First pass: find the job and its queue without modifying the heap
+                let mut target_queue: Option<Arc<str>> = None;
+                for (queue_name, heap) in shard.queues.iter() {
+                    if heap.iter().any(|j| j.id == job_id) {
+                        target_queue = Some(Arc::clone(queue_name));
+                        break;
                     }
-                    if found_key.is_some() { break; }
+                }
+
+                // Second pass: only modify the heap if we found the job
+                if let Some(queue_name) = target_queue {
+                    if let Some(heap) = shard.queues.get_mut(&queue_name) {
+                        // Collect all jobs, filter out the target, rebuild heap atomically
+                        let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
+                        let original_len = jobs.len();
+
+                        // Find and remove the target job
+                        if let Some(pos) = jobs.iter().position(|j| j.id == job_id) {
+                            let removed_job = jobs.swap_remove(pos);
+                            found_key = Some((Arc::clone(&queue_name), removed_job.unique_key));
+
+                            // Rebuild the heap with remaining jobs
+                            *heap = jobs.into_iter().collect();
+                        } else {
+                            // Job not found (race condition), restore all jobs
+                            *heap = jobs.into_iter().collect();
+                        }
+
+                        // Verify we didn't lose jobs (except the cancelled one)
+                        debug_assert!(
+                            heap.len() == original_len - 1 || found_key.is_none(),
+                            "Job cancellation should only remove one job"
+                        );
+                    }
                 }
 
                 if let Some((queue_name, unique_key)) = found_key {
@@ -203,7 +227,8 @@ impl QueueManager {
         let proc = self.processing.read();
 
         for shard in &self.shards {
-            let s = shard.write();
+            // Use read lock instead of write lock - this is a read-only operation
+            let s = shard.read();
             for (name, heap) in &s.queues {
                 let state = s.queue_state.get(name);
                 queues.push(QueueInfo {

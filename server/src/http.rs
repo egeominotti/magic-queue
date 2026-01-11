@@ -483,9 +483,11 @@ async fn get_prometheus_metrics(State(qm): State<AppState>) -> impl IntoResponse
     output.push_str("# HELP magicqueue_queue_jobs Queue job counts\n");
     output.push_str("# TYPE magicqueue_queue_jobs gauge\n");
     for q in &metrics.queues {
-        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"pending\"}} {}\n", q.name, q.pending));
-        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"processing\"}} {}\n", q.name, q.processing));
-        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"dlq\"}} {}\n", q.name, q.dlq));
+        // Sanitize queue name for Prometheus labels (escape backslashes and quotes)
+        let safe_name = q.name.replace('\\', "\\\\").replace('"', "\\\"");
+        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"pending\"}} {}\n", safe_name, q.pending));
+        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"processing\"}} {}\n", safe_name, q.processing));
+        output.push_str(&format!("magicqueue_queue_jobs{{queue=\"{}\",state=\"dlq\"}} {}\n", safe_name, q.dlq));
     }
 
     // Workers

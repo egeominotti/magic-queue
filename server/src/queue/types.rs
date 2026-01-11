@@ -56,6 +56,9 @@ pub fn now_ms() -> u64 {
 static INTERNED_STRINGS: Lazy<RwLock<FxHashSet<Arc<str>>>> =
     Lazy::new(|| RwLock::new(FxHashSet::default()));
 
+/// Maximum number of interned strings to prevent DOS attacks
+const MAX_INTERNED_STRINGS: usize = 10_000;
+
 /// Intern a string - returns Arc<str> that can be cheaply cloned
 #[inline]
 pub fn intern(s: &str) -> Arc<str> {
@@ -72,6 +75,11 @@ pub fn intern(s: &str) -> Arc<str> {
     // Double-check after acquiring write lock
     if let Some(arc) = set.get(s) {
         return Arc::clone(arc);
+    }
+
+    // Prevent unbounded growth - if at limit, don't intern (return non-interned Arc)
+    if set.len() >= MAX_INTERNED_STRINGS {
+        return s.into();
     }
 
     let arc: Arc<str> = s.into();

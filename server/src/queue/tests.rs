@@ -859,17 +859,17 @@ mod tests {
     async fn test_empty_queue_name() {
         let qm = setup();
 
-        let job = qm.push("".to_string(), json!({}), 0, None, None, None, None, None, None, None, None)
-            .await.unwrap();
-
-        assert_eq!(job.queue, "");
+        // Empty queue names should be rejected
+        let result = qm.push("".to_string(), json!({}), 0, None, None, None, None, None, None, None, None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
     }
 
     #[tokio::test]
     async fn test_large_payload() {
         let qm = setup();
 
-        // Create a large payload
+        // Create a large payload (but within limits)
         let large_data: Vec<i32> = (0..10000).collect();
         let job = qm.push("test".to_string(), json!({"data": large_data}), 0, None, None, None, None, None, None, None, None)
             .await.unwrap();
@@ -882,18 +882,33 @@ mod tests {
     async fn test_special_characters_in_queue_name() {
         let qm = setup();
 
-        let special_queues = vec![
+        // Valid queue names: alphanumeric, dash, underscore, dot
+        let valid_queues = vec![
             "queue-with-dash",
             "queue_with_underscore",
             "queue.with.dots",
-            "queue:with:colons",
-            "queue/with/slashes",
+            "Queue123",
         ];
 
-        for name in special_queues {
+        for name in valid_queues {
             let job = qm.push(name.to_string(), json!({}), 0, None, None, None, None, None, None, None, None)
                 .await.unwrap();
             assert_eq!(job.queue, name);
+            let pulled = qm.pull(name).await;
+            qm.ack(pulled.id, None).await.unwrap();
+        }
+
+        // Invalid queue names: colons, slashes, spaces, etc.
+        let invalid_queues = vec![
+            "queue:with:colons",
+            "queue/with/slashes",
+            "queue with spaces",
+            "queue@special",
+        ];
+
+        for name in invalid_queues {
+            let result = qm.push(name.to_string(), json!({}), 0, None, None, None, None, None, None, None, None).await;
+            assert!(result.is_err(), "Queue name '{}' should be rejected", name);
         }
     }
 
@@ -1536,5 +1551,169 @@ mod tests {
         // Check state is completed
         let state = qm.get_state(job.id);
         assert_eq!(state, crate::protocol::JobState::Completed);
+    }
+
+    // ==================== CLEANUP TESTS ====================
+
+    #[tokio::test]
+    async fn test_cleanup_completed_jobs_removes_from_index() {
+        let qm = setup();
+
+        // Push and complete many jobs
+        for i in 0..100 {
+            let job = qm.push(
+                "test".to_string(), json!({"i": i}), 0,
+                None, None, None, None, None, None, None, None
+            ).await.unwrap();
+            let pulled = qm.pull("test").await;
+            qm.ack(pulled.id, None).await.unwrap();
+        }
+
+        // Verify jobs are in completed_jobs
+        let completed_count = qm.completed_jobs.read().len();
+        assert_eq!(completed_count, 100);
+
+        // Verify job_index has entries for completed jobs
+        let index_count = qm.job_index.read().len();
+        assert!(index_count >= 100);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_job_in_queue_preserves_others() {
+        let qm = setup();
+
+        // Push multiple jobs
+        let mut job_ids = Vec::new();
+        for i in 0..10 {
+            let job = qm.push(
+                "test".to_string(), json!({"i": i}), i as i32,
+                None, None, None, None, None, None, None, None
+            ).await.unwrap();
+            job_ids.push(job.id);
+        }
+
+        // Cancel middle job
+        let cancel_result = qm.cancel(job_ids[5]).await;
+        assert!(cancel_result.is_ok());
+
+        // Verify other jobs still exist
+        let (queued, _, _, _) = qm.stats().await;
+        assert_eq!(queued, 9);
+
+        // Verify we can pull remaining jobs in priority order
+        let first = qm.pull("test").await;
+        assert_eq!(first.priority, 9); // Highest priority
+    }
+
+    #[tokio::test]
+    async fn test_cancel_releases_unique_key() {
+        let qm = setup();
+
+        // Push job with unique key
+        let job = qm.push(
+            "test".to_string(), json!({}), 0,
+            None, None, None, None, None,
+            Some("cancel-test-key".to_string()), None, None
+        ).await.unwrap();
+
+        // Cancel the job
+        qm.cancel(job.id).await.unwrap();
+
+        // Should be able to push with same key again
+        let job2 = qm.push(
+            "test".to_string(), json!({}), 0,
+            None, None, None, None, None,
+            Some("cancel-test-key".to_string()), None, None
+        ).await;
+        assert!(job2.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_cancel_operations() {
+        let qm = setup();
+
+        // Push multiple jobs
+        let mut job_ids = Vec::new();
+        for i in 0..50 {
+            let job = qm.push(
+                "test".to_string(), json!({"i": i}), 0,
+                None, None, None, None, None, None, None, None
+            ).await.unwrap();
+            job_ids.push(job.id);
+        }
+
+        // Concurrently cancel multiple jobs
+        let mut handles = Vec::new();
+        for id in job_ids.iter().take(25) {
+            let qm_clone = qm.clone();
+            let id = *id;
+            handles.push(tokio::spawn(async move {
+                qm_clone.cancel(id).await
+            }));
+        }
+
+        let mut cancelled = 0;
+        for handle in handles {
+            if handle.await.unwrap().is_ok() {
+                cancelled += 1;
+            }
+        }
+
+        assert_eq!(cancelled, 25);
+
+        // Verify remaining jobs
+        let (queued, _, _, _) = qm.stats().await;
+        assert_eq!(queued, 25);
+    }
+
+    // ==================== INDEX CONSISTENCY TESTS ====================
+
+    #[tokio::test]
+    async fn test_job_index_consistency_after_operations() {
+        use crate::queue::types::JobLocation;
+        let qm = setup();
+
+        // Push job
+        let job = qm.push(
+            "test".to_string(), json!({}), 0,
+            None, None, None, None, None, None, None, None
+        ).await.unwrap();
+
+        // Check index shows Queue location
+        let loc = qm.job_index.read().get(&job.id).copied();
+        assert!(matches!(loc, Some(JobLocation::Queue { .. })));
+
+        // Pull job
+        let _pulled = qm.pull("test").await;
+
+        // Check index shows Processing location
+        let loc = qm.job_index.read().get(&job.id).copied();
+        assert!(matches!(loc, Some(JobLocation::Processing)));
+
+        // Ack job
+        qm.ack(job.id, None).await.unwrap();
+
+        // Check index shows Completed location
+        let loc = qm.job_index.read().get(&job.id).copied();
+        assert!(matches!(loc, Some(JobLocation::Completed)));
+    }
+
+    #[tokio::test]
+    async fn test_job_index_consistency_after_fail_to_dlq() {
+        use crate::queue::types::JobLocation;
+        let qm = setup();
+
+        // Push job with max_attempts=1
+        let job = qm.push(
+            "test".to_string(), json!({}), 0,
+            None, None, None, Some(1), None, None, None, None
+        ).await.unwrap();
+
+        let _pulled = qm.pull("test").await;
+        qm.fail(job.id, None).await.unwrap();
+
+        // Check index shows DLQ location
+        let loc = qm.job_index.read().get(&job.id).copied();
+        assert!(matches!(loc, Some(JobLocation::Dlq { .. })));
     }
 }

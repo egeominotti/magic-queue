@@ -9,6 +9,37 @@ use crate::protocol::{next_id, Job, JobEvent, JobInput};
 use super::types::{intern, now_ms, JobLocation};
 use super::manager::QueueManager;
 
+/// Maximum job data size in bytes (1MB) to prevent DoS attacks
+const MAX_JOB_DATA_SIZE: usize = 1_048_576;
+
+/// Maximum queue name length
+const MAX_QUEUE_NAME_LENGTH: usize = 256;
+
+/// Validate queue name - must be alphanumeric, underscores, hyphens, or dots
+#[inline]
+fn validate_queue_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Queue name cannot be empty".to_string());
+    }
+    if name.len() > MAX_QUEUE_NAME_LENGTH {
+        return Err(format!("Queue name too long (max {} chars)", MAX_QUEUE_NAME_LENGTH));
+    }
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        return Err("Queue name must contain only alphanumeric characters, underscores, hyphens, or dots".to_string());
+    }
+    Ok(())
+}
+
+/// Validate job data size
+#[inline]
+fn validate_job_data(data: &Value) -> Result<(), String> {
+    let size = serde_json::to_string(data).map(|s| s.len()).unwrap_or(0);
+    if size > MAX_JOB_DATA_SIZE {
+        return Err(format!("Job data too large ({} bytes, max {} bytes)", size, MAX_JOB_DATA_SIZE));
+    }
+    Ok(())
+}
+
 impl QueueManager {
     #[inline(always)]
     pub fn create_job(
@@ -61,6 +92,10 @@ impl QueueManager {
         depends_on: Option<Vec<u64>>,
         tags: Option<Vec<String>>,
     ) -> Result<Job, String> {
+        // Validate inputs to prevent DoS attacks
+        validate_queue_name(&queue)?;
+        validate_job_data(&data)?;
+
         let job = self.create_job(
             queue.clone(), data, priority, delay, ttl, timeout, max_attempts, backoff,
             unique_key.clone(), depends_on.clone(), tags
@@ -117,6 +152,11 @@ impl QueueManager {
     }
 
     pub async fn push_batch(&self, queue: String, jobs: Vec<JobInput>) -> Vec<u64> {
+        // Validate queue name
+        if validate_queue_name(&queue).is_err() {
+            return Vec::new();
+        }
+
         let mut ids = Vec::with_capacity(jobs.len());
         let mut created_jobs = Vec::with_capacity(jobs.len());
         let mut waiting_jobs = Vec::new();
@@ -126,6 +166,10 @@ impl QueueManager {
         let completed = self.completed_jobs.read().clone();
 
         for input in jobs {
+            // Skip jobs with data too large
+            if validate_job_data(&input.data).is_err() {
+                continue;
+            }
             let job = self.create_job(
                 queue.clone(), input.data, input.priority, input.delay,
                 input.ttl, input.timeout, input.max_attempts, input.backoff,

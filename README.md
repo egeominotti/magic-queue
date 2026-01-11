@@ -372,8 +372,25 @@ magic-queue/
 │           ├── features.rs # Rate limit, DLQ, etc.
 │           ├── background.rs # Background tasks, cron
 │           ├── types.rs    # Data structures
-│           └── tests.rs    # Test suite (75 tests)
+│           └── tests.rs    # Test suite (81 tests)
 ```
+
+---
+
+## Security
+
+MagicQueue includes multiple security measures:
+
+| Feature | Description |
+|---------|-------------|
+| **Input Validation** | Queue names validated (alphanumeric, underscore, hyphen, dot only) |
+| **Job Size Limits** | Max 1MB job data to prevent DoS attacks |
+| **Batch Limits** | Max 1000 jobs per batch request (gRPC/HTTP) |
+| **Cron Validation** | Schedule expressions validated and length-limited |
+| **HMAC Signatures** | Webhook payloads signed with HMAC-SHA256 |
+| **Token Auth** | Optional token-based authentication |
+| **Prometheus Safety** | Metric labels sanitized to prevent injection |
+| **Memory Bounds** | Automatic cleanup of completed jobs, results, and interned strings |
 
 ---
 
@@ -384,7 +401,7 @@ cd server
 cargo test
 ```
 
-**75 tests** covering:
+**81 tests** covering:
 - Core operations (push, pull, ack, batch)
 - Reliability (DLQ, retries, backoff)
 - Flow control (rate limiting, concurrency, pause)

@@ -792,8 +792,13 @@ impl QueueManager {
             });
 
             // Fire webhook in background (non-blocking)
+            let webhook_url = url.clone();
             tokio::spawn(async move {
-                let client = reqwest::Client::new();
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new());
+
                 let mut req = client.post(&url).json(&payload);
 
                 if let Some(secret) = secret {
@@ -803,7 +808,20 @@ impl QueueManager {
                     req = req.header("X-MagicQueue-Signature", signature);
                 }
 
-                let _ = req.send().await;
+                match req.send().await {
+                    Ok(response) => {
+                        if !response.status().is_success() {
+                            eprintln!(
+                                "Webhook failed: {} returned status {}",
+                                webhook_url,
+                                response.status()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Webhook error: {} - {}", webhook_url, e);
+                    }
+                }
             });
         }
     }
@@ -828,39 +846,20 @@ impl QueueManager {
     }
 }
 
-/// Simple HMAC-SHA256 for webhook signatures
+/// HMAC-SHA256 for webhook signatures using proper crypto libraries
 fn hmac_sha256(key: &str, message: &str) -> String {
-    use std::fmt::Write;
-    // Simple HMAC implementation
-    let key_bytes = key.as_bytes();
-    let msg_bytes = message.as_bytes();
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
 
-    // Pad or hash key to 64 bytes
-    let mut k = [0u8; 64];
-    if key_bytes.len() <= 64 {
-        k[..key_bytes.len()].copy_from_slice(key_bytes);
-    } else {
-        // For keys > 64 bytes, we'd hash first (simplified here)
-        k[..key_bytes.len().min(64)].copy_from_slice(&key_bytes[..64.min(key_bytes.len())]);
-    }
+    type HmacSha256 = Hmac<Sha256>;
 
-    // XOR with ipad (0x36)
-    let mut i_key_pad = [0u8; 64];
-    for i in 0..64 {
-        i_key_pad[i] = k[i] ^ 0x36;
-    }
+    let mut mac = HmacSha256::new_from_slice(key.as_bytes())
+        .expect("HMAC can take key of any size");
+    mac.update(message.as_bytes());
 
-    // XOR with opad (0x5c)
-    let mut o_key_pad = [0u8; 64];
-    for i in 0..64 {
-        o_key_pad[i] = k[i] ^ 0x5c;
-    }
+    let result = mac.finalize();
+    let bytes = result.into_bytes();
 
-    // For a proper implementation, use a crypto library
-    // This is a simplified placeholder
-    let mut result = String::with_capacity(64);
-    for byte in msg_bytes.iter().take(32) {
-        let _ = write!(result, "{:02x}", byte ^ i_key_pad[0]);
-    }
-    result
+    // Convert to hex string
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

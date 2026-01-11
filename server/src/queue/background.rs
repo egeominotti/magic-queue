@@ -32,6 +32,7 @@ impl QueueManager {
                 _ = cleanup_ticker.tick() => {
                     self.cleanup_completed_jobs();
                     self.cleanup_job_results();
+                    self.cleanup_stale_index_entries();
                     cleanup_interned_strings();
                 }
                 _ = metrics_ticker.tick() => {
@@ -130,22 +131,74 @@ impl QueueManager {
         }
     }
 
+    /// Clean up completed jobs and their associated index entries
+    /// Uses a more aggressive cleanup strategy to prevent unbounded memory growth
     pub(crate) fn cleanup_completed_jobs(&self) {
+        const MAX_COMPLETED: usize = 50_000;
+        const CLEANUP_BATCH: usize = 25_000;
+
         let mut completed = self.completed_jobs.write();
-        if completed.len() > 100_000 {
-            let to_remove: Vec<_> = completed.iter().take(50_000).copied().collect();
+        if completed.len() > MAX_COMPLETED {
+            let to_remove: Vec<_> = completed.iter().take(CLEANUP_BATCH).copied().collect();
+
+            // Also clean up job_index for these completed jobs
+            {
+                let mut index = self.job_index.write();
+                for &id in &to_remove {
+                    index.remove(&id);
+                }
+            }
+
             for id in to_remove {
                 completed.remove(&id);
             }
         }
     }
 
+    /// Clean up job results to prevent unbounded memory growth
     pub(crate) fn cleanup_job_results(&self) {
+        const MAX_RESULTS: usize = 5_000;
+        const CLEANUP_BATCH: usize = 2_500;
+
         let mut results = self.job_results.write();
-        if results.len() > 10_000 {
-            let to_remove: Vec<_> = results.keys().take(5_000).copied().collect();
+        if results.len() > MAX_RESULTS {
+            let to_remove: Vec<_> = results.keys().take(CLEANUP_BATCH).copied().collect();
             for id in to_remove {
                 results.remove(&id);
+            }
+        }
+    }
+
+    /// Clean up stale entries in job_index that point to non-existent jobs
+    /// This handles edge cases where index entries weren't properly cleaned
+    pub(crate) fn cleanup_stale_index_entries(&self) {
+        use super::types::JobLocation;
+
+        const MAX_INDEX_SIZE: usize = 100_000;
+
+        let index_len = self.job_index.read().len();
+        if index_len <= MAX_INDEX_SIZE {
+            return;
+        }
+
+        // Collect IDs that are marked as Completed in the index
+        // These are safe to remove if they're not in completed_jobs anymore
+        let completed_jobs = self.completed_jobs.read();
+        let mut to_remove = Vec::new();
+
+        {
+            let index = self.job_index.read();
+            for (&id, location) in index.iter() {
+                if matches!(location, JobLocation::Completed) && !completed_jobs.contains(&id) {
+                    to_remove.push(id);
+                }
+            }
+        }
+
+        if !to_remove.is_empty() {
+            let mut index = self.job_index.write();
+            for id in to_remove {
+                index.remove(&id);
             }
         }
     }
@@ -207,9 +260,21 @@ impl QueueManager {
         now + 60_000
     }
 
+    /// Maximum cron schedule string length to prevent DoS
+    const MAX_CRON_SCHEDULE_LENGTH: usize = 256;
+
     /// Validate a cron expression before saving.
     /// Returns Ok(()) if valid, Err(message) if invalid.
     pub(crate) fn validate_cron(schedule: &str) -> Result<(), String> {
+        // Validate length to prevent DoS attacks with huge strings
+        if schedule.len() > Self::MAX_CRON_SCHEDULE_LENGTH {
+            return Err(format!(
+                "Cron schedule too long ({} chars, max {} chars)",
+                schedule.len(),
+                Self::MAX_CRON_SCHEDULE_LENGTH
+            ));
+        }
+
         // Allow legacy */N format
         if let Some(interval_str) = schedule.strip_prefix("*/") {
             return interval_str.parse::<u64>()

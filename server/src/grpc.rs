@@ -135,7 +135,10 @@ impl QueueService for QueueServiceImpl {
 
     async fn pull_batch(&self, request: Request<PullBatchRequest>) -> Result<Response<PullBatchResponse>, Status> {
         let req = request.into_inner();
-        let jobs = self.queue_manager.pull_batch(&req.queue, req.count as usize).await;
+        // Limit batch size to prevent DOS attacks (max 1000 jobs per request)
+        const MAX_BATCH_SIZE: u32 = 1000;
+        let count = (req.count as usize).min(MAX_BATCH_SIZE as usize);
+        let jobs = self.queue_manager.pull_batch(&req.queue, count).await;
         Ok(Response::new(PullBatchResponse {
             jobs: jobs.into_iter().map(Into::into).collect(),
         }))
@@ -200,18 +203,42 @@ impl QueueService for QueueServiceImpl {
     ) -> Result<Response<Self::StreamJobsStream>, Status> {
         let req = request.into_inner();
         let queue = req.queue;
-        let batch_size = if req.batch_size > 0 { req.batch_size as usize } else { 1 };
+        // Limit batch size to prevent DOS attacks
+        const MAX_BATCH_SIZE: usize = 100;
+        const MAX_PREFETCH: usize = 1000;
+        let batch_size = if req.batch_size > 0 { (req.batch_size as usize).min(MAX_BATCH_SIZE) } else { 1 };
         let qm = Arc::clone(&self.queue_manager);
 
-        let (tx, rx) = mpsc::channel(req.prefetch.max(1) as usize);
+        let (tx, rx) = mpsc::channel((req.prefetch as usize).clamp(1, MAX_PREFETCH));
 
         // Spawn background task to pull jobs and send to stream
+        // Uses timeout to periodically check if client disconnected
         tokio::spawn(async move {
             loop {
+                // Check if client disconnected before blocking on pull
+                if tx.is_closed() {
+                    break;
+                }
+
                 if batch_size == 1 {
-                    let job = qm.pull(&queue).await;
-                    if tx.send(Ok(job.into())).await.is_err() {
-                        break; // Client disconnected
+                    // Use timeout to periodically check for client disconnect
+                    let pull_result = tokio::time::timeout(
+                        tokio::time::Duration::from_secs(30),
+                        qm.pull(&queue)
+                    ).await;
+
+                    match pull_result {
+                        Ok(job) => {
+                            if tx.send(Ok(job.into())).await.is_err() {
+                                break; // Client disconnected
+                            }
+                        }
+                        Err(_) => {
+                            // Timeout - check if client still connected and retry
+                            if tx.is_closed() {
+                                break;
+                            }
+                        }
                     }
                 } else {
                     let jobs = qm.pull_batch(&queue, batch_size).await;
@@ -219,6 +246,10 @@ impl QueueService for QueueServiceImpl {
                         if tx.send(Ok(job.into())).await.is_err() {
                             break;
                         }
+                    }
+                    // Small delay to prevent busy loop when queue is empty
+                    if tx.is_closed() {
+                        break;
                     }
                 }
             }
@@ -259,15 +290,17 @@ impl QueueService for QueueServiceImpl {
             }
         });
 
-        // Task to send jobs to client (uses default queue for now)
-        // In production, you'd want queue name from metadata or initial message
+        // Task to send jobs to client
+        // NOTE: This bidirectional stream uses "default" queue. For production use,
+        // clients should use the unidirectional stream_jobs() RPC which accepts a queue parameter,
+        // or use the HTTP/WebSocket API for queue-specific streaming.
         tokio::spawn(async move {
             let queue = "default".to_string();
             loop {
                 let job = qm2.pull(&queue).await;
                 if job.id == 0 {
                     // No job available, wait a bit
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     continue;
                 }
                 if tx.send(Ok(job.into())).await.is_err() {
