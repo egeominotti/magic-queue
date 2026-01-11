@@ -214,6 +214,26 @@ pub struct Job {
     pub tags: Vec<String>,      // Job tags for filtering
 }
 
+/// Job with its current state (for browser/API)
+#[derive(Debug, Clone, Serialize)]
+pub struct JobBrowserItem {
+    #[serde(flatten)]
+    pub job: Job,
+    pub state: JobState,
+}
+
+/// Historical metrics point for charts
+#[derive(Debug, Clone, Serialize)]
+pub struct MetricsHistoryPoint {
+    pub timestamp: u64,
+    pub queued: usize,
+    pub processing: usize,
+    pub completed: u64,
+    pub failed: u64,
+    pub throughput: f64,
+    pub latency_ms: f64,
+}
+
 impl Job {
     #[inline(always)]
     pub fn is_ready(&self, now: u64) -> bool {

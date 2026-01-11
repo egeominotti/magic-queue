@@ -19,7 +19,7 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::dashboard;
-use crate::protocol::{CronJob, Job, MetricsData, QueueInfo};
+use crate::protocol::{CronJob, Job, JobBrowserItem, JobState, MetricsData, MetricsHistoryPoint, QueueInfo};
 use crate::queue::QueueManager;
 
 type AppState = Arc<QueueManager>;
@@ -138,6 +138,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/queues/{queue}/concurrency", post(set_concurrency))
         .route("/queues/{queue}/concurrency", delete(clear_concurrency))
         // Job operations
+        .route("/jobs", get(list_jobs))
+        .route("/jobs/{id}", get(get_job))
         .route("/jobs/{id}/ack", post(ack_job))
         .route("/jobs/{id}/fail", post(fail_job))
         .route("/jobs/{id}/cancel", post(cancel_job))
@@ -151,6 +153,7 @@ pub fn create_router(state: AppState) -> Router {
         // Stats & Metrics
         .route("/stats", get(get_stats))
         .route("/metrics", get(get_metrics))
+        .route("/metrics/history", get(get_metrics_history))
         .route("/metrics/prometheus", get(get_prometheus_metrics))
         // SSE Events
         .route("/events", get(sse_events))
@@ -276,6 +279,62 @@ async fn clear_concurrency(
     ApiResponse::success(())
 }
 
+// === Job Browser ===
+
+#[derive(Deserialize)]
+pub struct JobsQuery {
+    #[serde(default)]
+    pub queue: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default = "default_job_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+fn default_job_limit() -> usize { 100 }
+
+async fn list_jobs(
+    State(qm): State<AppState>,
+    Query(params): Query<JobsQuery>,
+) -> Json<ApiResponse<Vec<JobBrowserItem>>> {
+    let state_filter = params.state.as_deref().and_then(|s| match s {
+        "waiting" => Some(JobState::Waiting),
+        "delayed" => Some(JobState::Delayed),
+        "active" => Some(JobState::Active),
+        "completed" => Some(JobState::Completed),
+        "failed" => Some(JobState::Failed),
+        "waiting-children" | "waitingchildren" => Some(JobState::WaitingChildren),
+        _ => None,
+    });
+
+    let jobs = qm.list_jobs(
+        params.queue.as_deref(),
+        state_filter,
+        params.limit,
+        params.offset,
+    );
+    ApiResponse::success(jobs)
+}
+
+#[derive(Serialize)]
+pub struct JobDetailResponse {
+    #[serde(flatten)]
+    pub job: Option<Job>,
+    pub state: JobState,
+    pub result: Option<Value>,
+}
+
+async fn get_job(
+    State(qm): State<AppState>,
+    Path(id): Path<u64>,
+) -> Json<ApiResponse<JobDetailResponse>> {
+    let (job, state) = qm.get_job(id);
+    let result = qm.get_result(id).await;
+    ApiResponse::success(JobDetailResponse { job, state, result })
+}
+
 // === Job Operations ===
 
 async fn ack_job(
@@ -383,6 +442,11 @@ async fn get_stats(State(qm): State<AppState>) -> Json<ApiResponse<StatsResponse
 async fn get_metrics(State(qm): State<AppState>) -> Json<ApiResponse<MetricsData>> {
     let metrics = qm.get_metrics().await;
     ApiResponse::success(metrics)
+}
+
+async fn get_metrics_history(State(qm): State<AppState>) -> Json<ApiResponse<Vec<MetricsHistoryPoint>>> {
+    let history = qm.get_metrics_history();
+    ApiResponse::success(history)
 }
 
 // === Prometheus Metrics ===

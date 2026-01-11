@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 
-use crate::protocol::{CronJob, Job, JobEvent, JobState, WebhookConfig, WorkerInfo};
+use crate::protocol::{CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint, WebhookConfig, WorkerInfo};
 use super::postgres::PostgresStorage;
 use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, JobLocation, Shard, Subscriber, Webhook, Worker};
 use tokio::sync::broadcast;
@@ -32,6 +32,8 @@ pub struct QueueManager {
     pub(crate) webhooks: RwLock<FxHashMap<String, Webhook>>,
     // Event broadcast for SSE/WebSocket
     pub(crate) event_tx: broadcast::Sender<JobEvent>,
+    // Metrics history for charts (last 60 points = 5 minutes at 5s intervals)
+    pub(crate) metrics_history: RwLock<Vec<MetricsHistoryPoint>>,
 }
 
 impl QueueManager {
@@ -89,6 +91,7 @@ impl QueueManager {
             workers: RwLock::new(FxHashMap::default()),
             webhooks: RwLock::new(FxHashMap::default()),
             event_tx,
+            metrics_history: RwLock::new(Vec::with_capacity(60)),
         });
 
         let mgr = Arc::clone(&manager);
@@ -509,6 +512,199 @@ impl QueueManager {
     #[inline]
     pub(crate) fn unindex_job(&self, id: u64) {
         self.job_index.write().remove(&id);
+    }
+
+    // ============== Job Browser ==============
+
+    /// List all jobs with filtering options
+    /// Returns jobs sorted by created_at descending (newest first)
+    pub fn list_jobs(
+        &self,
+        queue_filter: Option<&str>,
+        state_filter: Option<JobState>,
+        limit: usize,
+        offset: usize,
+    ) -> Vec<JobBrowserItem> {
+        let now = now_ms();
+        let mut jobs: Vec<JobBrowserItem> = Vec::new();
+
+        // Collect jobs from all shards
+        for shard in &self.shards {
+            let shard = shard.read();
+
+            // Jobs in queues (waiting/delayed)
+            for (queue_name, heap) in &shard.queues {
+                if let Some(filter) = queue_filter {
+                    if &**queue_name != filter {
+                        continue;
+                    }
+                }
+                for job in heap.iter() {
+                    let state = if job.run_at > now {
+                        JobState::Delayed
+                    } else {
+                        JobState::Waiting
+                    };
+                    if let Some(sf) = state_filter {
+                        if sf != state {
+                            continue;
+                        }
+                    }
+                    jobs.push(JobBrowserItem {
+                        job: job.clone(),
+                        state,
+                    });
+                }
+            }
+
+            // Jobs in DLQ (failed)
+            for (queue_name, dlq) in &shard.dlq {
+                if let Some(filter) = queue_filter {
+                    if &**queue_name != filter {
+                        continue;
+                    }
+                }
+                if let Some(sf) = state_filter {
+                    if sf != JobState::Failed {
+                        continue;
+                    }
+                }
+                for job in dlq.iter() {
+                    jobs.push(JobBrowserItem {
+                        job: job.clone(),
+                        state: JobState::Failed,
+                    });
+                }
+            }
+
+            // Jobs waiting for dependencies
+            for job in shard.waiting_deps.values() {
+                if let Some(filter) = queue_filter {
+                    if job.queue != filter {
+                        continue;
+                    }
+                }
+                if let Some(sf) = state_filter {
+                    if sf != JobState::WaitingChildren {
+                        continue;
+                    }
+                }
+                jobs.push(JobBrowserItem {
+                    job: job.clone(),
+                    state: JobState::WaitingChildren,
+                });
+            }
+        }
+
+        // Add jobs in processing (active)
+        {
+            let processing = self.processing.read();
+            for job in processing.values() {
+                if let Some(filter) = queue_filter {
+                    if job.queue != filter {
+                        continue;
+                    }
+                }
+                if let Some(sf) = state_filter {
+                    if sf != JobState::Active {
+                        continue;
+                    }
+                }
+                jobs.push(JobBrowserItem {
+                    job: job.clone(),
+                    state: JobState::Active,
+                });
+            }
+        }
+
+        // Sort by created_at descending (newest first)
+        jobs.sort_by(|a, b| b.job.created_at.cmp(&a.job.created_at));
+
+        // Apply offset and limit
+        jobs.into_iter().skip(offset).take(limit).collect()
+    }
+
+    /// Get metrics history for charts
+    pub fn get_metrics_history(&self) -> Vec<MetricsHistoryPoint> {
+        self.metrics_history.read().clone()
+    }
+
+    /// Collect and store a metrics history point
+    pub(crate) fn collect_metrics_history(&self) {
+        use std::sync::atomic::Ordering;
+
+        let now = now_ms();
+        let (queued, processing, _delayed, _dlq) = self.stats_sync();
+
+        let total_completed = self.metrics.total_completed.load(Ordering::Relaxed);
+        let total_failed = self.metrics.total_failed.load(Ordering::Relaxed);
+        let latency_count = self.metrics.latency_count.load(Ordering::Relaxed);
+        let avg_latency = if latency_count > 0 {
+            self.metrics.latency_sum.load(Ordering::Relaxed) as f64 / latency_count as f64
+        } else {
+            0.0
+        };
+
+        // Calculate throughput from history
+        let throughput = {
+            let history = self.metrics_history.read();
+            if history.len() >= 2 {
+                let prev = &history[history.len() - 1];
+                let time_diff = (now - prev.timestamp) as f64 / 1000.0;
+                if time_diff > 0.0 {
+                    (total_completed - prev.completed) as f64 / time_diff
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        };
+
+        let point = MetricsHistoryPoint {
+            timestamp: now,
+            queued,
+            processing,
+            completed: total_completed,
+            failed: total_failed,
+            throughput,
+            latency_ms: avg_latency,
+        };
+
+        let mut history = self.metrics_history.write();
+        history.push(point);
+
+        // Keep only last 60 points (5 minutes at 5s intervals)
+        if history.len() > 60 {
+            history.remove(0);
+        }
+    }
+
+    /// Synchronous stats helper for internal use
+    fn stats_sync(&self) -> (usize, usize, usize, usize) {
+        let now = now_ms();
+        let mut queued = 0;
+        let mut delayed = 0;
+        let mut dlq_count = 0;
+
+        for shard in &self.shards {
+            let shard = shard.read();
+            for heap in shard.queues.values() {
+                for job in heap.iter() {
+                    if job.run_at > now {
+                        delayed += 1;
+                    } else {
+                        queued += 1;
+                    }
+                }
+            }
+            for dlq in shard.dlq.values() {
+                dlq_count += dlq.len();
+            }
+        }
+
+        let processing = self.processing.read().len();
+        (queued, processing, delayed, dlq_count)
     }
 
     // ============== Worker Registration ==============

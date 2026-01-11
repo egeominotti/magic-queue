@@ -14,6 +14,7 @@ impl QueueManager {
         let mut cron_ticker = interval(Duration::from_secs(1));
         let mut cleanup_ticker = interval(Duration::from_secs(60));
         let mut timeout_ticker = interval(Duration::from_millis(500));
+        let mut metrics_ticker = interval(Duration::from_secs(5)); // Collect metrics every 5s
 
         loop {
             tokio::select! {
@@ -32,6 +33,9 @@ impl QueueManager {
                     self.cleanup_completed_jobs();
                     self.cleanup_job_results();
                     cleanup_interned_strings();
+                }
+                _ = metrics_ticker.tick() => {
+                    self.collect_metrics_history();
                 }
             }
         }
