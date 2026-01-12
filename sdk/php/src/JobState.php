@@ -15,6 +15,8 @@ enum JobState: string
     case COMPLETED = 'completed';
     case FAILED = 'failed';
     case WAITING_CHILDREN = 'waiting-children';
+    case CANCELLED = 'cancelled';
+    case UNKNOWN = 'unknown';
 
     /**
      * Create from string, handling server variations
