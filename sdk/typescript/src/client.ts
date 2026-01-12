@@ -55,6 +55,7 @@ export class MagicQueue extends EventEmitter {
       host: options.host ?? 'localhost',
       port: options.port ?? 6789,
       httpPort: options.httpPort ?? 6790,
+      socketPath: options.socketPath ?? '',
       token: options.token ?? '',
       timeout: options.timeout ?? 5000,
       useHttp: options.useHttp ?? false,
@@ -77,8 +78,13 @@ export class MagicQueue extends EventEmitter {
         reject(new Error('Connection timeout'));
       }, this.options.timeout);
 
+      // Use Unix socket if socketPath is set, otherwise TCP
+      const connectionOptions = this.options.socketPath
+        ? { path: this.options.socketPath }
+        : { host: this.options.host, port: this.options.port };
+
       this.socket = net.createConnection(
-        { host: this.options.host, port: this.options.port },
+        connectionOptions,
         async () => {
           clearTimeout(timeout);
           this.connected = true;

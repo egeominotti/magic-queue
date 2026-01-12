@@ -769,12 +769,26 @@
                             <h3 class="text-lg font-semibold text-rose-400">Danger Zone</h3>
                             <p class="text-sm text-slate-500 mt-1">Destructive actions - use with caution</p>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body space-y-4">
                             <div class="flex flex-wrap gap-4">
                                 <button onclick="window.dashboard.clearAllQueues()" class="btn btn-danger">Clear All Queues</button>
                                 <button onclick="window.dashboard.clearAllDlq()" class="btn btn-danger">Clear All DLQ</button>
                                 <button onclick="window.dashboard.clearCompletedJobs()" class="btn btn-danger">Clear Completed Jobs</button>
                                 <button onclick="window.dashboard.resetMetrics()" class="btn btn-danger">Reset Metrics</button>
+                            </div>
+                            <div class="pt-4 border-t border-dark-700/50">
+                                <p class="text-sm text-slate-400 mb-3">Server Control</p>
+                                <div class="flex flex-wrap gap-3">
+                                    <button onclick="window.dashboard.restartServer()" class="btn btn-warning flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                        Restart Server
+                                    </button>
+                                    <button onclick="window.dashboard.shutdownServer()" class="btn btn-danger flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                                        Shutdown Server
+                                    </button>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2">Restart requires a process manager (Docker, systemd) or use <code class="bg-dark-800 px-1.5 py-0.5 rounded">make restart</code></p>
                             </div>
                         </div>
                     </div>

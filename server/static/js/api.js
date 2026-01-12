@@ -254,6 +254,16 @@ window.DashboardAPI = (function() {
         async resetMetrics() {
             const res = await fetch(`${API}/settings/reset-metrics`, { method: 'POST' });
             return res.json();
+        },
+
+        async shutdownServer() {
+            const res = await fetch(`${API}/server/shutdown`, { method: 'POST' });
+            return res.json();
+        },
+
+        async restartServer() {
+            const res = await fetch(`${API}/server/restart`, { method: 'POST' });
+            return res.json();
         }
     };
 })();

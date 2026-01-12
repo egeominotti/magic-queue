@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.1
     container_name: magicqueue-postgres
     environment:
       POSTGRES_USER: magicqueue
@@ -17,29 +17,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  magicqueue:
-    build: .
-    container_name: magicqueue-server
-    environment:
-      # PostgreSQL connection
-      DATABASE_URL: postgres://magicqueue:magicqueue@postgres:5432/magicqueue
-      # Enable HTTP API + Dashboard
-      HTTP: "1"
-      HTTP_PORT: "6790"
-      # Enable gRPC API
-      GRPC: "1"
-      GRPC_PORT: "6791"
-      # Optional: Authentication tokens (comma-separated)
-      # AUTH_TOKENS: "token1,token2"
-    ports:
-      - "6789:6789" # TCP protocol
-      - "6790:6790" # HTTP API + Dashboard
-      - "6791:6791" # gRPC API
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   postgres_data:

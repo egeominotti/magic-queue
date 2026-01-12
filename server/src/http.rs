@@ -169,6 +169,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/webhooks", post(create_webhook))
         .route("/webhooks/{id}", delete(delete_webhook))
         .route("/webhooks/incoming/{queue}", post(incoming_webhook))
+        // Server management
+        .route("/settings", get(get_settings))
+        .route("/server/shutdown", post(shutdown_server))
+        .route("/server/restart", post(restart_server))
         .with_state(state);
 
     Router::new()
@@ -702,4 +706,67 @@ async fn incoming_webhook(
         Ok(job) => ApiResponse::success(job),
         Err(e) => ApiResponse::error(e),
     }
+}
+
+// === Server Settings ===
+
+#[derive(Serialize)]
+pub struct ServerSettings {
+    pub version: &'static str,
+    pub tcp_port: u16,
+    pub http_port: u16,
+    pub database_connected: bool,
+    pub database_url: Option<String>,
+    pub auth_enabled: bool,
+    pub auth_token_count: usize,
+    pub uptime_seconds: u64,
+}
+
+static START_TIME: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+async fn get_settings(State(qm): State<AppState>) -> Json<ApiResponse<ServerSettings>> {
+    let start = START_TIME.get_or_init(std::time::Instant::now);
+    let uptime = start.elapsed().as_secs();
+
+    let db_url = std::env::var("DATABASE_URL").ok();
+    let db_connected = qm.is_postgres_connected();
+
+    let settings = ServerSettings {
+        version: env!("CARGO_PKG_VERSION"),
+        tcp_port: std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6789),
+        http_port: std::env::var("HTTP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6790),
+        database_connected: db_connected,
+        database_url: db_url.map(|u| {
+            // Mask password in URL
+            if let Some(at_pos) = u.find('@') {
+                if let Some(colon_pos) = u[..at_pos].rfind(':') {
+                    return format!("{}:****{}", &u[..colon_pos], &u[at_pos..]);
+                }
+            }
+            u
+        }),
+        auth_enabled: !qm.verify_token(""),
+        auth_token_count: qm.auth_token_count(),
+        uptime_seconds: uptime,
+    };
+    ApiResponse::success(settings)
+}
+
+async fn shutdown_server() -> Json<ApiResponse<&'static str>> {
+    // Spawn task to exit after response is sent
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        std::process::exit(0);
+    });
+    ApiResponse::success("Server shutting down...")
+}
+
+async fn restart_server() -> Json<ApiResponse<&'static str>> {
+    // Spawn task to exit with special code after response is sent
+    // Exit code 100 signals restart request (can be handled by process manager/wrapper)
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        std::process::exit(100);
+    });
+    ApiResponse::success("Server restarting...")
 }

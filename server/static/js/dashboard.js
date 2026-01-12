@@ -600,7 +600,9 @@
         clearAllQueues: () => Settings.clearAllQueues(refreshCallback),
         clearAllDlq: () => Settings.clearAllDlq(refreshCallback),
         clearCompletedJobs: () => Settings.clearCompletedJobs(refreshCallback),
-        resetMetrics: () => Settings.resetMetrics(() => { fetchMetrics(); fetchMetricsHistory(); })
+        resetMetrics: () => Settings.resetMetrics(() => { fetchMetrics(); fetchMetricsHistory(); }),
+        shutdownServer: () => Settings.shutdownServer(),
+        restartServer: () => Settings.restartServer()
     };
 
     window.showSection = showSection;

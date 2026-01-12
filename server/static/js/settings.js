@@ -251,6 +251,37 @@ window.DashboardSettings = (function() {
             } catch (e) {
                 alert('Failed to reset metrics');
             }
+        },
+
+        async shutdownServer() {
+            if (!confirm('Are you sure you want to shutdown the server? You will need to restart it manually.')) return;
+
+            try {
+                await DashboardAPI.shutdownServer();
+                alert('Server is shutting down... Use "make restart" to restart.');
+            } catch (e) {
+                // Connection will likely fail as server is shutting down
+                alert('Server shutdown initiated. Use "make restart" to restart.');
+            }
+        },
+
+        async restartServer() {
+            if (!confirm('Are you sure you want to restart the server? The dashboard will reconnect automatically.')) return;
+
+            try {
+                await DashboardAPI.restartServer();
+                alert('Server is restarting... The page will attempt to reconnect in a few seconds.');
+                // Attempt to reload after delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            } catch (e) {
+                // Connection will likely fail as server is restarting
+                alert('Server restart initiated. Reloading page in 3 seconds...');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
         }
     };
 })();

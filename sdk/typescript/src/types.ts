@@ -214,6 +214,8 @@ export interface ClientOptions {
   port?: number;
   /** HTTP port for REST API (default: 6790) */
   httpPort?: number;
+  /** Unix socket path (e.g., "/tmp/magic-queue.sock") - if set, ignores host/port */
+  socketPath?: string;
   /** Authentication token */
   token?: string;
   /** Connection timeout in milliseconds (default: 5000) */

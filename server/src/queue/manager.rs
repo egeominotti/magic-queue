@@ -135,6 +135,16 @@ impl QueueManager {
         tokens.is_empty() || tokens.contains(token)
     }
 
+    #[inline]
+    pub fn is_postgres_connected(&self) -> bool {
+        self.storage.is_some()
+    }
+
+    #[inline]
+    pub fn auth_token_count(&self) -> usize {
+        self.auth_tokens.read().len()
+    }
+
     #[inline(always)]
     pub fn shard_index(queue: &str) -> usize {
         let mut hasher = rustc_hash::FxHasher::default();
