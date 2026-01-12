@@ -2,8 +2,6 @@
 
 <img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/logo.png" alt="FlashQ Logo" width="280">
 
-# FlashQ
-
 ### The Fastest Open-Source Job Queue on the Planet
 
 **Process millions of jobs per second with sub-millisecond latency.**<br>
