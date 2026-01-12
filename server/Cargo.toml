@@ -22,7 +22,7 @@ axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors"] }
 
 # Hashing - OPTIMIZED
-rustc-hash = "2.0"              # FxHashMap - 2-3x faster than std HashMap
+gxhash = "3"                    # Fastest hasher (AES-NI, 20-30% faster than FxHash)
 
 # IDs - OPTIMIZED
 ulid = "1.1"                    # Sortable IDs, faster than UUID v4

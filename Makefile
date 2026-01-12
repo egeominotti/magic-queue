@@ -1,10 +1,14 @@
 # FlashQ Makefile
 
-.PHONY: dev run release test postgres up down logs clean dashboard stress restart stop
+.PHONY: dev run server release test postgres up down logs clean dashboard stress restart stop
 
 # Development
 dev:
 	cd server && cargo run
+
+# Run server with HTTP API (in-memory)
+server:
+	cd server && HTTP=1 GRPC=1 cargo run --release
 
 # Run with HTTP API and Dashboard
 run:
@@ -96,16 +100,24 @@ restart-mem: stop
 # Help
 help:
 	@echo "FlashQ Commands:"
-	@echo "  make dev        - Run server in dev mode"
-	@echo "  make run        - Run with HTTP API"
-	@echo "  make release    - Run release build with HTTP"
-	@echo "  make persist    - Run with PostgreSQL persistence"
-	@echo "  make test       - Run Rust tests"
-	@echo "  make sdk-test   - Run SDK tests"
-	@echo "  make stress     - Run stress tests"
-	@echo "  make postgres   - Start PostgreSQL container"
-	@echo "  make up         - Start PostgreSQL and wait"
-	@echo "  make down       - Stop containers"
-	@echo "  make logs       - View container logs"
-	@echo "  make dashboard  - Open dashboard in browser"
-	@echo "  make clean      - Clean build artifacts"
+	@echo ""
+	@echo "  Server:"
+	@echo "    make server     - Run release server (HTTP + gRPC, in-memory)"
+	@echo "    make persist    - Run with PostgreSQL persistence"
+	@echo "    make dev        - Run server in dev mode"
+	@echo "    make stop       - Stop running server"
+	@echo "    make restart    - Restart server with PostgreSQL"
+	@echo ""
+	@echo "  Docker:"
+	@echo "    make up         - Start PostgreSQL container"
+	@echo "    make down       - Stop all containers"
+	@echo "    make logs       - View container logs"
+	@echo ""
+	@echo "  Testing:"
+	@echo "    make test       - Run Rust unit tests"
+	@echo "    make sdk-test   - Run SDK comprehensive tests"
+	@echo "    make stress     - Run stress tests"
+	@echo ""
+	@echo "  Other:"
+	@echo "    make dashboard  - Open dashboard in browser"
+	@echo "    make clean      - Clean build artifacts"

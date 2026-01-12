@@ -1,14 +1,21 @@
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gxhash::GxHasher;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::Notify;
 
 use crate::protocol::{Job, JobState};
+
+// ============== GxHash Type Aliases ==============
+// GxHash is 20-30% faster than FxHash (uses AES-NI instructions)
+
+pub type GxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<GxHasher>>;
+pub type GxHashSet<T> = HashSet<T, BuildHasherDefault<GxHasher>>;
 
 // ============== Coarse Timestamp ==============
 // Cached timestamp updated every 1ms - avoids syscall per operation
@@ -53,8 +60,8 @@ pub fn now_ms() -> u64 {
 // ============== String Interning ==============
 // Avoid repeated allocations for queue names
 
-static INTERNED_STRINGS: Lazy<RwLock<FxHashSet<Arc<str>>>> =
-    Lazy::new(|| RwLock::new(FxHashSet::default()));
+static INTERNED_STRINGS: Lazy<RwLock<GxHashSet<Arc<str>>>> =
+    Lazy::new(|| RwLock::new(GxHashSet::default()));
 
 /// Maximum number of interned strings to prevent DOS attacks
 const MAX_INTERNED_STRINGS: usize = 10_000;
@@ -226,11 +233,11 @@ impl Default for QueueState {
 // Each shard contains queues and their state
 
 pub struct Shard {
-    pub queues: FxHashMap<Arc<str>, BinaryHeap<Job>>,
-    pub dlq: FxHashMap<Arc<str>, VecDeque<Job>>,
-    pub unique_keys: FxHashMap<Arc<str>, FxHashSet<String>>,
-    pub waiting_deps: FxHashMap<u64, Job>,
-    pub queue_state: FxHashMap<Arc<str>, QueueState>,
+    pub queues: GxHashMap<Arc<str>, BinaryHeap<Job>>,
+    pub dlq: GxHashMap<Arc<str>, VecDeque<Job>>,
+    pub unique_keys: GxHashMap<Arc<str>, GxHashSet<String>>,
+    pub waiting_deps: GxHashMap<u64, Job>,
+    pub queue_state: GxHashMap<Arc<str>, QueueState>,
     pub notify: Arc<Notify>,  // Per-shard notify for targeted wakeups
 }
 
@@ -238,11 +245,11 @@ impl Shard {
     #[inline]
     pub fn new() -> Self {
         Self {
-            queues: FxHashMap::with_capacity_and_hasher(16, Default::default()),
-            dlq: FxHashMap::with_capacity_and_hasher(16, Default::default()),
-            unique_keys: FxHashMap::with_capacity_and_hasher(16, Default::default()),
-            waiting_deps: FxHashMap::with_capacity_and_hasher(256, Default::default()),
-            queue_state: FxHashMap::with_capacity_and_hasher(16, Default::default()),
+            queues: GxHashMap::with_capacity_and_hasher(16, Default::default()),
+            dlq: GxHashMap::with_capacity_and_hasher(16, Default::default()),
+            unique_keys: GxHashMap::with_capacity_and_hasher(16, Default::default()),
+            waiting_deps: GxHashMap::with_capacity_and_hasher(256, Default::default()),
+            queue_state: GxHashMap::with_capacity_and_hasher(16, Default::default()),
             notify: Arc::new(Notify::new()),
         }
     }

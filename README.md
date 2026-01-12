@@ -61,6 +61,12 @@ Built with Rust for teams who refuse to compromise on performance.
 
 Real benchmarks on Apple Silicon M2. No synthetic tests. No asterisks.
 
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/benchmark.png" alt="flashQ Benchmark Results" width="800">
+
+</div>
+
 | Metric | flashQ | BullMQ (Redis) | Improvement |
 |--------|--------|----------------|-------------|
 | **Batch Throughput** | 2,127,660 ops/sec | 36,232 ops/sec | **58x faster** |
@@ -233,31 +239,81 @@ flashQ excels when you need:
 
 Get up and running in under 60 seconds.
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker Compose (Recommended)
 
 ```bash
-# Start flashQ with PostgreSQL persistence
+# Clone the repository
+git clone https://github.com/egeominotti/flashq.git
+cd flashq
+
+# Start flashQ + PostgreSQL
 docker-compose up -d
 
-# Dashboard available at http://localhost:6790
+# ✅ Dashboard: http://localhost:6790
+# ✅ TCP API:   localhost:6789
+# ✅ HTTP API:  localhost:6790
+# ✅ gRPC API:  localhost:6791
 ```
 
-### Option 2: Binary
+### Option 2: Docker (Standalone)
 
 ```bash
-# Download and run
-curl -fsSL https://get.flashq.io | sh
+# Run flashQ in-memory (no persistence)
+docker run -d -p 6789:6789 -p 6790:6790 \
+  -e HTTP=1 \
+  flashq/flashq:latest
 
-# Or build from source
-cd server && cargo run --release
+# Run with PostgreSQL persistence
+docker run -d -p 6789:6789 -p 6790:6790 \
+  -e HTTP=1 \
+  -e DATABASE_URL=postgres://user:pass@host:5432/flashq \
+  flashq/flashq:latest
 ```
 
-### Option 3: Makefile
+### Option 3: Build from Source
 
 ```bash
-make up        # Start PostgreSQL
-make persist   # Run with persistence
-make dashboard # Open monitoring UI
+# Requirements: Rust 1.75+
+git clone https://github.com/egeominotti/flashq.git
+cd flashq/server
+
+# Build optimized release
+cargo build --release
+
+# Run with HTTP dashboard
+HTTP=1 ./target/release/flashq-server
+
+# Run with all protocols
+HTTP=1 GRPC=1 ./target/release/flashq-server
+
+# Run with PostgreSQL persistence
+DATABASE_URL=postgres://user:pass@localhost/flashq \
+HTTP=1 ./target/release/flashq-server
+```
+
+### Option 4: Makefile
+
+```bash
+make up        # Start PostgreSQL via Docker
+make server    # Run server (in-memory)
+make persist   # Run with PostgreSQL persistence
+make dashboard # Open monitoring UI in browser
+make test      # Run SDK tests
+```
+
+### Verify Installation
+
+```bash
+# Check health
+curl http://localhost:6790/health
+
+# Push a job via HTTP
+curl -X POST http://localhost:6790/queues/test/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"hello": "world"}}'
+
+# View stats
+curl http://localhost:6790/stats
 ```
 
 <br>
@@ -514,12 +570,13 @@ await worker.start();
 
 ### Performance Optimizations
 
-- **FxHashMap** — 2-3x faster hashing than std HashMap
-- **parking_lot** — Superior lock performance
-- **mimalloc** — High-performance memory allocator
-- **32 Shards** — Minimized lock contention
-- **SIMD JSON** — Accelerated parsing with simd-json
-- **LTO Build** — Maximum compiler optimization
+- **GxHash** — Fastest hasher (AES-NI accelerated, 30% faster than FxHash)
+- **sonic-rs** — SIMD-accelerated JSON (30% faster than simd-json)
+- **parking_lot** — Superior lock performance (2x faster than std)
+- **mimalloc** — High-performance memory allocator (15% faster)
+- **32 Shards** — Minimized lock contention, true parallelism
+- **ULID IDs** — Sortable, faster than UUID v4
+- **LTO Build** — Link-time optimization for maximum performance
 
 <br>
 

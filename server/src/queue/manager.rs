@@ -2,35 +2,35 @@ use std::collections::BinaryHeap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use gxhash::GxHasher;
 use parking_lot::RwLock;
-use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 
 use crate::protocol::{CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint, WebhookConfig, WorkerInfo};
 use super::postgres::PostgresStorage;
 use super::cluster::ClusterManager;
-use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, JobLocation, Shard, Subscriber, Webhook, Worker};
+use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, GxHashMap, GxHashSet, JobLocation, Shard, Subscriber, Webhook, Worker};
 use tokio::sync::broadcast;
 
 pub const NUM_SHARDS: usize = 32;
 
 pub struct QueueManager {
     pub(crate) shards: Vec<RwLock<Shard>>,
-    pub(crate) processing: RwLock<FxHashMap<u64, Job>>,
+    pub(crate) processing: RwLock<GxHashMap<u64, Job>>,
     /// PostgreSQL storage (replaces WAL)
     pub(crate) storage: Option<Arc<PostgresStorage>>,
-    pub(crate) cron_jobs: RwLock<FxHashMap<String, CronJob>>,
-    pub(crate) completed_jobs: RwLock<FxHashSet<u64>>,
-    pub(crate) job_results: RwLock<FxHashMap<u64, Value>>,
+    pub(crate) cron_jobs: RwLock<GxHashMap<String, CronJob>>,
+    pub(crate) completed_jobs: RwLock<GxHashSet<u64>>,
+    pub(crate) job_results: RwLock<GxHashMap<u64, Value>>,
     pub(crate) subscribers: RwLock<Vec<Subscriber>>,
-    pub(crate) auth_tokens: RwLock<FxHashSet<String>>,
+    pub(crate) auth_tokens: RwLock<GxHashSet<String>>,
     pub(crate) metrics: GlobalMetrics,
     /// O(1) job location index - maps job_id to its current location
-    pub(crate) job_index: RwLock<FxHashMap<u64, JobLocation>>,
+    pub(crate) job_index: RwLock<GxHashMap<u64, JobLocation>>,
     // Worker registration
-    pub(crate) workers: RwLock<FxHashMap<String, Worker>>,
+    pub(crate) workers: RwLock<GxHashMap<String, Worker>>,
     // Webhooks
-    pub(crate) webhooks: RwLock<FxHashMap<String, Webhook>>,
+    pub(crate) webhooks: RwLock<GxHashMap<String, Webhook>>,
     // Event broadcast for SSE/WebSocket
     pub(crate) event_tx: broadcast::Sender<JobEvent>,
     // Metrics history for charts (last 60 points = 5 minutes at 5s intervals)
@@ -131,17 +131,17 @@ impl QueueManager {
 
         let manager = Arc::new(Self {
             shards,
-            processing: RwLock::new(FxHashMap::with_capacity_and_hasher(4096, Default::default())),
+            processing: RwLock::new(GxHashMap::with_capacity_and_hasher(4096, Default::default())),
             storage,
-            cron_jobs: RwLock::new(FxHashMap::default()),
-            completed_jobs: RwLock::new(FxHashSet::default()),
-            job_results: RwLock::new(FxHashMap::default()),
+            cron_jobs: RwLock::new(GxHashMap::default()),
+            completed_jobs: RwLock::new(GxHashSet::default()),
+            job_results: RwLock::new(GxHashMap::default()),
             subscribers: RwLock::new(Vec::new()),
-            auth_tokens: RwLock::new(FxHashSet::default()),
+            auth_tokens: RwLock::new(GxHashSet::default()),
             metrics: GlobalMetrics::new(),
-            job_index: RwLock::new(FxHashMap::with_capacity_and_hasher(65536, Default::default())),
-            workers: RwLock::new(FxHashMap::default()),
-            webhooks: RwLock::new(FxHashMap::default()),
+            job_index: RwLock::new(GxHashMap::with_capacity_and_hasher(65536, Default::default())),
+            workers: RwLock::new(GxHashMap::default()),
+            webhooks: RwLock::new(GxHashMap::default()),
             event_tx,
             metrics_history: RwLock::new(Vec::with_capacity(60)),
             cluster,
@@ -227,7 +227,7 @@ impl QueueManager {
 
     #[inline(always)]
     pub fn shard_index(queue: &str) -> usize {
-        let mut hasher = rustc_hash::FxHasher::default();
+        let mut hasher = GxHasher::default();
         queue.hash(&mut hasher);
         hasher.finish() as usize % NUM_SHARDS
     }
