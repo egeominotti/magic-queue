@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-MagicQueue is a high-performance job queue server built with Rust.
+FlashQ is a high-performance job queue server built with Rust.
 
 ## Key Commands
 
@@ -20,7 +20,7 @@ cargo run
 cargo run --release
 
 # With PostgreSQL persistence
-DATABASE_URL=postgres://user:pass@localhost/magicqueue cargo run --release
+DATABASE_URL=postgres://user:pass@localhost/flashq cargo run --release
 
 # With HTTP API & Dashboard
 HTTP=1 cargo run --release
@@ -32,7 +32,7 @@ GRPC=1 cargo run --release
 UNIX_SOCKET=1 cargo run --release
 
 # With Clustering (HA mode)
-CLUSTER_MODE=1 NODE_ID=node-1 DATABASE_URL=postgres://user:pass@localhost/magicqueue HTTP=1 cargo run --release
+CLUSTER_MODE=1 NODE_ID=node-1 DATABASE_URL=postgres://user:pass@localhost/flashq HTTP=1 cargo run --release
 
 # Run tests
 cargo test
@@ -53,19 +53,19 @@ bun run examples/stress-test.ts
 ### Docker Compose (Recommended)
 
 ```bash
-# Start PostgreSQL + MagicQueue
+# Start PostgreSQL + FlashQ
 docker-compose up -d
 
 # View logs
-docker-compose logs -f magicqueue
+docker-compose logs -f flashq
 ```
 
 ### Docker (Standalone)
 
 ```bash
 # Build and run
-docker build -t magic-queue .
-docker run -p 6789:6789 magic-queue
+docker build -t flashq .
+docker run -p 6789:6789 flashq
 ```
 
 ## Architecture
@@ -207,7 +207,7 @@ PUSH --> [WAITING/DELAYED/WAITING_CHILDREN]
 
 ## Clustering (High Availability)
 
-MagicQueue supports clustering for high availability using PostgreSQL as the coordination layer.
+FlashQ supports clustering for high availability using PostgreSQL as the coordination layer.
 
 ### Environment Variables
 
@@ -253,10 +253,10 @@ MagicQueue supports clustering for high availability using PostgreSQL as the coo
 
 ```bash
 # Start Node 1 (becomes leader)
-CLUSTER_MODE=1 NODE_ID=node-1 DATABASE_URL=postgres://... HTTP=1 HTTP_PORT=6790 PORT=6789 ./magic-queue-server
+CLUSTER_MODE=1 NODE_ID=node-1 DATABASE_URL=postgres://... HTTP=1 HTTP_PORT=6790 PORT=6789 ./flashq-server
 
 # Start Node 2 (becomes follower)
-CLUSTER_MODE=1 NODE_ID=node-2 DATABASE_URL=postgres://... HTTP=1 HTTP_PORT=6792 PORT=6793 ./magic-queue-server
+CLUSTER_MODE=1 NODE_ID=node-2 DATABASE_URL=postgres://... HTTP=1 HTTP_PORT=6792 PORT=6793 ./flashq-server
 
 # Check cluster status
 curl http://localhost:6790/cluster/nodes
@@ -352,7 +352,7 @@ The system has been validated with 33 stress tests:
 sdk/typescript/
 ├── src/
 │   ├── index.ts    # Main exports
-│   ├── client.ts   # MagicQueue client (TCP/HTTP)
+│   ├── client.ts   # FlashQ client (TCP/HTTP)
 │   ├── worker.ts   # Worker class for job processing
 │   └── types.ts    # TypeScript type definitions
 └── examples/

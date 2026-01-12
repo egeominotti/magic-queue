@@ -5,7 +5,7 @@
  * Tests various payload sizes and structures.
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -48,10 +48,10 @@ interface NestedPayload {
 }
 
 async function main() {
-  const client = new MagicQueue({ host: HOST, port: PORT });
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
 
-  console.log('Connected to MagicQueue\n');
+  console.log('Connected to FlashQ\n');
   console.log('='.repeat(60));
   console.log('   Large Payload Examples');
   console.log('='.repeat(60));
@@ -308,7 +308,7 @@ async function main() {
   `);
 
   await client.close();
-  console.log('Disconnected from MagicQueue');
+  console.log('Disconnected from FlashQ');
 }
 
 main().catch(console.error);

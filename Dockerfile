@@ -20,7 +20,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/magic-queue-server /app/magic-queue-server
+COPY --from=builder /app/target/release/flashq-server /app/flashq-server
 
 # Expose TCP port
 EXPOSE 6789
@@ -30,4 +30,4 @@ ENV RUST_LOG=info
 ENV PERSIST=0
 
 # Run server
-CMD ["./magic-queue-server"]
+CMD ["./flashq-server"]

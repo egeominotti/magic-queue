@@ -6,10 +6,10 @@
  * Run: npx ts-node examples/11-job-state-tracking.ts
  */
 
-import { MagicQueue, Worker, JobState } from '../src';
+import { FlashQ, Worker, JobState } from '../src';
 
 async function main() {
-  const client = new MagicQueue({ host: 'localhost', port: 6789 });
+  const client = new FlashQ({ host: 'localhost', port: 6789 });
   await client.connect();
   console.log('✅ Connected\n');
 

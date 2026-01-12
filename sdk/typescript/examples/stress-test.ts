@@ -1,5 +1,5 @@
 /**
- * MagicQueue Stress Test
+ * FlashQ Stress Test
  *
  * Tests system resilience under extreme load conditions:
  * - Massive concurrent operations
@@ -8,7 +8,7 @@
  * - Edge cases and error conditions
  */
 
-import { MagicQueue, Job } from '../src/index';
+import { FlashQ, Job } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -26,8 +26,8 @@ const CONFIG = {
 let passedTests = 0;
 let failedTests = 0;
 
-async function createClient(): Promise<MagicQueue> {
-  const client = new MagicQueue({ host: HOST, port: PORT });
+async function createClient(): Promise<FlashQ> {
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
   return client;
 }
@@ -52,7 +52,7 @@ function fail(name: string, error: any) {
 async function testMassiveConcurrentPush() {
   log('TEST 1: Massive Concurrent Push');
 
-  const clients: MagicQueue[] = [];
+  const clients: FlashQ[] = [];
   const totalJobs = CONFIG.CONCURRENT_CONNECTIONS * CONFIG.JOBS_PER_CONNECTION;
 
   try {
@@ -323,7 +323,7 @@ async function testRateLimitingUnderPressure() {
 async function testConcurrencyLimitStress() {
   log('TEST 6: Concurrency Limit Stress');
 
-  const clients: MagicQueue[] = [];
+  const clients: FlashQ[] = [];
   const queue = 'stress-concurrency';
   const concurrencyLimit = 5;
 
@@ -781,7 +781,7 @@ async function testSustainedLoad() {
 // ============================================
 async function runAllTests() {
   console.log('\n========================================');
-  console.log('   MagicQueue Stress Test Suite');
+  console.log('   FlashQ Stress Test Suite');
   console.log('========================================\n');
   console.log(`Configuration:`);
   console.log(`  - Concurrent connections: ${CONFIG.CONCURRENT_CONNECTIONS}`);

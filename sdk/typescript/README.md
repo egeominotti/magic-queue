@@ -1,22 +1,22 @@
-# MagicQueue TypeScript SDK
+# FlashQ TypeScript SDK
 
-Official TypeScript client for [MagicQueue](https://github.com/egeominotti/magic-queue) - High-Performance Job Queue.
+Official TypeScript client for [FlashQ](https://github.com/egeominotti/flashq) - High-Performance Job Queue.
 
 **Runtime: [Bun](https://bun.sh)** - This SDK is designed for Bun runtime.
 
 ## Installation
 
 ```bash
-bun add magicqueue
+bun add flashq
 ```
 
 ## Quick Start
 
 ```typescript
-import { MagicQueue, Worker } from 'magicqueue';
+import { FlashQ, Worker } from 'flashq';
 
 // Create a client
-const client = new MagicQueue({
+const client = new FlashQ({
   host: 'localhost',
   port: 6789,
   token: 'your-auth-token', // optional
@@ -28,7 +28,7 @@ await client.connect();
 const job = await client.push('emails', {
   to: 'user@example.com',
   subject: 'Hello',
-  body: 'Welcome to MagicQueue!',
+  body: 'Welcome to FlashQ!',
 });
 console.log(`Job created: ${job.id}`);
 
@@ -49,7 +49,7 @@ await worker.start();
 #### Connection
 
 ```typescript
-const client = new MagicQueue({
+const client = new FlashQ({
   host: 'localhost',     // Server host (default: "localhost")
   port: 6789,            // TCP port (default: 6789)
   httpPort: 6790,        // HTTP port (default: 6790)
@@ -214,7 +214,7 @@ const metrics = await client.metrics();
 ### Worker
 
 ```typescript
-import { Worker } from 'magicqueue';
+import { Worker } from 'flashq';
 
 const worker = new Worker(
   'queue-name',  // or ['queue1', 'queue2']
@@ -276,7 +276,7 @@ import type {
   WorkerOptions,
   ClientOptions,
   JobProcessor,
-} from 'magicqueue';
+} from 'flashq';
 ```
 
 ## Examples
@@ -284,7 +284,7 @@ import type {
 ### Email Queue
 
 ```typescript
-import { MagicQueue, Worker } from 'magicqueue';
+import { FlashQ, Worker } from 'flashq';
 
 interface EmailJob {
   to: string;
@@ -293,7 +293,7 @@ interface EmailJob {
 }
 
 // Producer
-const client = new MagicQueue();
+const client = new FlashQ();
 await client.connect();
 
 await client.push<EmailJob>('emails', {

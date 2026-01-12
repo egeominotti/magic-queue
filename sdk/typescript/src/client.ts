@@ -18,13 +18,13 @@ import type {
 } from './types';
 
 /**
- * MagicQueue Client
+ * FlashQ Client
  *
- * Connects to MagicQueue server via TCP protocol.
+ * Connects to FlashQ server via TCP protocol.
  *
  * @example
  * ```typescript
- * const client = new MagicQueue({ host: 'localhost', port: 6789 });
+ * const client = new FlashQ({ host: 'localhost', port: 6789 });
  * await client.connect();
  *
  * // Push a job
@@ -37,7 +37,7 @@ import type {
  * await client.close();
  * ```
  */
-export class MagicQueue extends EventEmitter {
+export class FlashQ extends EventEmitter {
   private options: Required<ClientOptions>;
   private socket: net.Socket | null = null;
   private connected = false;
@@ -65,7 +65,7 @@ export class MagicQueue extends EventEmitter {
   // ============== Connection Management ==============
 
   /**
-   * Connect to MagicQueue server
+   * Connect to FlashQ server
    */
   async connect(): Promise<void> {
     if (this.options.useHttp) {
@@ -713,4 +713,4 @@ export class MagicQueue extends EventEmitter {
   }
 }
 
-export default MagicQueue;
+export default FlashQ;

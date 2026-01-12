@@ -1,10 +1,10 @@
 /**
- * MagicQueue Protocol Comparison Benchmark
+ * FlashQ Protocol Comparison Benchmark
  *
  * Confronta: TCP vs HTTP vs gRPC
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const TCP_PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -27,7 +27,7 @@ async function benchmarkTCP(): Promise<BenchResult> {
   console.log('\n🔌 TCP Protocol (porta 6789)');
   console.log('─'.repeat(40));
 
-  const client = new MagicQueue({ host: HOST, port: TCP_PORT });
+  const client = new FlashQ({ host: HOST, port: TCP_PORT });
   await client.connect();
   const queue = `tcp-bench-${Date.now()}`;
 
@@ -68,7 +68,7 @@ async function benchmarkHTTP(): Promise<BenchResult> {
   console.log('\n🌐 HTTP Protocol (porta 6790)');
   console.log('─'.repeat(40));
 
-  const client = new MagicQueue({ host: HOST, port: TCP_PORT, httpPort: HTTP_PORT, useHttp: true });
+  const client = new FlashQ({ host: HOST, port: TCP_PORT, httpPort: HTTP_PORT, useHttp: true });
   await client.connect();
   const queue = `http-bench-${Date.now()}`;
 
@@ -115,7 +115,7 @@ async function benchmarkHTTPParallel(): Promise<BenchResult> {
   // Single push parallel (10 connections x 200 jobs each)
   let start = Date.now();
   const singlePromises = Array.from({ length: 10 }, async () => {
-    const client = new MagicQueue({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
+    const client = new FlashQ({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
     await client.connect();
     const pushes = Array.from({ length: 200 }, (_, i) => client.push(queue, { i }));
     await Promise.all(pushes);
@@ -128,7 +128,7 @@ async function benchmarkHTTPParallel(): Promise<BenchResult> {
   // More parallel pushes (simulate batch)
   start = Date.now();
   const batchPromises = Array.from({ length: 10 }, async () => {
-    const client = new MagicQueue({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
+    const client = new FlashQ({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
     await client.connect();
     const pushes = Array.from({ length: 500 }, (_, i) => client.push(queue, { i }));
     await Promise.all(pushes);
@@ -142,7 +142,7 @@ async function benchmarkHTTPParallel(): Promise<BenchResult> {
   start = Date.now();
   let totalProcessed = 0;
   const pullPromises = Array.from({ length: 10 }, async () => {
-    const client = new MagicQueue({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
+    const client = new FlashQ({ host: HOST, httpPort: HTTP_PORT, useHttp: true });
     await client.connect();
     let processed = 0;
     while (totalProcessed < 2000 && processed < 200) {
@@ -219,7 +219,7 @@ async function benchmarkRawFetch(): Promise<BenchResult> {
 
 async function main() {
   console.log('═'.repeat(60));
-  console.log('  MagicQueue Protocol Comparison');
+  console.log('  FlashQ Protocol Comparison');
   console.log('═'.repeat(60));
 
   const results: BenchResult[] = [];

@@ -1,5 +1,5 @@
 /**
- * MagicQueue TypeScript SDK Types
+ * FlashQ TypeScript SDK Types
  */
 
 // ============== Job Types ==============
@@ -208,13 +208,13 @@ export interface BatchResponse {
 // ============== Client Options ==============
 
 export interface ClientOptions {
-  /** MagicQueue server host (default: "localhost") */
+  /** FlashQ server host (default: "localhost") */
   host?: string;
   /** TCP port (default: 6789) */
   port?: number;
   /** HTTP port for REST API (default: 6790) */
   httpPort?: number;
-  /** Unix socket path (e.g., "/tmp/magic-queue.sock") - if set, ignores host/port */
+  /** Unix socket path (e.g., "/tmp/flashq.sock") - if set, ignores host/port */
   socketPath?: string;
   /** Authentication token */
   token?: string;

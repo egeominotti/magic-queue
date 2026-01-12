@@ -6,10 +6,10 @@
  * Run: npx ts-node examples/08-queue-control.ts
  */
 
-import { MagicQueue, Worker } from '../src';
+import { FlashQ, Worker } from '../src';
 
 async function main() {
-  const client = new MagicQueue({ host: 'localhost', port: 6789 });
+  const client = new FlashQ({ host: 'localhost', port: 6789 });
   await client.connect();
   console.log('✅ Connected\n');
 

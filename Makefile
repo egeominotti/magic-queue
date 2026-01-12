@@ -1,4 +1,4 @@
-# MagicQueue Makefile
+# FlashQ Makefile
 
 .PHONY: dev run release test postgres up down logs clean dashboard stress restart stop
 
@@ -41,7 +41,7 @@ logs:
 persist:
 	docker-compose up -d postgres
 	@sleep 3
-	cd server && DATABASE_URL=postgres://magicqueue:magicqueue@localhost:5432/magicqueue HTTP=1 cargo run --release
+	cd server && DATABASE_URL=postgres://flashq:flashq@localhost:5432/flashq HTTP=1 cargo run --release
 
 # Open dashboard in browser (macOS)
 dashboard:
@@ -62,25 +62,25 @@ clean:
 
 # Build Docker image
 docker-build:
-	docker build -t magic-queue .
+	docker build -t flashq .
 
 # Full test: start postgres, run server, run tests
 full-test: up
 	@echo "Starting server with persistence..."
-	cd server && DATABASE_URL=postgres://magicqueue:magicqueue@localhost:5432/magicqueue HTTP=1 cargo run --release &
+	cd server && DATABASE_URL=postgres://flashq:flashq@localhost:5432/flashq HTTP=1 cargo run --release &
 	@sleep 5
 	@echo "Running SDK tests..."
 	cd sdk/typescript && bun run examples/comprehensive-test.ts
 
 # Stop server
 stop:
-	@pkill -f magic-queue-server 2>/dev/null || echo "Server not running"
+	@pkill -f flashq-server 2>/dev/null || echo "Server not running"
 	@echo "Server stopped"
 
 # Restart server (with persistence)
 restart: stop
 	@sleep 1
-	@cd server && DATABASE_URL=postgres://magicqueue:magicqueue@localhost:5432/magicqueue HTTP=1 cargo run --release --bin magic-queue-server &
+	@cd server && DATABASE_URL=postgres://flashq:flashq@localhost:5432/flashq HTTP=1 cargo run --release --bin flashq-server &
 	@sleep 3
 	@echo "Server restarted with PostgreSQL persistence"
 	@echo "Dashboard: http://localhost:6790"
@@ -88,14 +88,14 @@ restart: stop
 # Restart server (memory only)
 restart-mem: stop
 	@sleep 1
-	@cd server && HTTP=1 cargo run --release --bin magic-queue-server &
+	@cd server && HTTP=1 cargo run --release --bin flashq-server &
 	@sleep 3
 	@echo "Server restarted (memory only)"
 	@echo "Dashboard: http://localhost:6790"
 
 # Help
 help:
-	@echo "MagicQueue Commands:"
+	@echo "FlashQ Commands:"
 	@echo "  make dev        - Run server in dev mode"
 	@echo "  make run        - Run with HTTP API"
 	@echo "  make release    - Run release build with HTTP"

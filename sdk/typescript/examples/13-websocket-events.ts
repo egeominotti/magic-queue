@@ -9,7 +9,7 @@
  *   - Start server with HTTP enabled: HTTP=1 cargo run --release
  */
 
-import { MagicQueue } from '../src';
+import { FlashQ } from '../src';
 
 interface JobEvent {
   event_type: 'pushed' | 'completed' | 'failed' | 'progress' | 'timeout';
@@ -30,7 +30,7 @@ async function main() {
   console.log('===================================\n');
 
   // Connect to TCP for pushing jobs
-  const client = new MagicQueue({ host: 'localhost', port: 6789 });
+  const client = new FlashQ({ host: 'localhost', port: 6789 });
   await client.connect();
   console.log('TCP Client connected\n');
 

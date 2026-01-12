@@ -22,7 +22,7 @@ use queue::{QueueManager, generate_node_id};
 const DEFAULT_TCP_PORT: u16 = 6789;
 const DEFAULT_HTTP_PORT: u16 = 6790;
 const DEFAULT_GRPC_PORT: u16 = 6791;
-const UNIX_SOCKET_PATH: &str = "/tmp/magic-queue.sock";
+const UNIX_SOCKET_PATH: &str = "/tmp/flashq.sock";
 
 struct ConnectionState {
     authenticated: bool,
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if use_unix {
         let _ = std::fs::remove_file(UNIX_SOCKET_PATH);
         let listener = UnixListener::bind(UNIX_SOCKET_PATH)?;
-        println!("MagicQueue TCP server listening on {}", UNIX_SOCKET_PATH);
+        println!("FlashQ TCP server listening on {}", UNIX_SOCKET_PATH);
 
         loop {
             let (socket, _) = listener.accept().await?;
@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(DEFAULT_TCP_PORT);
 
         let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-        println!("MagicQueue TCP server listening on port {}", port);
+        println!("FlashQ TCP server listening on port {}", port);
 
         loop {
             let (socket, _) = listener.accept().await?;

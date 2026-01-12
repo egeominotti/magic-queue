@@ -1,12 +1,12 @@
 /**
- * MagicQueue - Official TypeScript/Node.js SDK
+ * FlashQ - Official TypeScript/Node.js SDK
  *
- * High-performance job queue client for MagicQueue server.
+ * High-performance job queue client for FlashQ server.
  *
  * @packageDocumentation
  */
 
-export { MagicQueue, MagicQueue as default } from './client';
+export { FlashQ, FlashQ as default } from './client';
 export { Worker } from './worker';
 export * from './types';
 

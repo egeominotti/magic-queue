@@ -64,10 +64,10 @@ async function main() {
   });
 
   const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
-  const magicqueue = protoDescriptor.magicqueue as any;
+  const flashq = protoDescriptor.flashq as any;
 
   // Create client
-  const client = new magicqueue.QueueService(
+  const client = new flashq.QueueService(
     `localhost:${GRPC_PORT}`,
     grpc.credentials.createInsecure()
   );

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { MagicQueue } from './client';
+import { FlashQ } from './client';
 import type {
   Job,
   JobProcessor,
@@ -8,7 +8,7 @@ import type {
 } from './types';
 
 /**
- * MagicQueue Worker
+ * FlashQ Worker
  *
  * Processes jobs from one or more queues.
  *
@@ -26,7 +26,7 @@ import type {
  * ```
  */
 export class Worker<T = unknown, R = unknown> extends EventEmitter {
-  private client: MagicQueue;
+  private client: FlashQ;
   private queues: string[];
   private processor: JobProcessor<T, R>;
   private options: Required<WorkerOptions>;
@@ -50,7 +50,7 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
       autoAck: options.autoAck ?? true,
     };
 
-    this.client = new MagicQueue({
+    this.client = new FlashQ({
       host: options.host,
       port: options.port,
       httpPort: options.httpPort,

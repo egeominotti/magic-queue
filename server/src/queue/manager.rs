@@ -895,7 +895,7 @@ impl QueueManager {
                     // Add HMAC signature header
                     let body = serde_json::to_string(&payload).unwrap_or_default();
                     let signature = hmac_sha256(&secret, &body);
-                    req = req.header("X-MagicQueue-Signature", signature);
+                    req = req.header("X-FlashQ-Signature", signature);
                 }
 
                 match req.send().await {

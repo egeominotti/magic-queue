@@ -1,10 +1,10 @@
 /**
- * MagicQueue Concurrency Test
+ * FlashQ Concurrency Test
  *
  * Verifica che più worker possano processare job in parallelo
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -27,14 +27,14 @@ function cpuWork(ms: number): number {
 
 async function main() {
   console.log('═'.repeat(60));
-  console.log('  MagicQueue Concurrency Test');
+  console.log('  FlashQ Concurrency Test');
   console.log('═'.repeat(60));
   console.log(`\nConfig:`);
   console.log(`  Jobs: ${CONFIG.TOTAL_JOBS}`);
   console.log(`  Workers: ${CONFIG.WORKER_COUNT}`);
   console.log(`  Task duration: ${CONFIG.TASK_DURATION_MS}ms each\n`);
 
-  const client = new MagicQueue({ host: HOST, port: PORT });
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
 
   const queue = `concurrency-test-${Date.now()}`;
@@ -59,7 +59,7 @@ async function main() {
 
   // Create workers (using HTTP for better concurrency)
   const workerPromises = Array.from({ length: CONFIG.WORKER_COUNT }, async (_, workerId) => {
-    const workerClient = new MagicQueue({ host: HOST, port: PORT, timeout: 10000, useHttp: true });
+    const workerClient = new FlashQ({ host: HOST, port: PORT, timeout: 10000, useHttp: true });
     await workerClient.connect();
 
     const workerStart = Date.now();

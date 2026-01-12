@@ -1,10 +1,10 @@
 /**
  * Real-World Examples
  *
- * Practical examples of MagicQueue usage in production scenarios.
+ * Practical examples of FlashQ usage in production scenarios.
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -36,7 +36,7 @@ interface OrderJob {
   createdAt: string;
 }
 
-async function ecommerceExample(client: MagicQueue) {
+async function ecommerceExample(client: FlashQ) {
   console.log('\n1. E-Commerce Order Processing');
   console.log('-'.repeat(50));
 
@@ -112,7 +112,7 @@ interface EmailCampaignJob {
   tags: string[];
 }
 
-async function emailCampaignExample(client: MagicQueue) {
+async function emailCampaignExample(client: FlashQ) {
   console.log('\n2. Email Campaign (1000 recipients)');
   console.log('-'.repeat(50));
 
@@ -200,7 +200,7 @@ interface VideoTranscodeJob {
   };
 }
 
-async function videoTranscodingExample(client: MagicQueue) {
+async function videoTranscodingExample(client: FlashQ) {
   console.log('\n3. Video Transcoding Pipeline');
   console.log('-'.repeat(50));
 
@@ -292,7 +292,7 @@ interface DataImportJob {
   notifyEmail: string;
 }
 
-async function dataImportExample(client: MagicQueue) {
+async function dataImportExample(client: FlashQ) {
   console.log('\n4. Data Import (CSV with 50K rows)');
   console.log('-'.repeat(50));
 
@@ -387,7 +387,7 @@ interface MLInferenceJob {
   };
 }
 
-async function mlInferenceExample(client: MagicQueue) {
+async function mlInferenceExample(client: FlashQ) {
   console.log('\n5. ML Model Inference (500 samples)');
   console.log('-'.repeat(50));
 
@@ -472,7 +472,7 @@ interface ReportJob {
   };
 }
 
-async function reportGenerationExample(client: MagicQueue) {
+async function reportGenerationExample(client: FlashQ) {
   console.log('\n6. Report Generation');
   console.log('-'.repeat(50));
 
@@ -537,11 +537,11 @@ async function reportGenerationExample(client: MagicQueue) {
 // Main
 // ============================================
 async function main() {
-  const client = new MagicQueue({ host: HOST, port: PORT });
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
 
   console.log('='.repeat(60));
-  console.log('   Real-World MagicQueue Examples');
+  console.log('   Real-World FlashQ Examples');
   console.log('='.repeat(60));
 
   await ecommerceExample(client);

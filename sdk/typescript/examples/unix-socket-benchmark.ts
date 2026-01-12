@@ -1,5 +1,5 @@
 /**
- * MagicQueue: Unix Socket Benchmark
+ * FlashQ: Unix Socket Benchmark
  *
  * Confronta con risultati TCP precedenti:
  * - TCP Single: ~6,000 jobs/sec
@@ -7,9 +7,9 @@
  * - TCP Pull+Ack: ~185,000 jobs/sec
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
-const UNIX_SOCKET = '/tmp/magic-queue.sock';
+const UNIX_SOCKET = '/tmp/flashq.sock';
 
 const CONFIG = {
   BATCH_SIZE: 500,
@@ -20,10 +20,10 @@ async function main() {
   console.log('═'.repeat(60));
   console.log('  Unix Socket Benchmark');
   console.log('═'.repeat(60));
-  console.log('\n🔗 Unix Socket (/tmp/magic-queue.sock)');
+  console.log('\n🔗 Unix Socket (/tmp/flashq.sock)');
   console.log('─'.repeat(50));
 
-  const client = new MagicQueue({ socketPath: UNIX_SOCKET });
+  const client = new FlashQ({ socketPath: UNIX_SOCKET });
   await client.connect();
   console.log('  ✓ Connected\n');
 

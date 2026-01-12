@@ -31,7 +31,7 @@ Thumbs.db
 # Runtime
 *.log
 *.wal
-magic-queue.wal
+flashq.wal
 
 # Build artifacts
 *.exe

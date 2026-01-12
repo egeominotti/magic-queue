@@ -1,6 +1,6 @@
 <div align="center">
 
-# MagicQueue
+# FlashQ
 
 **High-Performance Job Queue System**
 
@@ -16,7 +16,7 @@ A blazingly fast, zero-dependency job queue built with Rust.
 
 ---
 
-## Why MagicQueue?
+## Why FlashQ?
 
 - **No Redis Required** — Self-contained server with optional persistence
 - **Ultra-Low Latency** — Sub-100us P99 latency for job operations
@@ -43,7 +43,7 @@ Tested on Apple Silicon M2, single server instance.
 
 ### vs BullMQ (Redis)
 
-| Benchmark | MagicQueue | BullMQ | Improvement |
+| Benchmark | FlashQ | BullMQ | Improvement |
 |-----------|------------|--------|-------------|
 | Sequential Push | 10,000 ops/s | 4,533 ops/s | **2.2x faster** |
 | Batch Push | 2,127,660 ops/s | 36,232 ops/s | **58x faster** |
@@ -133,22 +133,22 @@ make dashboard
 docker-compose up -d
 
 # View logs
-docker-compose logs -f magicqueue
+docker-compose logs -f flashq
 ```
 
 This starts:
 - **PostgreSQL** on port 5432
-- **MagicQueue** with TCP (6789), HTTP (6790), and gRPC (6791)
+- **FlashQ** with TCP (6789), HTTP (6790), and gRPC (6791)
 
 ### Docker (Standalone)
 
 ```bash
 # Build and run
-docker build -t magic-queue .
-docker run -p 6789:6789 magic-queue
+docker build -t flashq .
+docker run -p 6789:6789 flashq
 
 # With HTTP API & Dashboard
-docker run -p 6789:6789 -p 6790:6790 -e HTTP=1 magic-queue
+docker run -p 6789:6789 -p 6790:6790 -e HTTP=1 flashq
 ```
 
 ### From Source
@@ -163,7 +163,7 @@ The server listens on **port 6789** (TCP) by default.
 ### With PostgreSQL Persistence
 
 ```bash
-DATABASE_URL=postgres://user:pass@localhost/magicqueue HTTP=1 cargo run --release
+DATABASE_URL=postgres://user:pass@localhost/flashq HTTP=1 cargo run --release
 ```
 
 ### Enable HTTP API & Dashboard
@@ -341,7 +341,7 @@ When pushing a job, you can specify:
 
 ```
 +--------------------------------------------------------------+
-|                      MagicQueue Server                       |
+|                      FlashQ Server                       |
 +--------------------------------------------------------------+
 |                                                              |
 |   +-----------+    +-----------+    +-----------+           |
@@ -441,7 +441,7 @@ When pushing a job, you can specify:
 ### Processing Flow
 
 ```
-Producer                    MagicQueue                     Worker
+Producer                    FlashQ                     Worker
    |                            |                            |
    |  PUSH {queue, data}        |                            |
    |--------------------------->|                            |
@@ -625,9 +625,9 @@ Concurrency: max `limit` jobs processing simultaneously
 ## Project Structure
 
 ```
-magic-queue/
+flashq/
 ├── Dockerfile              # Docker build
-├── docker-compose.yml      # PostgreSQL + MagicQueue
+├── docker-compose.yml      # PostgreSQL + FlashQ
 ├── server/                 # Rust server
 │   ├── Cargo.toml
 │   └── src/
@@ -648,7 +648,7 @@ magic-queue/
 │   └── typescript/         # TypeScript/Bun SDK
 │       ├── src/
 │       │   ├── index.ts    # Main exports
-│       │   ├── client.ts   # MagicQueue client
+│       │   ├── client.ts   # FlashQ client
 │       │   ├── worker.ts   # Worker class
 │       │   └── types.ts    # Type definitions
 │       └── examples/
@@ -660,7 +660,7 @@ magic-queue/
 
 ## Security
 
-MagicQueue includes multiple security measures:
+FlashQ includes multiple security measures:
 
 | Feature | Description |
 |---------|-------------|
@@ -683,16 +683,16 @@ bun install
 ```
 
 ```typescript
-import { MagicQueue } from 'magicqueue';
+import { FlashQ } from 'flashq';
 
 // TCP connection (recommended for performance)
-const client = new MagicQueue({ host: 'localhost', port: 6789 });
+const client = new FlashQ({ host: 'localhost', port: 6789 });
 
 // Unix Socket (for same-machine, +71% faster single ops)
-const client = new MagicQueue({ socketPath: '/tmp/magic-queue.sock' });
+const client = new FlashQ({ socketPath: '/tmp/flashq.sock' });
 
 // HTTP (for simplicity)
-const client = new MagicQueue({ host: 'localhost', useHttp: true });
+const client = new FlashQ({ host: 'localhost', useHttp: true });
 
 await client.connect();
 

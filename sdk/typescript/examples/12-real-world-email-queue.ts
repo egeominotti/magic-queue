@@ -7,7 +7,7 @@
  * Run: npx ts-node examples/12-real-world-email-queue.ts
  */
 
-import { MagicQueue, Worker } from '../src';
+import { FlashQ, Worker } from '../src';
 
 // ============== Types ==============
 
@@ -87,9 +87,9 @@ async function sendEmail(email: EmailJob): Promise<EmailResult> {
 // ============== Main ==============
 
 async function main() {
-  const client = new MagicQueue({ host: 'localhost', port: 6789 });
+  const client = new FlashQ({ host: 'localhost', port: 6789 });
   await client.connect();
-  console.log('✅ Connected to MagicQueue\n');
+  console.log('✅ Connected to FlashQ\n');
 
   const QUEUE = 'emails';
 

@@ -6,7 +6,7 @@
  * Run: npx ts-node examples/02-worker.ts
  */
 
-import { MagicQueue, Worker } from '../src';
+import { FlashQ, Worker } from '../src';
 
 interface EmailJob {
   to: string;
@@ -21,7 +21,7 @@ interface EmailResult {
 
 async function main() {
   // First, push some jobs
-  const client = new MagicQueue({ host: 'localhost', port: 6789 });
+  const client = new FlashQ({ host: 'localhost', port: 6789 });
   await client.connect();
 
   console.log('📤 Pushing 5 email jobs...');

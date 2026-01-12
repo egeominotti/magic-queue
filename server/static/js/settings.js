@@ -1,5 +1,5 @@
 // ============================================================================
-// MagicQueue Dashboard - Settings
+// FlashQ Dashboard - Settings
 // ============================================================================
 
 window.DashboardSettings = (function() {

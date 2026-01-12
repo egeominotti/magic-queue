@@ -1,7 +1,7 @@
 {
-  "name": "magicqueue",
+  "name": "flashq",
   "version": "1.0.0",
-  "description": "Official TypeScript SDK for MagicQueue - High-Performance Job Queue",
+  "description": "Official TypeScript SDK for FlashQ - High-Performance Job Queue",
   "main": "dist/index.js",
   "module": "src/index.ts",
   "types": "dist/index.d.ts",
@@ -20,14 +20,14 @@
     "task-queue",
     "background-jobs",
     "worker",
-    "magicqueue",
+    "flashq",
     "bun"
   ],
   "author": "",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/egeominotti/magic-queue.git",
+    "url": "https://github.com/egeominotti/flashq.git",
     "directory": "sdk/typescript"
   },
   "devDependencies": {

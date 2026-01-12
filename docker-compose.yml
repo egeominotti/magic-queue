@@ -3,17 +3,17 @@ version: "3.8"
 services:
   postgres:
     image: postgres:18.1
-    container_name: magicqueue-postgres
+    container_name: flashq-postgres
     environment:
-      POSTGRES_USER: magicqueue
-      POSTGRES_PASSWORD: magicqueue
-      POSTGRES_DB: magicqueue
+      POSTGRES_USER: flashq
+      POSTGRES_PASSWORD: flashq
+      POSTGRES_DB: flashq
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U magicqueue"]
+      test: ["CMD-SHELL", "pg_isready -U flashq"]
       interval: 5s
       timeout: 5s
       retries: 5

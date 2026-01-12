@@ -6,11 +6,11 @@
  * Run: npx ts-node examples/01-basic-usage.ts
  */
 
-import { MagicQueue } from '../src';
+import { FlashQ } from '../src';
 
 async function main() {
   // Create client
-  const client = new MagicQueue({
+  const client = new FlashQ({
     host: 'localhost',
     port: 6789,
   });
@@ -18,11 +18,11 @@ async function main() {
   try {
     // Connect to server
     await client.connect();
-    console.log('✅ Connected to MagicQueue');
+    console.log('✅ Connected to FlashQ');
 
     // Push a job
     const job = await client.push('example-queue', {
-      message: 'Hello, MagicQueue!',
+      message: 'Hello, FlashQ!',
       timestamp: Date.now(),
     });
     console.log(`✅ Pushed job: ${job.id}`);

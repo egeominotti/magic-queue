@@ -1,10 +1,10 @@
 /**
- * MagicQueue CPU Intensive Test
+ * FlashQ CPU Intensive Test
  *
  * Tests system performance with CPU-heavy workloads
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 import * as crypto from 'crypto';
 
 const HOST = process.env.MQ_HOST || 'localhost';
@@ -90,11 +90,11 @@ function processTask(taskType: string, params: any): { result: any; timeMs: numb
 
 async function main() {
   console.log('═'.repeat(60));
-  console.log('  MagicQueue CPU Intensive Test');
+  console.log('  FlashQ CPU Intensive Test');
   console.log('═'.repeat(60));
   console.log(`\nConfig: ${CONFIG.TOTAL_JOBS} jobs\n`);
 
-  const client = new MagicQueue({ host: HOST, port: PORT });
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
   console.log('✓ Connected\n');
 

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package magicqueue;
+package flashq;
 
 // QueueService provides high-performance job queue operations
 service QueueService {

@@ -1,5 +1,5 @@
 // ============================================================================
-// MagicQueue Dashboard - API Functions
+// FlashQ Dashboard - API Functions
 // ============================================================================
 
 window.DashboardAPI = (function() {

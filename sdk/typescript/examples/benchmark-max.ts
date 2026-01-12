@@ -1,10 +1,10 @@
 /**
- * MagicQueue Maximum Throughput Benchmark
+ * FlashQ Maximum Throughput Benchmark
  *
  * Obiettivo: 10k+ jobs/sec
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 const HOST = process.env.MQ_HOST || 'localhost';
 const PORT = parseInt(process.env.MQ_PORT || '6789');
@@ -26,11 +26,11 @@ async function benchmarkPush() {
   console.log('─'.repeat(50));
 
   const queue = `bench-push-${Date.now()}`;
-  const clients: MagicQueue[] = [];
+  const clients: FlashQ[] = [];
 
   // Create connections
   for (let i = 0; i < CONFIG.CONNECTIONS; i++) {
-    const client = new MagicQueue({ host: HOST, port: PORT });
+    const client = new FlashQ({ host: HOST, port: PORT });
     await client.connect();
     clients.push(client);
   }
@@ -78,11 +78,11 @@ async function benchmarkPull(sourceQueue: string) {
   console.log('\n🔄 PULL + ACK BENCHMARK');
   console.log('─'.repeat(50));
 
-  const clients: MagicQueue[] = [];
+  const clients: FlashQ[] = [];
 
   // Create worker connections
   for (let i = 0; i < CONFIG.PULL_WORKERS; i++) {
-    const client = new MagicQueue({ host: HOST, port: PORT });
+    const client = new FlashQ({ host: HOST, port: PORT });
     await client.connect();
     clients.push(client);
   }
@@ -141,7 +141,7 @@ async function benchmarkSinglePush() {
   console.log('\n⚡ SINGLE PUSH BENCHMARK (no batch)');
   console.log('─'.repeat(50));
 
-  const client = new MagicQueue({ host: HOST, port: PORT });
+  const client = new FlashQ({ host: HOST, port: PORT });
   await client.connect();
 
   const queue = `bench-single-${Date.now()}`;
@@ -172,7 +172,7 @@ async function benchmarkSinglePush() {
 
 async function main() {
   console.log('═'.repeat(60));
-  console.log('  MagicQueue Maximum Throughput Benchmark');
+  console.log('  FlashQ Maximum Throughput Benchmark');
   console.log('═'.repeat(60));
 
   // Single push (baseline)

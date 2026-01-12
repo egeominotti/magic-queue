@@ -1,7 +1,7 @@
 /**
- * Comprehensive MagicQueue SDK Test
+ * Comprehensive FlashQ SDK Test
  *
- * This script tests all major features of the MagicQueue server:
+ * This script tests all major features of the FlashQ server:
  * - Push/Pull operations
  * - Batch operations
  * - Job priorities
@@ -18,7 +18,7 @@
  * - Unique keys (deduplication)
  */
 
-import { MagicQueue } from '../src/index';
+import { FlashQ } from '../src/index';
 
 // ANSI colors for output
 const GREEN = '\x1b[32m';
@@ -54,10 +54,10 @@ async function sleep(ms: number) {
 }
 
 async function runTests() {
-  console.log(`\n${BOLD}${BLUE}MagicQueue Comprehensive SDK Test${RESET}\n`);
+  console.log(`\n${BOLD}${BLUE}FlashQ Comprehensive SDK Test${RESET}\n`);
   console.log(`Starting tests at ${new Date().toISOString()}\n`);
 
-  const client = new MagicQueue({
+  const client = new FlashQ({
     host: 'localhost',
     port: 6789,
     timeout: 10000,

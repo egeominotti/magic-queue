@@ -9,7 +9,7 @@
  * Run: npx ts-node examples/10-authentication.ts
  */
 
-import { MagicQueue } from '../src';
+import { FlashQ } from '../src';
 
 async function main() {
   console.log('═══════════════════════════════════════');
@@ -18,7 +18,7 @@ async function main() {
 
   // Test 1: Connection without token (should fail if auth is enabled)
   console.log('Test 1: Connecting without token...');
-  const noAuthClient = new MagicQueue({ host: 'localhost', port: 6789 });
+  const noAuthClient = new FlashQ({ host: 'localhost', port: 6789 });
 
   try {
     await noAuthClient.connect();
@@ -34,7 +34,7 @@ async function main() {
 
   // Test 2: Connection with valid token
   console.log('Test 2: Connecting with valid token...');
-  const authClient = new MagicQueue({
+  const authClient = new FlashQ({
     host: 'localhost',
     port: 6789,
     token: 'secret123', // Must match AUTH_TOKENS on server
@@ -60,7 +60,7 @@ async function main() {
 
   // Test 3: Connection with invalid token
   console.log('Test 3: Connecting with invalid token...');
-  const badAuthClient = new MagicQueue({
+  const badAuthClient = new FlashQ({
     host: 'localhost',
     port: 6789,
     token: 'wrong-token',
@@ -77,7 +77,7 @@ async function main() {
 
   // Test 4: Late authentication
   console.log('Test 4: Late authentication (connect then auth)...');
-  const lateAuthClient = new MagicQueue({ host: 'localhost', port: 6789 });
+  const lateAuthClient = new FlashQ({ host: 'localhost', port: 6789 });
 
   try {
     await lateAuthClient.connect();

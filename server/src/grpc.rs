@@ -1,4 +1,4 @@
-//! gRPC server implementation for MagicQueue
+//! gRPC server implementation for FlashQ
 //!
 //! Provides high-performance streaming API for job processing.
 
@@ -14,7 +14,7 @@ use crate::protocol::{Job as InternalJob, JobInput as InternalJobInput, JobState
 
 // Include generated protobuf code
 pub mod pb {
-    tonic::include_proto!("magicqueue");
+    tonic::include_proto!("flashq");
 }
 
 use pb::queue_service_server::{QueueService, QueueServiceServer};
