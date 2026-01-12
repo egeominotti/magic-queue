@@ -337,16 +337,32 @@
 
     function updateClusterUI() {
         const panel = document.getElementById('cluster-panel');
-        if (!panel) return;
+        const sidebarInfo = document.getElementById('sidebar-cluster-info');
 
         if (!state.clusterEnabled) {
-            panel.classList.add('hidden');
+            if (panel) panel.classList.add('hidden');
+            if (sidebarInfo) sidebarInfo.classList.add('hidden');
             return;
         }
 
-        panel.classList.remove('hidden');
+        // Show cluster panels
+        if (panel) panel.classList.remove('hidden');
+        if (sidebarInfo) sidebarInfo.classList.remove('hidden');
 
-        // Update current node info
+        // Update sidebar cluster info (always visible)
+        const sidebarRole = document.getElementById('sidebar-node-role');
+        const sidebarNodeId = document.getElementById('sidebar-node-id');
+        const sidebarCount = document.getElementById('sidebar-cluster-count');
+        if (sidebarRole) {
+            sidebarRole.textContent = state.isLeader ? 'Leader' : 'Follower';
+            sidebarRole.className = state.isLeader
+                ? 'px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-medium'
+                : 'px-2 py-0.5 bg-slate-500/20 text-slate-400 rounded text-xs font-medium';
+        }
+        if (sidebarNodeId) sidebarNodeId.textContent = state.currentNodeId || 'unknown';
+        if (sidebarCount) sidebarCount.textContent = state.clusterNodes.length;
+
+        // Update overview panel current node info
         const roleEl = document.getElementById('current-node-role');
         const nodeIdEl = document.getElementById('current-node-id');
         if (roleEl) {

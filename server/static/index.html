@@ -101,7 +101,19 @@
             </nav>
 
             <!-- Status Footer -->
-            <div class="p-4 border-t border-dark-700/50">
+            <div class="p-4 border-t border-dark-700/50 space-y-3">
+                <!-- Cluster Info (shown only in cluster mode) -->
+                <div id="sidebar-cluster-info" class="hidden glass-light rounded-lg p-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-medium text-slate-400">Cluster Node</span>
+                        <span id="sidebar-node-role" class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-medium">Leader</span>
+                    </div>
+                    <div class="text-sm font-mono text-white" id="sidebar-node-id">node-1</div>
+                    <div class="text-xs text-slate-500 mt-1">
+                        <span id="sidebar-cluster-count">2</span> nodes in cluster
+                    </div>
+                </div>
+                <!-- Connection Status -->
                 <div class="glass-light rounded-lg p-3">
                     <div class="flex items-center justify-between mb-2">
                         <span class="text-xs font-medium text-slate-400">System Status</span>
