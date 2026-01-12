@@ -284,22 +284,14 @@ impl QueueManager {
                 match state.as_str() {
                     "waiting" | "delayed" => {
                         let mut shard = self.shards[idx].write();
-                        shard
-                            .queues
-                            .entry(queue_name)
-                            .or_default()
-                            .push(job);
+                        shard.queues.entry(queue_name).or_default().push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
                     }
                     "active" => {
                         // Jobs that were active when server stopped - requeue them
                         let mut shard = self.shards[idx].write();
-                        shard
-                            .queues
-                            .entry(queue_name)
-                            .or_default()
-                            .push(job);
+                        shard.queues.entry(queue_name).or_default().push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
                     }

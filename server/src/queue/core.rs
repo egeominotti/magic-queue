@@ -285,11 +285,7 @@ impl QueueManager {
                     PullResult::SleepRateLimit
                 }
                 // Check concurrency limit
-                else if state
-                    .concurrency
-                    .as_mut()
-                    .is_some_and(|c| !c.try_acquire())
-                {
+                else if state.concurrency.as_mut().is_some_and(|c| !c.try_acquire()) {
                     PullResult::SleepConcurrency
                 } else {
                     // Try to get a job (with lazy TTL deletion)
