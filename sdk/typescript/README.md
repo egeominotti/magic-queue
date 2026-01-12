@@ -1,6 +1,6 @@
-# FlashQ TypeScript SDK
+# flashQ TypeScript SDK
 
-Official TypeScript client for [FlashQ](https://github.com/egeominotti/flashq) - High-Performance Job Queue.
+Official TypeScript client for [flashQ](https://github.com/egeominotti/flashq) - High-Performance Job Queue.
 
 **Runtime: [Bun](https://bun.sh)** - This SDK is designed for Bun runtime.
 
@@ -13,10 +13,10 @@ bun add flashq
 ## Quick Start
 
 ```typescript
-import { FlashQ, Worker } from 'flashq';
+import { flashQ, Worker } from 'flashq';
 
 // Create a client
-const client = new FlashQ({
+const client = new flashQ({
   host: 'localhost',
   port: 6789,
   token: 'your-auth-token', // optional
@@ -28,7 +28,7 @@ await client.connect();
 const job = await client.push('emails', {
   to: 'user@example.com',
   subject: 'Hello',
-  body: 'Welcome to FlashQ!',
+  body: 'Welcome to flashQ!',
 });
 console.log(`Job created: ${job.id}`);
 
@@ -49,7 +49,7 @@ await worker.start();
 #### Connection
 
 ```typescript
-const client = new FlashQ({
+const client = new flashQ({
   host: 'localhost',     // Server host (default: "localhost")
   port: 6789,            // TCP port (default: 6789)
   httpPort: 6790,        // HTTP port (default: 6790)
@@ -284,7 +284,7 @@ import type {
 ### Email Queue
 
 ```typescript
-import { FlashQ, Worker } from 'flashq';
+import { flashQ, Worker } from 'flashq';
 
 interface EmailJob {
   to: string;
@@ -293,7 +293,7 @@ interface EmailJob {
 }
 
 // Producer
-const client = new FlashQ();
+const client = new flashQ();
 await client.connect();
 
 await client.push<EmailJob>('emails', {

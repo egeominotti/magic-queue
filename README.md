@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/logo.png" alt="FlashQ Logo" width="280">
+<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/logo.png" alt="flashQ Logo" width="280">
 
 ### The Fastest Open-Source Job Queue on the Planet
 
@@ -28,13 +28,13 @@ Built with Rust for teams who refuse to compromise on performance.
 
 <br>
 
-## Why Engineering Teams Choose FlashQ
+## Why Engineering Teams Choose flashQ
 
 <table>
 <tr>
 <td width="50%">
 
-### Before FlashQ
+### Before flashQ
 - Redis cluster management overhead
 - Complex scaling challenges
 - High infrastructure costs
@@ -44,7 +44,7 @@ Built with Rust for teams who refuse to compromise on performance.
 </td>
 <td width="50%">
 
-### With FlashQ
+### With flashQ
 - Single binary, zero dependencies
 - Linear horizontal scaling
 - 80% lower infrastructure costs
@@ -61,7 +61,7 @@ Built with Rust for teams who refuse to compromise on performance.
 
 Real benchmarks on Apple Silicon M2. No synthetic tests. No asterisks.
 
-| Metric | FlashQ | BullMQ (Redis) | Improvement |
+| Metric | flashQ | BullMQ (Redis) | Improvement |
 |--------|--------|----------------|-------------|
 | **Batch Throughput** | 2,127,660 ops/sec | 36,232 ops/sec | **58x faster** |
 | **Pull + Ack** | 519,388 ops/sec | ~10,000 ops/sec | **52x faster** |
@@ -128,11 +128,11 @@ for (const job of jobs) {
 // 1000 jobs = 2000 network calls = 2-4 seconds
 ```
 
-### How FlashQ Solves This
+### How flashQ Solves This
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      FlashQ Server                           │
+│                      flashQ Server                           │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │              32 Parallel Shards                        │ │
 │  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐      ┌──────┐   │ │
@@ -155,7 +155,7 @@ for (const job of jobs) {
 
 ### Architecture Comparison
 
-| Aspect | Redis (BullMQ) | FlashQ |
+| Aspect | Redis (BullMQ) | flashQ |
 |--------|----------------|--------|
 | **Threading** | Single-threaded | 32 parallel shards |
 | **Data Access** | Network TCP (~1ms) | In-process (~100ns) |
@@ -171,12 +171,12 @@ for (const job of jobs) {
 | System | Time | Why |
 |--------|------|-----|
 | BullMQ (Redis) | ~2-4 seconds | 10K network round-trips |
-| **FlashQ** | **~5 milliseconds** | 1 batch command |
+| **flashQ** | **~5 milliseconds** | 1 batch command |
 
 **The Math:**
 ```
 Redis:   10,000 jobs × 0.3ms/job = 3,000ms
-FlashQ:  10,000 jobs × 1 batch   = 5ms (internal processing)
+flashQ:  10,000 jobs × 1 batch   = 5ms (internal processing)
 
 Speedup: 600x for batch operations
 ```
@@ -190,9 +190,9 @@ Redis is still excellent for:
 - ✅ Simple queues with low volume (<1K jobs/sec)
 - ✅ When you already have Redis infrastructure
 
-### When to Use FlashQ
+### When to Use flashQ
 
-FlashQ excels when you need:
+flashQ excels when you need:
 - ✅ **High throughput** (>10K jobs/sec)
 - ✅ **Low latency** (<1ms P99)
 - ✅ **Batch operations** at scale
@@ -209,7 +209,7 @@ Get up and running in under 60 seconds.
 ### Option 1: Docker (Recommended)
 
 ```bash
-# Start FlashQ with PostgreSQL persistence
+# Start flashQ with PostgreSQL persistence
 docker-compose up -d
 
 # Dashboard available at http://localhost:6790
@@ -237,7 +237,7 @@ make dashboard # Open monitoring UI
 
 ## 💼 Built for Production
 
-FlashQ powers mission-critical workloads at companies processing billions of jobs monthly.
+flashQ powers mission-critical workloads at companies processing billions of jobs monthly.
 
 <table>
 <tr>
@@ -312,7 +312,7 @@ FlashQ powers mission-critical workloads at companies processing billions of job
 
 ## 🏢 Enterprise Features
 
-FlashQ Enterprise includes additional capabilities for large-scale deployments:
+flashQ Enterprise includes additional capabilities for large-scale deployments:
 
 | Feature | Community | Enterprise |
 |---------|:---------:|:----------:|
@@ -409,10 +409,10 @@ bun add flashq
 ```
 
 ```typescript
-import { FlashQ, Worker } from 'flashq';
+import { flashQ, Worker } from 'flashq';
 
 // Initialize client
-const client = new FlashQ({
+const client = new flashQ({
   host: 'localhost',
   port: 6789,
   token: 'your-secret-token'
@@ -455,7 +455,7 @@ await worker.start();
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         FlashQ Server                            │
+│                         flashQ Server                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐ │
@@ -532,7 +532,7 @@ await worker.start();
 
 ## 📊 Comparison
 
-| Feature | FlashQ | BullMQ | Celery | AWS SQS |
+| Feature | flashQ | BullMQ | Celery | AWS SQS |
 |---------|:------:|:------:|:------:|:-------:|
 | Self-hosted | ✅ | ✅ | ✅ | ❌ |
 | No external deps | ✅ | ❌ (Redis) | ❌ (RabbitMQ) | - |
@@ -555,7 +555,7 @@ await worker.start();
 
 ## 📄 License
 
-FlashQ is open-source software licensed under the [MIT License](LICENSE).
+flashQ is open-source software licensed under the [MIT License](LICENSE).
 
 <br>
 

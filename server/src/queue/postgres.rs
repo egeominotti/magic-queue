@@ -4,7 +4,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 
 use crate::protocol::{CronJob, Job, WebhookConfig};
 
-/// PostgreSQL storage layer for FlashQ persistence.
+/// PostgreSQL storage layer for flashQ persistence.
 /// Replaces WAL with durable PostgreSQL storage.
 pub struct PostgresStorage {
     pool: PgPool,

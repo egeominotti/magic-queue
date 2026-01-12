@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-FlashQ is a high-performance job queue server built with Rust.
+flashQ is a high-performance job queue server built with Rust.
 
 ## Key Commands
 
@@ -53,7 +53,7 @@ bun run examples/stress-test.ts
 ### Docker Compose (Recommended)
 
 ```bash
-# Start PostgreSQL + FlashQ
+# Start PostgreSQL + flashQ
 docker-compose up -d
 
 # View logs
@@ -207,7 +207,7 @@ PUSH --> [WAITING/DELAYED/WAITING_CHILDREN]
 
 ## Clustering (High Availability)
 
-FlashQ supports clustering for high availability using PostgreSQL as the coordination layer.
+flashQ supports clustering for high availability using PostgreSQL as the coordination layer.
 
 ### Environment Variables
 
@@ -352,7 +352,7 @@ The system has been validated with 33 stress tests:
 sdk/typescript/
 ├── src/
 │   ├── index.ts    # Main exports
-│   ├── client.ts   # FlashQ client (TCP/HTTP)
+│   ├── client.ts   # flashQ client (TCP/HTTP)
 │   ├── worker.ts   # Worker class for job processing
 │   └── types.ts    # TypeScript type definitions
 └── examples/

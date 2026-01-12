@@ -1,4 +1,4 @@
-//! gRPC server implementation for FlashQ
+//! gRPC server implementation for flashQ
 //!
 //! Provides high-performance streaming API for job processing.
 

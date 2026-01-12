@@ -1,6 +1,6 @@
-# FlashQ TypeScript SDK Examples
+# flashQ TypeScript SDK Examples
 
-This folder contains comprehensive examples demonstrating all features of the FlashQ TypeScript SDK.
+This folder contains comprehensive examples demonstrating all features of the flashQ TypeScript SDK.
 
 **Runtime: Bun** - This SDK is designed for Bun runtime.
 
@@ -11,7 +11,7 @@ This folder contains comprehensive examples demonstrating all features of the Fl
    curl -fsSL https://bun.sh/install | bash
    ```
 
-2. Start FlashQ server:
+2. Start flashQ server:
    ```bash
    # From project root
    docker-compose up -d
@@ -141,10 +141,10 @@ bun run examples/14-grpc-client.ts
 ## Quick Reference
 
 ```typescript
-import { FlashQ, Worker } from 'flashq';
+import { flashQ, Worker } from 'flashq';
 
 // Client
-const client = new FlashQ({ host: 'localhost', port: 6789, token: 'secret' });
+const client = new flashQ({ host: 'localhost', port: 6789, token: 'secret' });
 await client.connect();
 
 // Push

@@ -11,7 +11,7 @@ const BATCH_SIZE: usize = 1000;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║                 FlashQ Benchmark Suite                       ║");
+    println!("║                 flashQ Benchmark Suite                       ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
     // Connect to server
