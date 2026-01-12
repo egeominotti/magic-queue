@@ -562,14 +562,16 @@ export class FlashQ extends EventEmitter {
   async getProgress(jobId: number): Promise<{ progress: number; message?: string }> {
     const response = await this.send<{
       ok: boolean;
-      id: number;
-      progress: number;
-      message?: string;
+      progress: {
+        id: number;
+        progress: number;
+        message?: string;
+      };
     }>({
       cmd: 'GETPROGRESS',
       id: jobId,
     });
-    return { progress: response.progress, message: response.message };
+    return { progress: response.progress.progress, message: response.progress.message };
   }
 
   // ============== Dead Letter Queue ==============
