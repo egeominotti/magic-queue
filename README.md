@@ -397,6 +397,28 @@ flashQ powers mission-critical workloads at companies processing billions of job
 
 <br>
 
+## 📊 Dashboard
+
+Monitor your queues in real-time with the built-in web dashboard.
+
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/dashboard.png" alt="flashQ Dashboard" width="850">
+
+</div>
+
+**Features:**
+- Real-time queue statistics and job counts
+- Job browser with filtering by queue and state
+- Live metrics and performance graphs
+- DLQ management and retry controls
+- Cron job configuration
+- Worker monitoring
+
+Access the dashboard at `http://localhost:6790` when running with `HTTP=1`.
+
+<br>
+
 ## 🏢 Enterprise Features
 
 flashQ Enterprise includes additional capabilities for large-scale deployments:
