@@ -2,8 +2,6 @@
 
 Official TypeScript client for [flashQ](https://github.com/egeominotti/flashq) - High-Performance Job Queue.
 
-**Runtime: [Bun](https://bun.sh)** - This SDK is designed for Bun runtime.
-
 ## Installation
 
 ```bash
@@ -13,337 +11,212 @@ bun add flashq
 ## Quick Start
 
 ```typescript
-import { flashQ, Worker } from 'flashq';
+import { Queue } from 'flashq';
 
-// Create a client
-const client = new flashQ({
-  host: 'localhost',
-  port: 6789,
-  token: 'your-auth-token', // optional
-});
+// Create a queue
+const emails = new Queue('emails');
 
-await client.connect();
+// Add a job (auto-connects!)
+await emails.add({ to: 'user@example.com', subject: 'Hello!' });
 
-// Push a job
-const job = await client.push('emails', {
-  to: 'user@example.com',
-  subject: 'Hello',
-  body: 'Welcome to flashQ!',
-});
-console.log(`Job created: ${job.id}`);
-
-// Create a worker to process jobs
-const worker = new Worker('emails', async (job) => {
-  console.log(`Processing job ${job.id}`);
+// Process jobs
+emails.process(async (job) => {
   await sendEmail(job.data);
   return { sent: true };
 });
-
-await worker.start();
 ```
 
-## API Reference
+**That's it.** No `connect()`, no `close()`, no boilerplate.
 
-### Client
+## API
 
-#### Connection
+### Queue (Recommended)
+
+The simplest way to use flashQ.
 
 ```typescript
-const client = new flashQ({
-  host: 'localhost',     // Server host (default: "localhost")
-  port: 6789,            // TCP port (default: 6789)
-  httpPort: 6790,        // HTTP port (default: 6790)
-  token: 'secret',       // Auth token (optional)
-  timeout: 5000,         // Connection timeout (default: 5000ms)
-  useHttp: false,        // Use HTTP instead of TCP (default: false)
+import { Queue } from 'flashq';
+
+// Create queue
+const queue = new Queue('my-queue');
+
+// With connection options
+const queue = new Queue('my-queue', {
+  connection: {
+    host: 'localhost',
+    port: 6789,
+    token: 'secret'
+  }
 });
-
-await client.connect();
-await client.close();
 ```
 
-#### Push Jobs
+#### Add Jobs
 
 ```typescript
-// Simple push
-const job = await client.push('queue-name', { any: 'data' });
+// Simple
+await queue.add({ task: 'process-image', url: '...' });
 
 // With options
-const job = await client.push('queue-name', { data: 'value' }, {
-  priority: 10,          // Higher = processed first
-  delay: 5000,           // Run after 5 seconds
-  ttl: 60000,            // Expire after 60 seconds
-  timeout: 30000,        // Fail if processing takes > 30s
-  max_attempts: 3,       // Retry up to 3 times
-  backoff: 1000,         // Backoff: 1s, 2s, 4s...
-  unique_key: 'user-123', // Prevent duplicates
-  depends_on: [1, 2],    // Wait for jobs 1 and 2
-  tags: ['urgent'],      // Categorization
+await queue.add({ task: 'send-email' }, {
+  priority: 10,        // Higher = processed first
+  delay: 5000,         // Run after 5 seconds
+  max_attempts: 3,     // Retry up to 3 times
+  backoff: 1000,       // Backoff: 1s, 2s, 4s...
+  timeout: 30000,      // Fail if takes > 30s
+  unique_key: 'user-123'  // Prevent duplicates
 });
 
-// Batch push
-const ids = await client.pushBatch('queue-name', [
+// Bulk add
+await queue.addBulk([
   { data: { task: 1 } },
   { data: { task: 2 }, priority: 5 },
-  { data: { task: 3 }, delay: 10000 },
+  { data: { task: 3 }, delay: 10000 }
 ]);
 ```
 
-#### Pull Jobs
+#### Process Jobs
 
 ```typescript
-// Pull single job (blocking)
-const job = await client.pull('queue-name');
+// Simple
+queue.process(async (job) => {
+  console.log('Processing:', job.data);
+  await doWork(job.data);
+});
 
-// Pull multiple jobs
-const jobs = await client.pullBatch('queue-name', 10);
-```
+// With concurrency
+queue.process(async (job) => {
+  await doWork(job.data);
+}, { concurrency: 10 });
 
-#### Acknowledge/Fail
-
-```typescript
-// Acknowledge success
-await client.ack(job.id);
-
-// Acknowledge with result
-await client.ack(job.id, { processed: true, count: 42 });
-
-// Batch acknowledge
-await client.ackBatch([1, 2, 3, 4, 5]);
-
-// Fail job (will retry or move to DLQ)
-await client.fail(job.id, 'Connection timeout');
-```
-
-#### Job State
-
-```typescript
-// Get job with state
-const { job, state } = await client.getJob(123);
-// state: 'waiting' | 'delayed' | 'active' | 'completed' | 'failed' | 'waiting-children'
-
-// Get state only
-const state = await client.getState(123);
-
-// Get result
-const result = await client.getResult(123);
-
-// Cancel pending job
-await client.cancel(123);
-```
-
-#### Progress Tracking
-
-```typescript
-// Update progress (0-100)
-await client.progress(job.id, 50, 'Processing item 50/100');
-
-// Get progress
-const { progress, message } = await client.getProgress(job.id);
-```
-
-#### Dead Letter Queue
-
-```typescript
-// Get failed jobs
-const failedJobs = await client.getDlq('queue-name', 100);
-
-// Retry all DLQ jobs
-const count = await client.retryDlq('queue-name');
-
-// Retry specific job
-await client.retryDlq('queue-name', 123);
+// With return value
+queue.process(async (job) => {
+  const result = await processImage(job.data.url);
+  return { processed: true, result };
+});
 ```
 
 #### Queue Control
 
 ```typescript
-// Pause/Resume
-await client.pause('queue-name');
-await client.resume('queue-name');
+await queue.pause();           // Pause processing
+await queue.resume();          // Resume processing
+await queue.setRateLimit(100); // Max 100 jobs/sec
+await queue.setConcurrency(5); // Max 5 parallel jobs
 
-// Rate limiting (jobs per second)
-await client.setRateLimit('queue-name', 100);
-await client.clearRateLimit('queue-name');
+// Failed jobs (DLQ)
+const failed = await queue.getFailed();
+await queue.retryFailed();     // Retry all
+await queue.retryFailed(123);  // Retry specific job
 
-// Concurrency limit
-await client.setConcurrency('queue-name', 5);
-await client.clearConcurrency('queue-name');
-
-// List queues
-const queues = await client.listQueues();
+// Cleanup
+await queue.close();
 ```
 
-#### Cron Jobs
+### Low-Level Client
+
+For advanced use cases or when you need more control.
 
 ```typescript
-// Add cron job (6-field format: sec min hour day month weekday)
-await client.addCron('daily-cleanup', {
-  queue: 'maintenance',
-  data: { task: 'cleanup' },
-  schedule: '0 0 3 * * *', // Every day at 3:00 AM
-  priority: 0,
+import { FlashQ } from 'flashq';
+
+const client = new FlashQ({
+  host: 'localhost',
+  port: 6789,
+  token: 'secret'
 });
 
-// Simple interval (every N seconds)
-await client.addCron('health-check', {
-  queue: 'monitoring',
-  data: {},
-  schedule: '*/30', // Every 30 seconds
-});
+// Auto-connects on first operation!
+await client.add('emails', { to: 'user@example.com' });
 
-// List cron jobs
-const crons = await client.listCrons();
+// Bulk operations (2M+ ops/sec)
+await client.addBulk('emails', [
+  { data: { to: 'a@test.com' } },
+  { data: { to: 'b@test.com' } }
+]);
 
-// Delete cron job
-await client.deleteCron('daily-cleanup');
-```
+// Pull and ack
+const job = await client.pull('emails');
+await client.ack(job.id, { result: 'sent' });
 
-#### Statistics
+// Batch pull + ack (500k+ ops/sec)
+const jobs = await client.pullBatch('emails', 100);
+await client.ackBatch(jobs.map(j => j.id));
 
-```typescript
-// Queue stats
-const stats = await client.stats();
-// { queued: 100, processing: 5, delayed: 20, dlq: 2 }
-
-// Detailed metrics
-const metrics = await client.metrics();
-// { total_pushed, total_completed, total_failed, jobs_per_second, avg_latency_ms, queues }
+await client.close();
 ```
 
 ### Worker
 
+For more control over job processing.
+
 ```typescript
 import { Worker } from 'flashq';
 
-const worker = new Worker(
-  'queue-name',  // or ['queue1', 'queue2']
-  async (job) => {
-    // Process job
-    console.log('Processing:', job.data);
+const worker = new Worker('emails', async (job) => {
+  await sendEmail(job.data);
+  return { sent: true };
+}, {
+  concurrency: 10,
+  host: 'localhost',
+  port: 6789
+});
 
-    // Update progress
-    await worker.updateProgress(job.id, 50, 'Halfway done');
+worker.on('completed', (job, result) => {
+  console.log(`Job ${job.id} completed:`, result);
+});
 
-    // Return result (stored if using ack with result)
-    return { success: true };
-  },
-  {
-    concurrency: 5,          // Process 5 jobs in parallel
-    autoAck: true,           // Auto-ack on success (default: true)
-    heartbeatInterval: 30000, // Heartbeat every 30s
+worker.on('failed', (job, error) => {
+  console.error(`Job ${job.id} failed:`, error);
+});
 
-    // Client options
-    host: 'localhost',
-    port: 6789,
-    token: 'secret',
-  }
-);
-
-// Event handlers
-worker.on('ready', () => console.log('Worker ready'));
-worker.on('active', (job, workerId) => console.log(`Job ${job.id} started`));
-worker.on('completed', (job, result) => console.log(`Job ${job.id} completed`));
-worker.on('failed', (job, error) => console.log(`Job ${job.id} failed:`, error));
-worker.on('error', (error) => console.error('Worker error:', error));
-
-// Start processing
 await worker.start();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('Shutting down...');
   await worker.stop();
-  process.exit(0);
 });
 ```
 
-## TypeScript Types
+## TypeScript
 
-All types are fully exported:
-
-```typescript
-import type {
-  Job,
-  JobState,
-  JobWithState,
-  PushOptions,
-  QueueInfo,
-  QueueStats,
-  Metrics,
-  CronJob,
-  CronOptions,
-  WorkerOptions,
-  ClientOptions,
-  JobProcessor,
-} from 'flashq';
-```
-
-## Examples
-
-### Email Queue
+Full TypeScript support with generics:
 
 ```typescript
-import { flashQ, Worker } from 'flashq';
-
 interface EmailJob {
   to: string;
   subject: string;
   body: string;
 }
 
-// Producer
-const client = new flashQ();
-await client.connect();
+interface EmailResult {
+  messageId: string;
+  sent: boolean;
+}
 
-await client.push<EmailJob>('emails', {
+const emails = new Queue<EmailJob, EmailResult>('emails');
+
+// Type-safe!
+await emails.add({
   to: 'user@example.com',
-  subject: 'Welcome!',
-  body: 'Hello, welcome to our service.',
-}, {
-  max_attempts: 3,
-  backoff: 5000, // Retry with 5s, 10s, 20s delays
+  subject: 'Hello',
+  body: 'Welcome!'
 });
 
-// Consumer
-const worker = new Worker<EmailJob>('emails', async (job) => {
-  await sendEmail(job.data.to, job.data.subject, job.data.body);
-  return { sentAt: new Date().toISOString() };
-}, { concurrency: 10 });
-
-await worker.start();
-```
-
-### Job with Dependencies
-
-```typescript
-// Create parent jobs
-const job1 = await client.push('process', { step: 1 });
-const job2 = await client.push('process', { step: 2 });
-
-// Create dependent job (runs after job1 and job2 complete)
-const job3 = await client.push('process', { step: 3, final: true }, {
-  depends_on: [job1.id, job2.id],
+emails.process(async (job) => {
+  // job.data is EmailJob
+  const result = await sendEmail(job.data);
+  return { messageId: result.id, sent: true }; // Must be EmailResult
 });
 ```
 
-### Scheduled Jobs
+## Comparison with BullMQ
 
-```typescript
-// Process reports every day at midnight
-await client.addCron('daily-reports', {
-  queue: 'reports',
-  data: { type: 'daily' },
-  schedule: '0 0 0 * * *',
-});
-
-// Weekly cleanup on Sundays at 3 AM
-await client.addCron('weekly-cleanup', {
-  queue: 'maintenance',
-  data: { type: 'weekly' },
-  schedule: '0 0 3 * * 0',
-});
-```
+| Feature | flashQ | BullMQ |
+|---------|--------|--------|
+| Auto-connect | ✅ | ❌ |
+| Zero dependencies | ✅ | ❌ (Redis) |
+| Batch throughput | 2M+ ops/sec | ~36K ops/sec |
+| Setup | `new Queue('x')` | Redis + Queue + Worker |
 
 ## License
 

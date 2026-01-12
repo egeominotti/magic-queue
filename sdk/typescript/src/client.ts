@@ -18,23 +18,35 @@ import type {
 } from './types';
 
 /**
- * FlashQ Client
+ * flashQ Client
  *
- * Connects to FlashQ server via TCP protocol.
+ * High-performance job queue client with auto-connect.
  *
  * @example
  * ```typescript
- * const client = new FlashQ({ host: 'localhost', port: 6789 });
- * await client.connect();
+ * const client = new FlashQ();
  *
- * // Push a job
- * const job = await client.push('emails', { to: 'user@example.com' });
+ * // Add a job (auto-connects!)
+ * const job = await client.add('emails', { to: 'user@example.com' });
  *
- * // Pull and process
- * const pulled = await client.pull('emails');
- * await client.ack(pulled.id);
+ * // That's it! No connect() needed.
+ * ```
  *
- * await client.close();
+ * @example
+ * ```typescript
+ * // With options
+ * const client = new FlashQ({
+ *   host: 'localhost',
+ *   port: 6789,
+ *   token: 'secret'
+ * });
+ *
+ * // Add with job options
+ * await client.add('emails', { to: 'user@example.com' }, {
+ *   priority: 10,
+ *   delay: 5000,
+ *   max_attempts: 3
+ * });
  * ```
  */
 export class FlashQ extends EventEmitter {
@@ -175,6 +187,11 @@ export class FlashQ extends EventEmitter {
   // ============== Internal Methods ==============
 
   private async send<T>(command: Record<string, unknown>): Promise<T> {
+    // Auto-connect if not connected
+    if (!this.connected) {
+      await this.connect();
+    }
+
     if (this.options.useHttp) {
       return this.sendHttp<T>(command);
     }
@@ -352,6 +369,32 @@ export class FlashQ extends EventEmitter {
       progress: 0,
       tags: options.tags ?? [],
     };
+  }
+
+  /**
+   * Add a job to a queue (alias for push)
+   *
+   * @example
+   * ```typescript
+   * await client.add('emails', { to: 'user@example.com' });
+   * ```
+   */
+  async add<T = unknown>(
+    queue: string,
+    data: T,
+    options: PushOptions = {}
+  ): Promise<Job> {
+    return this.push(queue, data, options);
+  }
+
+  /**
+   * Add multiple jobs to a queue (alias for pushBatch)
+   */
+  async addBulk<T = unknown>(
+    queue: string,
+    jobs: Array<{ data: T } & PushOptions>
+  ): Promise<number[]> {
+    return this.pushBatch(queue, jobs);
   }
 
   /**

@@ -1,16 +1,42 @@
 /**
- * FlashQ - Official TypeScript/Node.js SDK
+ * flashQ - Official TypeScript SDK
  *
- * High-performance job queue client for FlashQ server.
+ * High-performance job queue with the simplest API.
+ *
+ * @example
+ * ```typescript
+ * // Simple usage (recommended)
+ * import { Queue } from 'flashq';
+ *
+ * const emails = new Queue('emails');
+ * await emails.add({ to: 'user@example.com' });
+ *
+ * emails.process(async (job) => {
+ *   await sendEmail(job.data);
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Low-level client
+ * import { FlashQ } from 'flashq';
+ *
+ * const client = new FlashQ();
+ * await client.add('emails', { to: 'user@example.com' });
+ * ```
  *
  * @packageDocumentation
  */
 
+// High-level API (recommended)
+export { Queue } from './queue';
+
+// Low-level API
 export { FlashQ, FlashQ as default } from './client';
 export { Worker } from './worker';
-export * from './types';
 
-// Re-export commonly used types at top level
+// Types
+export * from './types';
 export type {
   Job,
   JobState,
