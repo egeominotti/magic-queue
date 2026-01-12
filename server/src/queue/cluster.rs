@@ -149,6 +149,7 @@ impl ClusterManager {
     }
 
     /// Release leadership
+    #[allow(dead_code)]
     pub async fn release_leadership(&self) -> Result<(), sqlx::Error> {
         if !self.enabled {
             return Ok(());
@@ -254,6 +255,7 @@ impl ClusterManager {
     }
 
     /// Unregister this node from the cluster
+    #[allow(dead_code)]
     pub async fn unregister(&self) -> Result<(), sqlx::Error> {
         if !self.enabled {
             return Ok(());

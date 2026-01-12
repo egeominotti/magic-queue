@@ -1,4 +1,3 @@
-use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -137,7 +136,7 @@ impl QueueManager {
                         .write()
                         .queues
                         .entry(queue_arc)
-                        .or_insert_with(BinaryHeap::new)
+                        .or_default()
                         .push(job.clone());
 
                     // Persist to PostgreSQL
@@ -171,11 +170,7 @@ impl QueueManager {
             if !ready_jobs.is_empty() {
                 for job in ready_jobs {
                     let queue_arc = intern(&job.queue);
-                    shard_w
-                        .queues
-                        .entry(queue_arc)
-                        .or_insert_with(BinaryHeap::new)
-                        .push(job);
+                    shard_w.queues.entry(queue_arc).or_default().push(job);
                 }
                 drop(shard_w);
                 self.notify_shard(idx);
@@ -300,16 +295,13 @@ impl QueueManager {
         }
 
         // Full cron expression parsing with croner (supports both 5-field and 6-field with seconds)
-        match Cron::new(schedule).with_seconds_optional().parse() {
-            Ok(cron) => {
-                let now_secs = (now / 1000) as i64;
-                if let Some(now_dt) = DateTime::<Utc>::from_timestamp(now_secs, 0) {
-                    if let Ok(next) = cron.find_next_occurrence(&now_dt, false) {
-                        return (next.timestamp() as u64) * 1000;
-                    }
+        if let Ok(cron) = Cron::new(schedule).with_seconds_optional().parse() {
+            let now_secs = (now / 1000) as i64;
+            if let Some(now_dt) = DateTime::<Utc>::from_timestamp(now_secs, 0) {
+                if let Ok(next) = cron.find_next_occurrence(&now_dt, false) {
+                    return (next.timestamp() as u64) * 1000;
                 }
             }
-            Err(_) => {}
         }
 
         // Default fallback: 1 minute

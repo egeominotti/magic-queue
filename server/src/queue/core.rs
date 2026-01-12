@@ -1,4 +1,3 @@
-use std::collections::BinaryHeap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -53,6 +52,7 @@ fn validate_job_data(data: &Value) -> Result<(), String> {
 }
 
 impl QueueManager {
+    #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn create_job(
         &self,
@@ -92,6 +92,7 @@ impl QueueManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn push(
         &self,
         queue: String,
@@ -160,7 +161,7 @@ impl QueueManager {
             shard
                 .queues
                 .entry(queue_name)
-                .or_insert_with(BinaryHeap::new)
+                .or_default()
                 .push(job.clone());
             self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
             self.persist_push(&job, "waiting");
@@ -218,21 +219,18 @@ impl QueueManager {
             );
             ids.push(job.id);
 
-            if !job.depends_on.is_empty() {
-                if !job.depends_on.iter().all(|dep| completed.contains(dep)) {
-                    waiting_jobs.push(job);
-                    continue;
-                }
+            if !job.depends_on.is_empty()
+                && !job.depends_on.iter().all(|dep| completed.contains(dep))
+            {
+                waiting_jobs.push(job);
+                continue;
             }
             created_jobs.push(job);
         }
 
         {
             let mut shard = self.shards[idx].write();
-            let heap = shard
-                .queues
-                .entry(queue_name)
-                .or_insert_with(BinaryHeap::new);
+            let heap = shard.queues.entry(queue_name).or_default();
             for job in &created_jobs {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job.clone());
@@ -259,7 +257,7 @@ impl QueueManager {
 
         // Result of lock acquisition: Job found, need to wait, or need to sleep
         enum PullResult {
-            Job(Job),
+            Job(Box<Job>),
             Wait,
             SleepPaused,
             SleepRateLimit,
@@ -282,7 +280,7 @@ impl QueueManager {
                 else if state
                     .rate_limiter
                     .as_mut()
-                    .map_or(false, |l| !l.try_acquire())
+                    .is_some_and(|l| !l.try_acquire())
                 {
                     PullResult::SleepRateLimit
                 }
@@ -290,7 +288,7 @@ impl QueueManager {
                 else if state
                     .concurrency
                     .as_mut()
-                    .map_or(false, |c| !c.try_acquire())
+                    .is_some_and(|c| !c.try_acquire())
                 {
                     PullResult::SleepConcurrency
                 } else {
@@ -313,14 +311,14 @@ impl QueueManager {
                     }
 
                     // If no job found, release concurrency slot
-                    if result.is_none() {
+                    if let Some(job) = result {
+                        PullResult::Job(Box::new(job))
+                    } else {
                         let state = shard.get_state(&queue_arc);
                         if let Some(ref mut conc) = state.concurrency {
                             conc.release();
                         }
                         PullResult::Wait
-                    } else {
-                        PullResult::Job(result.unwrap())
                     }
                 }
             };
@@ -328,8 +326,8 @@ impl QueueManager {
             match pull_result {
                 PullResult::Job(job) => {
                     self.index_job(job.id, JobLocation::Processing);
-                    self.processing.write().insert(job.id, job.clone());
-                    return job;
+                    self.processing.write().insert(job.id, (*job).clone());
+                    return *job;
                 }
                 PullResult::SleepPaused => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -600,7 +598,7 @@ impl QueueManager {
                 .write()
                 .queues
                 .entry(queue_arc)
-                .or_insert_with(BinaryHeap::new)
+                .or_default()
                 .push(job.clone());
 
             // Persist to PostgreSQL

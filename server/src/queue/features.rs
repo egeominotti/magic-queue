@@ -1,4 +1,3 @@
-use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -170,10 +169,7 @@ impl QueueManager {
 
         let retried = jobs_to_retry.len();
         if retried > 0 {
-            let heap = shard
-                .queues
-                .entry(Arc::clone(&queue_arc))
-                .or_insert_with(BinaryHeap::new);
+            let heap = shard.queues.entry(Arc::clone(&queue_arc)).or_default();
             for job in jobs_to_retry {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job);
@@ -255,7 +251,7 @@ impl QueueManager {
                         .filter(|j| j.queue.as_str() == name.as_ref())
                         .count(),
                     dlq: s.dlq.get(name).map_or(0, |d| d.len()),
-                    paused: state.map_or(false, |s| s.paused),
+                    paused: state.is_some_and(|s| s.paused),
                     rate_limit: state.and_then(|s| s.rate_limiter.as_ref().map(|r| r.limit)),
                     concurrency_limit: state.and_then(|s| s.concurrency.as_ref().map(|c| c.limit)),
                 });

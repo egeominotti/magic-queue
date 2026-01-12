@@ -9,5 +9,5 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use cluster::{generate_node_id, ClusterManager, NodeInfo};
+pub use cluster::{generate_node_id, NodeInfo};
 pub use manager::QueueManager;

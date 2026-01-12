@@ -11,7 +11,6 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 use std::sync::Arc;
 
-use axum;
 use parking_lot::RwLock;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, UnixListener};

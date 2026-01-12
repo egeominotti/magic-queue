@@ -206,6 +206,7 @@ impl PostgresStorage {
     }
 
     /// Update job state.
+    #[allow(dead_code)]
     pub async fn update_job_state(&self, job_id: u64, state: &str) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE jobs SET state = $1 WHERE id = $2")
             .bind(state)
@@ -453,6 +454,7 @@ impl PostgresStorage {
     // ============== Webhooks ==============
 
     /// Save a webhook.
+    #[allow(dead_code)]
     pub async fn save_webhook(&self, webhook: &WebhookConfig) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"
@@ -477,6 +479,7 @@ impl PostgresStorage {
     }
 
     /// Delete a webhook.
+    #[allow(dead_code)]
     pub async fn delete_webhook(&self, id: &str) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("DELETE FROM webhooks WHERE id = $1")
             .bind(id)

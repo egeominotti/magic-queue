@@ -1,4 +1,3 @@
-use std::collections::BinaryHeap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -288,7 +287,7 @@ impl QueueManager {
                         shard
                             .queues
                             .entry(queue_name)
-                            .or_insert_with(BinaryHeap::new)
+                            .or_default()
                             .push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
@@ -299,7 +298,7 @@ impl QueueManager {
                         shard
                             .queues
                             .entry(queue_name)
-                            .or_insert_with(BinaryHeap::new)
+                            .or_default()
                             .push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
@@ -513,6 +512,7 @@ impl QueueManager {
     }
 
     /// Persist webhook.
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn persist_webhook(&self, webhook: &WebhookConfig) {
         if let Some(ref storage) = self.storage {
@@ -527,6 +527,7 @@ impl QueueManager {
     }
 
     /// Persist webhook deletion.
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn persist_webhook_delete(&self, id: &str) {
         if let Some(ref storage) = self.storage {
@@ -875,6 +876,7 @@ impl QueueManager {
         worker.last_heartbeat = now_ms();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn increment_worker_jobs(&self, worker_id: &str) {
         if let Some(worker) = self.workers.write().get_mut(worker_id) {
             worker.jobs_processed += 1;
