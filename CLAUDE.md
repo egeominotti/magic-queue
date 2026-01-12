@@ -284,6 +284,48 @@ async fn test_feature_name() {
 }
 ```
 
+## CI/CD Pipeline
+
+GitHub Actions runs on every push to `main` and on PRs.
+
+### Pipeline Jobs
+
+| Job | Description |
+|-----|-------------|
+| `test-server` | Format check, clippy, unit tests |
+| `build-server` | Build release binary |
+| `test-sdk-typescript` | Test SDK against running server |
+| `build-docker` | Build Docker image |
+
+### Pre-Push Checklist
+
+**Always run these commands before pushing:**
+
+```bash
+cd server
+
+# Check formatting (must pass)
+cargo fmt --check
+
+# Run clippy (warnings = errors)
+cargo clippy -- -D warnings
+
+# Run tests
+cargo test
+```
+
+Or fix formatting automatically:
+
+```bash
+cargo fmt
+```
+
+### CI Requirements
+
+- `protobuf-compiler` is required for gRPC build
+- Clippy treats all warnings as errors (`-D warnings`)
+- Code must pass `cargo fmt --check`
+
 ## Performance
 
 | Metric | Throughput |
