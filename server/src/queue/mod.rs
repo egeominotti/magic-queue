@@ -1,13 +1,13 @@
-mod types;
-mod manager;
+mod background;
+pub mod cluster;
 mod core;
 mod features;
-mod background;
+mod manager;
 mod postgres;
-pub mod cluster;
+mod types;
 
 #[cfg(test)]
 mod tests;
 
+pub use cluster::{generate_node_id, ClusterManager, NodeInfo};
 pub use manager::QueueManager;
-pub use cluster::{ClusterManager, NodeInfo, generate_node_id};

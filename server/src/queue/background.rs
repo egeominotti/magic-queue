@@ -6,7 +6,7 @@ use croner::Cron;
 use tokio::time::{interval, Duration};
 
 use super::manager::QueueManager;
-use super::types::{intern, cleanup_interned_strings};
+use super::types::{cleanup_interned_strings, intern};
 
 impl QueueManager {
     pub async fn background_tasks(self: Arc<Self>) {
@@ -111,20 +111,31 @@ impl QueueManager {
                 if job.should_go_to_dlq() {
                     self.notify_subscribers("timeout", &job.queue, &job);
                     self.index_job(job_id, super::types::JobLocation::Dlq { shard_idx: idx });
-                    self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job.clone());
+                    self.shards[idx]
+                        .write()
+                        .dlq
+                        .entry(queue_arc)
+                        .or_default()
+                        .push_back(job.clone());
                     self.metrics.record_timeout();
 
                     // Persist to PostgreSQL
                     self.persist_dlq(&job, Some("Job timed out"));
                 } else {
                     let backoff = job.next_backoff();
-                    let new_run_at = if backoff > 0 { now + backoff } else { job.run_at };
+                    let new_run_at = if backoff > 0 {
+                        now + backoff
+                    } else {
+                        job.run_at
+                    };
                     job.run_at = new_run_at;
                     job.started_at = 0;
                     job.progress_msg = Some("Job timed out".to_string());
 
                     self.index_job(job_id, super::types::JobLocation::Queue { shard_idx: idx });
-                    self.shards[idx].write().queues
+                    self.shards[idx]
+                        .write()
+                        .queues
                         .entry(queue_arc)
                         .or_insert_with(BinaryHeap::new)
                         .push(job.clone());
@@ -140,7 +151,9 @@ impl QueueManager {
 
     pub(crate) async fn check_dependencies(&self) {
         let completed = self.completed_jobs.read().clone();
-        if completed.is_empty() { return; }
+        if completed.is_empty() {
+            return;
+        }
 
         for (idx, shard) in self.shards.iter().enumerate() {
             let mut shard_w = shard.write();
@@ -158,7 +171,8 @@ impl QueueManager {
             if !ready_jobs.is_empty() {
                 for job in ready_jobs {
                     let queue_arc = intern(&job.queue);
-                    shard_w.queues
+                    shard_w
+                        .queues
                         .entry(queue_arc)
                         .or_insert_with(BinaryHeap::new)
                         .push(job);
@@ -264,7 +278,11 @@ impl QueueManager {
         }
 
         for (queue, data, priority) in to_run {
-            let _ = self.push(queue, data, priority, None, None, None, None, None, None, None, None, false).await;
+            let _ = self
+                .push(
+                    queue, data, priority, None, None, None, None, None, None, None, None, false,
+                )
+                .await;
         }
     }
 
@@ -315,13 +333,16 @@ impl QueueManager {
 
         // Allow legacy */N format
         if let Some(interval_str) = schedule.strip_prefix("*/") {
-            return interval_str.parse::<u64>()
+            return interval_str
+                .parse::<u64>()
                 .map(|_| ())
                 .map_err(|_| format!("Invalid interval format: {}", schedule));
         }
 
         // Validate full cron expression (supports both 5-field and 6-field with seconds)
-        Cron::new(schedule).with_seconds_optional().parse()
+        Cron::new(schedule)
+            .with_seconds_optional()
+            .parse()
             .map(|_| ())
             .map_err(|e| format!("Invalid cron expression '{}': {}", schedule, e))
     }

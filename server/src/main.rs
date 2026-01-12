@@ -17,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, UnixListener};
 
 use protocol::{Command, Response};
-use queue::{QueueManager, generate_node_id};
+use queue::{generate_node_id, QueueManager};
 
 const DEFAULT_TCP_PORT: u16 = 6789;
 const DEFAULT_HTTP_PORT: u16 = 6790;
@@ -89,7 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .expect("Failed to bind HTTP listener");
             println!("HTTP API listening on port {}", http_port);
             println!("Dashboard available at http://localhost:{}", http_port);
-            axum::serve(listener, router).await.expect("HTTP server error");
+            axum::serve(listener, router)
+                .await
+                .expect("HTTP server error");
         });
     }
 
@@ -155,7 +157,9 @@ where
     let mut reader = BufReader::with_capacity(128 * 1024, reader);
     let mut writer = BufWriter::with_capacity(128 * 1024, writer);
     let mut line = String::with_capacity(8192);
-    let state = Arc::new(RwLock::new(ConnectionState { authenticated: false }));
+    let state = Arc::new(RwLock::new(ConnectionState {
+        authenticated: false,
+    }));
 
     loop {
         line.clear();
@@ -187,8 +191,7 @@ fn parse_command(line: &mut String) -> Result<Command, String> {
         line.pop();
     }
     // sonic-rs: fastest JSON parser (SIMD-accelerated, 30% faster than simd-json)
-    sonic_rs::from_str(line)
-        .map_err(|e| format!("Invalid: {}", e))
+    sonic_rs::from_str(line).map_err(|e| format!("Invalid: {}", e))
 }
 
 #[inline(always)]
@@ -234,7 +237,20 @@ async fn process_command(
             lifo,
         } => {
             match queue_manager
-                .push(queue, data, priority, delay, ttl, timeout, max_attempts, backoff, unique_key, depends_on, tags, lifo)
+                .push(
+                    queue,
+                    data,
+                    priority,
+                    delay,
+                    ttl,
+                    timeout,
+                    max_attempts,
+                    backoff,
+                    unique_key,
+                    depends_on,
+                    tags,
+                    lifo,
+                )
                 .await
             {
                 Ok(job) => Response::ok_with_id(job.id),
@@ -283,12 +299,14 @@ async fn process_command(
             Ok(()) => Response::ok(),
             Err(e) => Response::error(e),
         },
-        Command::Progress { id, progress, message } => {
-            match queue_manager.update_progress(id, progress, message).await {
-                Ok(()) => Response::ok(),
-                Err(e) => Response::error(e),
-            }
-        }
+        Command::Progress {
+            id,
+            progress,
+            message,
+        } => match queue_manager.update_progress(id, progress, message).await {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
         Command::GetProgress { id } => match queue_manager.get_progress(id).await {
             Ok((progress, message)) => Response::progress(id, progress, message),
             Err(e) => Response::error(e),
@@ -320,8 +338,17 @@ async fn process_command(
         }
 
         // === Cron Jobs ===
-        Command::Cron { name, queue, data, schedule, priority } => {
-            match queue_manager.add_cron(name, queue, data, schedule, priority).await {
+        Command::Cron {
+            name,
+            queue,
+            data,
+            schedule,
+            priority,
+        } => {
+            match queue_manager
+                .add_cron(name, queue, data, schedule, priority)
+                .await
+            {
                 Ok(()) => Response::ok(),
                 Err(e) => Response::error(e),
             }

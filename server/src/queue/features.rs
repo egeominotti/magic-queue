@@ -4,9 +4,9 @@ use std::sync::Arc;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 
-use crate::protocol::{CronJob, Job, MetricsData, QueueInfo, QueueMetrics};
-use super::types::{intern, ConcurrencyLimiter, JobLocation, RateLimiter, Subscriber};
 use super::manager::QueueManager;
+use super::types::{intern, ConcurrencyLimiter, JobLocation, RateLimiter, Subscriber};
+use crate::protocol::{CronJob, Job, MetricsData, QueueInfo, QueueMetrics};
 
 impl QueueManager {
     pub async fn cancel(&self, job_id: u64) -> Result<(), String> {
@@ -36,7 +36,12 @@ impl QueueManager {
                 }
             }
             Some(JobLocation::WaitingDeps { shard_idx }) => {
-                if self.shards[shard_idx].write().waiting_deps.remove(&job_id).is_some() {
+                if self.shards[shard_idx]
+                    .write()
+                    .waiting_deps
+                    .remove(&job_id)
+                    .is_some()
+                {
                     self.unindex_job(job_id);
                     self.persist_cancel(job_id);
                     return Ok(());
@@ -95,7 +100,10 @@ impl QueueManager {
                 }
             }
             Some(JobLocation::Dlq { .. }) | Some(JobLocation::Completed) => {
-                return Err(format!("Job {} cannot be cancelled (already completed/failed)", job_id));
+                return Err(format!(
+                    "Job {} cannot be cancelled (already completed/failed)",
+                    job_id
+                ));
             }
             None => {}
         }
@@ -103,7 +111,12 @@ impl QueueManager {
         Err(format!("Job {} not found", job_id))
     }
 
-    pub async fn update_progress(&self, job_id: u64, progress: u8, message: Option<String>) -> Result<(), String> {
+    pub async fn update_progress(
+        &self,
+        job_id: u64,
+        progress: u8,
+        message: Option<String>,
+    ) -> Result<(), String> {
         let mut proc = self.processing.write();
         if let Some(job) = proc.get_mut(&job_id) {
             job.progress = progress.min(100);
@@ -157,7 +170,10 @@ impl QueueManager {
 
         let retried = jobs_to_retry.len();
         if retried > 0 {
-            let heap = shard.queues.entry(Arc::clone(&queue_arc)).or_insert_with(BinaryHeap::new);
+            let heap = shard
+                .queues
+                .entry(Arc::clone(&queue_arc))
+                .or_insert_with(BinaryHeap::new);
             for job in jobs_to_retry {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job);
@@ -234,7 +250,10 @@ impl QueueManager {
                 queues.push(QueueInfo {
                     name: name.to_string(),
                     pending: heap.len(),
-                    processing: proc.values().filter(|j| j.queue.as_str() == name.as_ref()).count(),
+                    processing: proc
+                        .values()
+                        .filter(|j| j.queue.as_str() == name.as_ref())
+                        .count(),
                     dlq: s.dlq.get(name).map_or(0, |d| d.len()),
                     paused: state.map_or(false, |s| s.paused),
                     rate_limit: state.and_then(|s| s.rate_limiter.as_ref().map(|r| r.limit)),
@@ -246,9 +265,18 @@ impl QueueManager {
     }
 
     // === Pub/Sub ===
-    pub fn subscribe(&self, queue: String, events: Vec<String>, tx: tokio::sync::mpsc::UnboundedSender<String>) {
+    pub fn subscribe(
+        &self,
+        queue: String,
+        events: Vec<String>,
+        tx: tokio::sync::mpsc::UnboundedSender<String>,
+    ) {
         let queue_arc = intern(&queue);
-        self.subscribers.write().push(Subscriber { queue: queue_arc, events, tx });
+        self.subscribers.write().push(Subscriber {
+            queue: queue_arc,
+            events,
+            tx,
+        });
     }
 
     pub fn unsubscribe(&self, queue: &str) {
@@ -257,14 +285,26 @@ impl QueueManager {
     }
 
     // === Cron Jobs ===
-    pub async fn add_cron(&self, name: String, queue: String, data: Value, schedule: String, priority: i32) -> Result<(), String> {
+    pub async fn add_cron(
+        &self,
+        name: String,
+        queue: String,
+        data: Value,
+        schedule: String,
+        priority: i32,
+    ) -> Result<(), String> {
         // Validate cron expression first
         Self::validate_cron(&schedule)?;
 
         let now = Self::now_ms();
         let next_run = Self::parse_next_cron_run(&schedule, now);
         let cron = CronJob {
-            name: name.clone(), queue, data, schedule, priority, next_run,
+            name: name.clone(),
+            queue,
+            data,
+            schedule,
+            priority,
+            next_run,
         };
 
         // Persist to PostgreSQL
@@ -292,7 +332,9 @@ impl QueueManager {
         let latency_count = self.metrics.latency_count.load(Ordering::Relaxed);
         let avg_latency = if latency_count > 0 {
             self.metrics.latency_sum.load(Ordering::Relaxed) as f64 / latency_count as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let mut queues = Vec::new();
         let proc = self.processing.read();
@@ -304,7 +346,10 @@ impl QueueManager {
                 queues.push(QueueMetrics {
                     name: name.to_string(),
                     pending: heap.len(),
-                    processing: proc.values().filter(|j| j.queue.as_str() == name.as_ref()).count(),
+                    processing: proc
+                        .values()
+                        .filter(|j| j.queue.as_str() == name.as_ref())
+                        .count(),
                     dlq: s.dlq.get(name).map_or(0, |d| d.len()),
                     rate_limit: state.and_then(|s| s.rate_limiter.as_ref().map(|r| r.limit)),
                 });
@@ -328,10 +373,16 @@ impl QueueManager {
 
         for shard in &self.shards {
             let s = shard.read();
-            for d in s.dlq.values() { dlq += d.len(); }
+            for d in s.dlq.values() {
+                dlq += d.len();
+            }
             for heap in s.queues.values() {
                 for job in heap.iter() {
-                    if job.is_ready(now) { ready += 1; } else { delayed += 1; }
+                    if job.is_ready(now) {
+                        ready += 1;
+                    } else {
+                        delayed += 1;
+                    }
                 }
             }
         }

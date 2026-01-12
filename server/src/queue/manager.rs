@@ -6,10 +6,16 @@ use gxhash::GxHasher;
 use parking_lot::RwLock;
 use serde_json::Value;
 
-use crate::protocol::{CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint, WebhookConfig, WorkerInfo};
-use super::postgres::PostgresStorage;
 use super::cluster::ClusterManager;
-use super::types::{init_coarse_time, intern, now_ms, GlobalMetrics, GxHashMap, GxHashSet, JobLocation, Shard, Subscriber, Webhook, Worker};
+use super::postgres::PostgresStorage;
+use super::types::{
+    init_coarse_time, intern, now_ms, GlobalMetrics, GxHashMap, GxHashSet, JobLocation, Shard,
+    Subscriber, Webhook, Worker,
+};
+use crate::protocol::{
+    CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint, WebhookConfig,
+    WorkerInfo,
+};
 use tokio::sync::broadcast;
 
 pub const NUM_SHARDS: usize = 32;
@@ -65,14 +71,22 @@ impl QueueManager {
                 manager
             }
             Err(e) => {
-                eprintln!("Failed to connect to PostgreSQL: {}, running without persistence", e);
+                eprintln!(
+                    "Failed to connect to PostgreSQL: {}, running without persistence",
+                    e
+                );
                 Self::create(None, None)
             }
         }
     }
 
     /// Create a new QueueManager with PostgreSQL and clustering support.
-    pub async fn with_cluster(database_url: &str, node_id: String, host: String, port: i32) -> Arc<Self> {
+    pub async fn with_cluster(
+        database_url: &str,
+        node_id: String,
+        host: String,
+        port: i32,
+    ) -> Arc<Self> {
         match PostgresStorage::new(database_url).await {
             Ok(storage) => {
                 // Run migrations
@@ -113,14 +127,20 @@ impl QueueManager {
                 manager
             }
             Err(e) => {
-                eprintln!("Failed to connect to PostgreSQL: {}, running without persistence or cluster", e);
+                eprintln!(
+                    "Failed to connect to PostgreSQL: {}, running without persistence or cluster",
+                    e
+                );
                 Self::create(None, None)
             }
         }
     }
 
     /// Internal constructor.
-    fn create(storage: Option<Arc<PostgresStorage>>, cluster: Option<Arc<ClusterManager>>) -> Arc<Self> {
+    fn create(
+        storage: Option<Arc<PostgresStorage>>,
+        cluster: Option<Arc<ClusterManager>>,
+    ) -> Arc<Self> {
         // Initialize coarse timestamp
         init_coarse_time();
 
@@ -131,7 +151,10 @@ impl QueueManager {
 
         let manager = Arc::new(Self {
             shards,
-            processing: RwLock::new(GxHashMap::with_capacity_and_hasher(4096, Default::default())),
+            processing: RwLock::new(GxHashMap::with_capacity_and_hasher(
+                4096,
+                Default::default(),
+            )),
             storage,
             cron_jobs: RwLock::new(GxHashMap::default()),
             completed_jobs: RwLock::new(GxHashSet::default()),
@@ -139,7 +162,10 @@ impl QueueManager {
             subscribers: RwLock::new(Vec::new()),
             auth_tokens: RwLock::new(GxHashSet::default()),
             metrics: GlobalMetrics::new(),
-            job_index: RwLock::new(GxHashMap::with_capacity_and_hasher(65536, Default::default())),
+            job_index: RwLock::new(GxHashMap::with_capacity_and_hasher(
+                65536,
+                Default::default(),
+            )),
             workers: RwLock::new(GxHashMap::default()),
             webhooks: RwLock::new(GxHashMap::default()),
             event_tx,
@@ -148,7 +174,9 @@ impl QueueManager {
         });
 
         let mgr = Arc::clone(&manager);
-        tokio::spawn(async move { mgr.background_tasks().await; });
+        tokio::spawn(async move {
+            mgr.background_tasks().await;
+        });
 
         if has_storage {
             println!("PostgreSQL persistence enabled");
@@ -180,7 +208,10 @@ impl QueueManager {
             }
         }
         if !manager.auth_tokens.read().is_empty() {
-            println!("Authentication enabled with {} token(s)", manager.auth_tokens.read().len());
+            println!(
+                "Authentication enabled with {} token(s)",
+                manager.auth_tokens.read().len()
+            );
         }
         manager
     }
@@ -210,7 +241,10 @@ impl QueueManager {
     /// Check if cluster mode is enabled
     #[inline]
     pub fn is_cluster_enabled(&self) -> bool {
-        self.cluster.as_ref().map(|c| c.is_enabled()).unwrap_or(false)
+        self.cluster
+            .as_ref()
+            .map(|c| c.is_enabled())
+            .unwrap_or(false)
     }
 
     /// Get the node ID
@@ -251,16 +285,22 @@ impl QueueManager {
                 match state.as_str() {
                     "waiting" | "delayed" => {
                         let mut shard = self.shards[idx].write();
-                        shard.queues.entry(queue_name)
-                            .or_insert_with(BinaryHeap::new).push(job);
+                        shard
+                            .queues
+                            .entry(queue_name)
+                            .or_insert_with(BinaryHeap::new)
+                            .push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
                     }
                     "active" => {
                         // Jobs that were active when server stopped - requeue them
                         let mut shard = self.shards[idx].write();
-                        shard.queues.entry(queue_name)
-                            .or_insert_with(BinaryHeap::new).push(job);
+                        shard
+                            .queues
+                            .entry(queue_name)
+                            .or_insert_with(BinaryHeap::new)
+                            .push(job);
                         self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
                         job_count += 1;
                     }
@@ -280,8 +320,12 @@ impl QueueManager {
                 let job_id = job.id;
                 let idx = Self::shard_index(&job.queue);
                 let queue_name = intern(&job.queue);
-                self.shards[idx].write().dlq
-                    .entry(queue_name).or_default().push_back(job);
+                self.shards[idx]
+                    .write()
+                    .dlq
+                    .entry(queue_name)
+                    .or_default()
+                    .push_back(job);
                 self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
             }
         }
@@ -340,7 +384,9 @@ impl QueueManager {
     /// Persist a batch of jobs to PostgreSQL.
     #[inline]
     pub(crate) fn persist_push_batch(&self, jobs: &[Job], state: &str) {
-        if jobs.is_empty() { return; }
+        if jobs.is_empty() {
+            return;
+        }
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let jobs = jobs.to_vec();
@@ -369,7 +415,9 @@ impl QueueManager {
     /// Persist batch acknowledgments to PostgreSQL.
     #[inline]
     pub(crate) fn persist_ack_batch(&self, ids: &[u64]) {
-        if ids.is_empty() { return; }
+        if ids.is_empty() {
+            return;
+        }
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let ids = ids.to_vec();
@@ -500,7 +548,8 @@ impl QueueManager {
                     "event": event,
                     "queue": queue,
                     "job": job
-                }).to_string();
+                })
+                .to_string();
                 let _ = sub.tx.send(msg);
             }
         }
@@ -533,7 +582,8 @@ impl QueueManager {
         match location {
             JobLocation::Processing => {
                 let job = self.processing.read().get(&id).cloned();
-                let state = job.as_ref()
+                let state = job
+                    .as_ref()
                     .map(|j| location.to_state(j.run_at, now))
                     .unwrap_or(JobState::Active);
                 (job, state)
@@ -802,7 +852,8 @@ impl QueueManager {
     pub async fn list_workers(&self) -> Vec<WorkerInfo> {
         let now = now_ms();
         let workers = self.workers.read();
-        workers.values()
+        workers
+            .values()
             .filter(|w| now - w.last_heartbeat < 30_000) // Active in last 30s
             .map(|w| WorkerInfo {
                 id: w.id.clone(),
@@ -816,7 +867,9 @@ impl QueueManager {
 
     pub async fn worker_heartbeat(&self, id: String, queues: Vec<String>, concurrency: u32) {
         let mut workers = self.workers.write();
-        let worker = workers.entry(id.clone()).or_insert_with(|| Worker::new(id, queues.clone(), concurrency));
+        let worker = workers
+            .entry(id.clone())
+            .or_insert_with(|| Worker::new(id, queues.clone(), concurrency));
         worker.queues = queues;
         worker.concurrency = concurrency;
         worker.last_heartbeat = now_ms();
@@ -832,7 +885,8 @@ impl QueueManager {
 
     pub async fn list_webhooks(&self) -> Vec<WebhookConfig> {
         let webhooks = self.webhooks.read();
-        webhooks.values()
+        webhooks
+            .values()
             .map(|w| WebhookConfig {
                 id: w.id.clone(),
                 url: w.url.clone(),
@@ -844,7 +898,13 @@ impl QueueManager {
             .collect()
     }
 
-    pub async fn add_webhook(&self, url: String, events: Vec<String>, queue: Option<String>, secret: Option<String>) -> String {
+    pub async fn add_webhook(
+        &self,
+        url: String,
+        events: Vec<String>,
+        queue: Option<String>,
+        secret: Option<String>,
+    ) -> String {
         let id = format!("wh_{}", crate::protocol::next_id());
         let webhook = Webhook::new(id.clone(), url, events, queue, secret);
         self.webhooks.write().insert(id.clone(), webhook);
@@ -856,7 +916,14 @@ impl QueueManager {
     }
 
     /// Fire webhooks for an event
-    pub(crate) fn fire_webhooks(&self, event_type: &str, queue: &str, job_id: u64, data: Option<Value>, error: Option<String>) {
+    pub(crate) fn fire_webhooks(
+        &self,
+        event_type: &str,
+        queue: &str,
+        job_id: u64,
+        data: Option<Value>,
+        error: Option<String>,
+    ) {
         let webhooks = self.webhooks.read();
         for webhook in webhooks.values() {
             // Check event type matches
@@ -943,8 +1010,8 @@ fn hmac_sha256(key: &str, message: &str) -> String {
 
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(key.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(key.as_bytes()).expect("HMAC can take key of any size");
     mac.update(message.as_bytes());
 
     let result = mac.finalize();

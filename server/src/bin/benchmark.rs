@@ -63,7 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Benchmark 2: Batch Push
     // ═══════════════════════════════════════════════════════════════
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("Benchmark 2: Batch Push ({} jobs, batch size {})", BENCHMARK_JOBS, BATCH_SIZE);
+    println!(
+        "Benchmark 2: Batch Push ({} jobs, batch size {})",
+        BENCHMARK_JOBS, BATCH_SIZE
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let batches = BENCHMARK_JOBS / BATCH_SIZE;
@@ -72,7 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let jobs: Vec<String> = (0..BATCH_SIZE)
             .map(|i| format!(r#"{{"data":{{"batch":{},"i":{}}}}}"#, batch, i))
             .collect();
-        let cmd = format!(r#"{{"cmd":"PUSHB","queue":"bench2","jobs":[{}]}}"#, jobs.join(","));
+        let cmd = format!(
+            r#"{{"cmd":"PUSHB","queue":"bench2","jobs":[{}]}}"#,
+            jobs.join(",")
+        );
         writer.write_all(cmd.as_bytes()).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
@@ -90,7 +96,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Benchmark 3: GetState (O(1) lookup test)
     // ═══════════════════════════════════════════════════════════════
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("Benchmark 3: GetState O(1) Lookup ({} lookups)", BENCHMARK_JOBS);
+    println!(
+        "Benchmark 3: GetState O(1) Lookup ({} lookups)",
+        BENCHMARK_JOBS
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // First push some jobs to have IDs to look up
@@ -103,7 +112,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         line.clear();
         reader.read_line(&mut line).await?;
         // Parse job ID from response
-        if let Some(id) = line.split("\"id\":").nth(1).and_then(|s| s.split('}').next()) {
+        if let Some(id) = line
+            .split("\"id\":")
+            .nth(1)
+            .and_then(|s| s.split('}').next())
+        {
             if let Ok(id) = id.trim().parse::<u64>() {
                 job_ids.push(id);
             }
@@ -159,7 +172,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reader.read_line(&mut line).await?;
 
         // Parse job ID
-        if let Some(id) = line.split("\"id\":").nth(1).and_then(|s| s.split(',').next()) {
+        if let Some(id) = line
+            .split("\"id\":")
+            .nth(1)
+            .and_then(|s| s.split(',').next())
+        {
             if let Ok(id) = id.trim().parse::<u64>() {
                 // Ack
                 let cmd = format!(r#"{{"cmd":"ACK","id":{}}}"#, id);
@@ -226,19 +243,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Pretty print metrics
     if line.contains("total_pushed") {
-        let total_pushed: u64 = line.split("\"total_pushed\":").nth(1)
+        let total_pushed: u64 = line
+            .split("\"total_pushed\":")
+            .nth(1)
             .and_then(|s| s.split(',').next())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let total_completed: u64 = line.split("\"total_completed\":").nth(1)
+        let total_completed: u64 = line
+            .split("\"total_completed\":")
+            .nth(1)
             .and_then(|s| s.split(',').next())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let total_failed: u64 = line.split("\"total_failed\":").nth(1)
+        let total_failed: u64 = line
+            .split("\"total_failed\":")
+            .nth(1)
             .and_then(|s| s.split(',').next())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let avg_latency: f64 = line.split("\"avg_latency_ms\":").nth(1)
+        let avg_latency: f64 = line
+            .split("\"avg_latency_ms\":")
+            .nth(1)
             .and_then(|s| s.split(',').next())
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.0);

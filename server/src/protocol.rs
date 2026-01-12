@@ -9,13 +9,13 @@ static ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JobState {
-    Waiting,          // In queue, ready to be processed
-    Delayed,          // In queue, but run_at is in the future
-    Active,           // Currently being processed
-    Completed,        // Successfully completed
-    Failed,           // In DLQ after max_attempts
-    WaitingChildren,  // Waiting for dependencies to complete
-    Unknown,          // Job not found or state cannot be determined
+    Waiting,         // In queue, ready to be processed
+    Delayed,         // In queue, but run_at is in the future
+    Active,          // Currently being processed
+    Completed,       // Successfully completed
+    Failed,          // In DLQ after max_attempts
+    WaitingChildren, // Waiting for dependencies to complete
+    Unknown,         // Job not found or state cannot be determined
 }
 
 #[inline(always)]
@@ -35,21 +35,21 @@ pub enum Command {
         #[serde(default)]
         delay: Option<u64>,
         #[serde(default)]
-        ttl: Option<u64>,           // Job expires after N ms
+        ttl: Option<u64>, // Job expires after N ms
         #[serde(default)]
-        timeout: Option<u64>,       // Auto-fail after N ms in processing
+        timeout: Option<u64>, // Auto-fail after N ms in processing
         #[serde(default)]
-        max_attempts: Option<u32>,  // Max retries before DLQ
+        max_attempts: Option<u32>, // Max retries before DLQ
         #[serde(default)]
-        backoff: Option<u64>,       // Base backoff in ms (exponential)
+        backoff: Option<u64>, // Base backoff in ms (exponential)
         #[serde(default)]
         unique_key: Option<String>, // Deduplication key
         #[serde(default)]
         depends_on: Option<Vec<u64>>, // Job dependencies
         #[serde(default)]
-        tags: Option<Vec<String>>,  // Job tags for filtering
+        tags: Option<Vec<String>>, // Job tags for filtering
         #[serde(default)]
-        lifo: bool,                 // LIFO mode: last in, first out
+        lifo: bool, // LIFO mode: last in, first out
     },
     Pushb {
         queue: String,
@@ -65,7 +65,7 @@ pub enum Command {
     Ack {
         id: u64,
         #[serde(default)]
-        result: Option<Value>,  // Store job result
+        result: Option<Value>, // Store job result
     },
     Ackb {
         ids: Vec<u64>,
@@ -90,7 +90,7 @@ pub enum Command {
     },
     Progress {
         id: u64,
-        progress: u8,  // 0-100
+        progress: u8, // 0-100
         message: Option<String>,
     },
     GetProgress {
@@ -104,11 +104,11 @@ pub enum Command {
     RetryDlq {
         queue: String,
         #[serde(default)]
-        id: Option<u64>,  // Retry specific job or all
+        id: Option<u64>, // Retry specific job or all
     },
     Subscribe {
         queue: String,
-        events: Vec<String>,  // "completed", "failed", "progress"
+        events: Vec<String>, // "completed", "failed", "progress"
     },
     Unsubscribe {
         queue: String,
@@ -121,7 +121,7 @@ pub enum Command {
         name: String,
         queue: String,
         data: Value,
-        schedule: String,  // Cron expression
+        schedule: String, // Cron expression
         #[serde(default)]
         priority: i32,
     },
@@ -133,7 +133,7 @@ pub enum Command {
     // === Rate Limiting ===
     RateLimit {
         queue: String,
-        limit: u32,       // Jobs per second
+        limit: u32, // Jobs per second
     },
     RateLimitClear {
         queue: String,
@@ -148,7 +148,7 @@ pub enum Command {
     },
     SetConcurrency {
         queue: String,
-        limit: u32,       // Max concurrent jobs in processing
+        limit: u32, // Max concurrent jobs in processing
     },
     ClearConcurrency {
         queue: String,
@@ -195,17 +195,17 @@ pub struct Job {
     pub created_at: u64,
     pub run_at: u64,
     #[serde(default)]
-    pub started_at: u64,        // When job started processing
+    pub started_at: u64, // When job started processing
     #[serde(default)]
     pub attempts: u32,
     #[serde(default)]
-    pub max_attempts: u32,      // 0 = infinite
+    pub max_attempts: u32, // 0 = infinite
     #[serde(default)]
-    pub backoff: u64,           // Base backoff ms
+    pub backoff: u64, // Base backoff ms
     #[serde(default)]
-    pub ttl: u64,               // 0 = no expiration
+    pub ttl: u64, // 0 = no expiration
     #[serde(default)]
-    pub timeout: u64,           // 0 = no timeout
+    pub timeout: u64, // 0 = no timeout
     #[serde(default)]
     pub unique_key: Option<String>,
     #[serde(default)]
@@ -215,9 +215,9 @@ pub struct Job {
     #[serde(default)]
     pub progress_msg: Option<String>,
     #[serde(default)]
-    pub tags: Vec<String>,      // Job tags for filtering
+    pub tags: Vec<String>, // Job tags for filtering
     #[serde(default)]
-    pub lifo: bool,             // LIFO mode: last in, first out
+    pub lifo: bool, // LIFO mode: last in, first out
 }
 
 /// Job with its current state (for browser/API)
@@ -437,7 +437,7 @@ pub struct WorkerInfo {
 pub struct WebhookConfig {
     pub id: String,
     pub url: String,
-    pub events: Vec<String>,  // "job.completed", "job.failed", "job.progress"
+    pub events: Vec<String>, // "job.completed", "job.failed", "job.progress"
     pub queue: Option<String>, // Filter by queue, None = all queues
     pub secret: Option<String>, // HMAC signing secret
     pub created_at: u64,
@@ -447,7 +447,7 @@ pub struct WebhookConfig {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JobEvent {
-    pub event_type: String,  // "completed", "failed", "progress", "pushed"
+    pub event_type: String, // "completed", "failed", "progress", "pushed"
     pub queue: String,
     pub job_id: u64,
     pub timestamp: u64,
@@ -467,7 +467,10 @@ impl Response {
 
     #[inline(always)]
     pub fn ok_with_id(id: u64) -> Self {
-        Response::Ok { ok: true, id: Some(id) }
+        Response::Ok {
+            ok: true,
+            id: Some(id),
+        }
     }
 
     #[inline(always)]
@@ -505,7 +508,11 @@ impl Response {
     pub fn progress(id: u64, progress: u8, message: Option<String>) -> Self {
         Response::Progress {
             ok: true,
-            progress: ProgressInfo { id, progress, message },
+            progress: ProgressInfo {
+                id,
+                progress,
+                message,
+            },
         }
     }
 
@@ -516,7 +523,11 @@ impl Response {
 
     #[inline(always)]
     pub fn result(id: u64, result: Option<Value>) -> Self {
-        Response::Result { ok: true, id, result }
+        Response::Result {
+            ok: true,
+            id,
+            result,
+        }
     }
 
     #[inline(always)]
@@ -526,12 +537,20 @@ impl Response {
 
     #[inline(always)]
     pub fn job_with_state(job: Option<Job>, state: JobState) -> Self {
-        Response::JobWithState { ok: true, job, state }
+        Response::JobWithState {
+            ok: true,
+            job,
+            state,
+        }
     }
 
     #[inline(always)]
     pub fn state(id: u64, state: JobState) -> Self {
-        Response::State { ok: true, id, state }
+        Response::State {
+            ok: true,
+            id,
+            state,
+        }
     }
 
     #[inline(always)]

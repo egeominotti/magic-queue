@@ -1,17 +1,17 @@
-use std::sync::Arc;
 use std::convert::Infallible;
+use std::sync::Arc;
 
+use axum::response::sse::{Event, KeepAlive};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    response::{Json, IntoResponse, Sse},
+    http::StatusCode,
+    response::{IntoResponse, Json, Sse},
     routing::{delete, get, post},
     Router,
-    http::StatusCode,
 };
-use axum::response::sse::{Event, KeepAlive};
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,8 +19,10 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::dashboard;
-use crate::protocol::{CronJob, Job, JobBrowserItem, JobState, MetricsData, MetricsHistoryPoint, QueueInfo};
-use crate::queue::{QueueManager, NodeInfo};
+use crate::protocol::{
+    CronJob, Job, JobBrowserItem, JobState, MetricsData, MetricsHistoryPoint, QueueInfo,
+};
+use crate::queue::{NodeInfo, QueueManager};
 
 type AppState = Arc<QueueManager>;
 
@@ -93,7 +95,9 @@ pub struct PullQuery {
     pub count: usize,
 }
 
-fn default_count() -> usize { 1 }
+fn default_count() -> usize {
+    1
+}
 
 #[derive(Deserialize)]
 pub struct WsQuery {
@@ -112,11 +116,19 @@ pub struct ApiResponse<T> {
 
 impl<T> ApiResponse<T> {
     fn success(data: T) -> Json<Self> {
-        Json(Self { ok: true, data: Some(data), error: None })
+        Json(Self {
+            ok: true,
+            data: Some(data),
+            error: None,
+        })
     }
 
     fn error(msg: impl Into<String>) -> Json<Self> {
-        Json(Self { ok: false, data: None, error: Some(msg.into()) })
+        Json(Self {
+            ok: false,
+            data: None,
+            error: Some(msg.into()),
+        })
     }
 }
 
@@ -198,10 +210,23 @@ async fn push_job(
     Path(queue): Path<String>,
     Json(req): Json<PushRequest>,
 ) -> Json<ApiResponse<Job>> {
-    match qm.push(
-        queue, req.data, req.priority, req.delay, req.ttl, req.timeout,
-        req.max_attempts, req.backoff, req.unique_key, req.depends_on, req.tags, req.lifo,
-    ).await {
+    match qm
+        .push(
+            queue,
+            req.data,
+            req.priority,
+            req.delay,
+            req.ttl,
+            req.timeout,
+            req.max_attempts,
+            req.backoff,
+            req.unique_key,
+            req.depends_on,
+            req.tags,
+            req.lifo,
+        )
+        .await
+    {
         Ok(job) => ApiResponse::success(job),
         Err(e) => ApiResponse::error(e),
     }
@@ -302,7 +327,9 @@ pub struct JobsQuery {
     pub offset: usize,
 }
 
-fn default_job_limit() -> usize { 100 }
+fn default_job_limit() -> usize {
+    100
+}
 
 async fn list_jobs(
     State(qm): State<AppState>,
@@ -368,10 +395,7 @@ async fn fail_job(
     }
 }
 
-async fn cancel_job(
-    State(qm): State<AppState>,
-    Path(id): Path<u64>,
-) -> Json<ApiResponse<()>> {
+async fn cancel_job(State(qm): State<AppState>, Path(id): Path<u64>) -> Json<ApiResponse<()>> {
     match qm.cancel(id).await {
         Ok(()) => ApiResponse::success(()),
         Err(e) => ApiResponse::error(e),
@@ -419,7 +443,10 @@ async fn create_cron(
     Path(name): Path<String>,
     Json(req): Json<CronRequest>,
 ) -> Json<ApiResponse<()>> {
-    match qm.add_cron(name, req.queue, req.data, req.schedule, req.priority).await {
+    match qm
+        .add_cron(name, req.queue, req.data, req.schedule, req.priority)
+        .await
+    {
         Ok(()) => ApiResponse::success(()),
         Err(e) => ApiResponse::error(e),
     }
@@ -445,7 +472,12 @@ pub struct StatsResponse {
 
 async fn get_stats(State(qm): State<AppState>) -> Json<ApiResponse<StatsResponse>> {
     let (queued, processing, delayed, dlq) = qm.stats().await;
-    ApiResponse::success(StatsResponse { queued, processing, delayed, dlq })
+    ApiResponse::success(StatsResponse {
+        queued,
+        processing,
+        delayed,
+        dlq,
+    })
 }
 
 async fn get_metrics(State(qm): State<AppState>) -> Json<ApiResponse<MetricsData>> {
@@ -453,7 +485,9 @@ async fn get_metrics(State(qm): State<AppState>) -> Json<ApiResponse<MetricsData
     ApiResponse::success(metrics)
 }
 
-async fn get_metrics_history(State(qm): State<AppState>) -> Json<ApiResponse<Vec<MetricsHistoryPoint>>> {
+async fn get_metrics_history(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<Vec<MetricsHistoryPoint>>> {
     let history = qm.get_metrics_history();
     ApiResponse::success(history)
 }
@@ -469,24 +503,48 @@ async fn get_prometheus_metrics(State(qm): State<AppState>) -> impl IntoResponse
     // Global metrics
     output.push_str("# HELP flashq_jobs_total Total number of jobs\n");
     output.push_str("# TYPE flashq_jobs_total counter\n");
-    output.push_str(&format!("flashq_jobs_pushed_total {}\n", metrics.total_pushed));
-    output.push_str(&format!("flashq_jobs_completed_total {}\n", metrics.total_completed));
-    output.push_str(&format!("flashq_jobs_failed_total {}\n", metrics.total_failed));
+    output.push_str(&format!(
+        "flashq_jobs_pushed_total {}\n",
+        metrics.total_pushed
+    ));
+    output.push_str(&format!(
+        "flashq_jobs_completed_total {}\n",
+        metrics.total_completed
+    ));
+    output.push_str(&format!(
+        "flashq_jobs_failed_total {}\n",
+        metrics.total_failed
+    ));
 
     output.push_str("# HELP flashq_jobs_current Current number of jobs by state\n");
     output.push_str("# TYPE flashq_jobs_current gauge\n");
-    output.push_str(&format!("flashq_jobs_current{{state=\"queued\"}} {}\n", queued));
-    output.push_str(&format!("flashq_jobs_current{{state=\"processing\"}} {}\n", processing));
-    output.push_str(&format!("flashq_jobs_current{{state=\"delayed\"}} {}\n", delayed));
+    output.push_str(&format!(
+        "flashq_jobs_current{{state=\"queued\"}} {}\n",
+        queued
+    ));
+    output.push_str(&format!(
+        "flashq_jobs_current{{state=\"processing\"}} {}\n",
+        processing
+    ));
+    output.push_str(&format!(
+        "flashq_jobs_current{{state=\"delayed\"}} {}\n",
+        delayed
+    ));
     output.push_str(&format!("flashq_jobs_current{{state=\"dlq\"}} {}\n", dlq));
 
     output.push_str("# HELP flashq_throughput_per_second Jobs processed per second\n");
     output.push_str("# TYPE flashq_throughput_per_second gauge\n");
-    output.push_str(&format!("flashq_throughput_per_second {:.2}\n", metrics.jobs_per_second));
+    output.push_str(&format!(
+        "flashq_throughput_per_second {:.2}\n",
+        metrics.jobs_per_second
+    ));
 
     output.push_str("# HELP flashq_latency_ms Average job latency in milliseconds\n");
     output.push_str("# TYPE flashq_latency_ms gauge\n");
-    output.push_str(&format!("flashq_latency_ms {:.2}\n", metrics.avg_latency_ms));
+    output.push_str(&format!(
+        "flashq_latency_ms {:.2}\n",
+        metrics.avg_latency_ms
+    ));
 
     // Per-queue metrics
     output.push_str("# HELP flashq_queue_jobs Queue job counts\n");
@@ -494,9 +552,18 @@ async fn get_prometheus_metrics(State(qm): State<AppState>) -> impl IntoResponse
     for q in &metrics.queues {
         // Sanitize queue name for Prometheus labels (escape backslashes and quotes)
         let safe_name = q.name.replace('\\', "\\\\").replace('"', "\\\"");
-        output.push_str(&format!("flashq_queue_jobs{{queue=\"{}\",state=\"pending\"}} {}\n", safe_name, q.pending));
-        output.push_str(&format!("flashq_queue_jobs{{queue=\"{}\",state=\"processing\"}} {}\n", safe_name, q.processing));
-        output.push_str(&format!("flashq_queue_jobs{{queue=\"{}\",state=\"dlq\"}} {}\n", safe_name, q.dlq));
+        output.push_str(&format!(
+            "flashq_queue_jobs{{queue=\"{}\",state=\"pending\"}} {}\n",
+            safe_name, q.pending
+        ));
+        output.push_str(&format!(
+            "flashq_queue_jobs{{queue=\"{}\",state=\"processing\"}} {}\n",
+            safe_name, q.processing
+        ));
+        output.push_str(&format!(
+            "flashq_queue_jobs{{queue=\"{}\",state=\"dlq\"}} {}\n",
+            safe_name, q.dlq
+        ));
     }
 
     // Workers
@@ -506,8 +573,11 @@ async fn get_prometheus_metrics(State(qm): State<AppState>) -> impl IntoResponse
     output.push_str(&format!("flashq_workers_active {}\n", workers.len()));
 
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
-        output
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        output,
     )
 }
 
@@ -517,14 +587,16 @@ async fn sse_events(
     State(qm): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = qm.subscribe_events(None);
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|result: Result<crate::protocol::JobEvent, _>| async move {
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(
+        |result: Result<crate::protocol::JobEvent, _>| async move {
             result.ok().map(|event| {
                 Ok(Event::default()
                     .event(&event.event_type)
-                    .json_data(&event).unwrap_or_default())
+                    .json_data(&event)
+                    .unwrap_or_default())
             })
-        });
+        },
+    );
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
@@ -534,21 +606,23 @@ async fn sse_queue_events(
     Path(queue): Path<String>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = qm.subscribe_events(Some(queue.clone()));
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(move |result: Result<crate::protocol::JobEvent, _>| {
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(
+        move |result: Result<crate::protocol::JobEvent, _>| {
             let queue = queue.clone();
             async move {
                 result.ok().and_then(|event| {
                     if event.queue == queue {
                         Some(Ok(Event::default()
                             .event(&event.event_type)
-                            .json_data(&event).unwrap_or_default()))
+                            .json_data(&event)
+                            .unwrap_or_default()))
                     } else {
                         None
                     }
                 })
             }
-        });
+        },
+    );
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
@@ -584,7 +658,11 @@ async fn ws_queue_handler(
     ws.on_upgrade(move |socket| handle_websocket(socket, qm, Some(queue)))
 }
 
-async fn handle_websocket(mut socket: WebSocket, qm: Arc<QueueManager>, queue_filter: Option<String>) {
+async fn handle_websocket(
+    mut socket: WebSocket,
+    qm: Arc<QueueManager>,
+    queue_filter: Option<String>,
+) {
     let mut rx = qm.subscribe_events(queue_filter.clone());
 
     loop {
@@ -653,7 +731,9 @@ pub struct WorkerHeartbeatRequest {
     pub concurrency: u32,
 }
 
-async fn list_workers(State(qm): State<AppState>) -> Json<ApiResponse<Vec<crate::protocol::WorkerInfo>>> {
+async fn list_workers(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<Vec<crate::protocol::WorkerInfo>>> {
     let workers = qm.list_workers().await;
     ApiResponse::success(workers)
 }
@@ -679,7 +759,9 @@ pub struct CreateWebhookRequest {
     pub secret: Option<String>,
 }
 
-async fn list_webhooks(State(qm): State<AppState>) -> Json<ApiResponse<Vec<crate::protocol::WebhookConfig>>> {
+async fn list_webhooks(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<Vec<crate::protocol::WebhookConfig>>> {
     let webhooks = qm.list_webhooks().await;
     ApiResponse::success(webhooks)
 }
@@ -688,7 +770,9 @@ async fn create_webhook(
     State(qm): State<AppState>,
     Json(req): Json<CreateWebhookRequest>,
 ) -> Json<ApiResponse<String>> {
-    let id = qm.add_webhook(req.url, req.events, req.queue, req.secret).await;
+    let id = qm
+        .add_webhook(req.url, req.events, req.queue, req.secret)
+        .await;
     ApiResponse::success(id)
 }
 
@@ -707,7 +791,12 @@ async fn incoming_webhook(
     Path(queue): Path<String>,
     Json(data): Json<Value>,
 ) -> Json<ApiResponse<Job>> {
-    match qm.push(queue, data, 0, None, None, None, None, None, None, None, None, false).await {
+    match qm
+        .push(
+            queue, data, 0, None, None, None, None, None, None, None, None, false,
+        )
+        .await
+    {
         Ok(job) => ApiResponse::success(job),
         Err(e) => ApiResponse::error(e),
     }
@@ -738,8 +827,14 @@ async fn get_settings(State(qm): State<AppState>) -> Json<ApiResponse<ServerSett
 
     let settings = ServerSettings {
         version: env!("CARGO_PKG_VERSION"),
-        tcp_port: std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6789),
-        http_port: std::env::var("HTTP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6790),
+        tcp_port: std::env::var("PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(6789),
+        http_port: std::env::var("HTTP_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(6790),
         database_connected: db_connected,
         database_url: db_url.map(|u| {
             // Mask password in URL
@@ -809,17 +904,23 @@ async fn cluster_nodes(State(qm): State<AppState>) -> Json<ApiResponse<Vec<NodeI
         ApiResponse::success(vec![NodeInfo {
             node_id: "standalone".to_string(),
             host: "localhost".to_string(),
-            port: std::env::var("HTTP_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6790),
+            port: std::env::var("HTTP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(6790),
             is_leader: true,
             last_heartbeat: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0),
-            started_at: START_TIME.get()
-                .map(|t| std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as i64 - t.elapsed().as_millis() as i64)
-                    .unwrap_or(0))
+            started_at: START_TIME
+                .get()
+                .map(|t| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64 - t.elapsed().as_millis() as i64)
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0),
         }])
     }

@@ -112,31 +112,25 @@ impl ClusterManager {
 
         if let Some(pool) = &self.pool {
             // Try to acquire advisory lock (non-blocking)
-            let result: (bool,) = sqlx::query_as(
-                "SELECT pg_try_advisory_lock($1)"
-            )
-            .bind(LEADER_LOCK_KEY)
-            .fetch_one(pool)
-            .await?;
+            let result: (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock($1)")
+                .bind(LEADER_LOCK_KEY)
+                .fetch_one(pool)
+                .await?;
 
             let acquired = result.0;
 
             if acquired {
                 // Update our status in the registry
-                sqlx::query(
-                    "UPDATE cluster_nodes SET is_leader = TRUE WHERE node_id = $1"
-                )
-                .bind(&self.node_id)
-                .execute(pool)
-                .await?;
+                sqlx::query("UPDATE cluster_nodes SET is_leader = TRUE WHERE node_id = $1")
+                    .bind(&self.node_id)
+                    .execute(pool)
+                    .await?;
 
                 // Clear leader flag from other nodes
-                sqlx::query(
-                    "UPDATE cluster_nodes SET is_leader = FALSE WHERE node_id != $1"
-                )
-                .bind(&self.node_id)
-                .execute(pool)
-                .await?;
+                sqlx::query("UPDATE cluster_nodes SET is_leader = FALSE WHERE node_id != $1")
+                    .bind(&self.node_id)
+                    .execute(pool)
+                    .await?;
 
                 let was_leader = self.is_leader.swap(true, Ordering::SeqCst);
                 if !was_leader {
@@ -168,12 +162,10 @@ impl ClusterManager {
                 .await?;
 
             // Update registry
-            sqlx::query(
-                "UPDATE cluster_nodes SET is_leader = FALSE WHERE node_id = $1"
-            )
-            .bind(&self.node_id)
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE cluster_nodes SET is_leader = FALSE WHERE node_id = $1")
+                .bind(&self.node_id)
+                .execute(pool)
+                .await?;
 
             self.is_leader.store(false, Ordering::SeqCst);
             println!("Node {} released leadership", self.node_id);
@@ -188,12 +180,10 @@ impl ClusterManager {
         }
 
         if let Some(pool) = &self.pool {
-            sqlx::query(
-                "UPDATE cluster_nodes SET last_heartbeat = NOW() WHERE node_id = $1"
-            )
-            .bind(&self.node_id)
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE cluster_nodes SET last_heartbeat = NOW() WHERE node_id = $1")
+                .bind(&self.node_id)
+                .execute(pool)
+                .await?;
         }
         Ok(())
     }
@@ -208,7 +198,7 @@ impl ClusterManager {
                        EXTRACT(EPOCH FROM started_at)::bigint * 1000 as started_at_ms
                 FROM cluster_nodes
                 ORDER BY started_at ASC
-                "#
+                "#,
             )
             .fetch_all(pool)
             .await?;
@@ -249,7 +239,7 @@ impl ClusterManager {
 
         if let Some(pool) = &self.pool {
             let result = sqlx::query(
-                "DELETE FROM cluster_nodes WHERE last_heartbeat < NOW() - INTERVAL '30 seconds'"
+                "DELETE FROM cluster_nodes WHERE last_heartbeat < NOW() - INTERVAL '30 seconds'",
             )
             .execute(pool)
             .await?;
@@ -285,7 +275,6 @@ impl ClusterManager {
 
 /// Generate a unique node ID using ULID (sortable, faster than UUID)
 pub fn generate_node_id() -> String {
-    std::env::var("NODE_ID").unwrap_or_else(|_| {
-        format!("node-{}", &ulid::Ulid::new().to_string()[..8])
-    })
+    std::env::var("NODE_ID")
+        .unwrap_or_else(|_| format!("node-{}", &ulid::Ulid::new().to_string()[..8]))
 }

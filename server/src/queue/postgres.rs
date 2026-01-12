@@ -1,4 +1,3 @@
-
 use serde_json::Value;
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 
@@ -30,7 +29,8 @@ impl PostgresStorage {
     /// Run database migrations.
     pub async fn migrate(&self) -> Result<(), sqlx::Error> {
         // Create tables if they don't exist
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS jobs (
                 id BIGINT PRIMARY KEY,
                 queue VARCHAR(255) NOT NULL,
@@ -52,30 +52,47 @@ impl PostgresStorage {
                 state VARCHAR(32) NOT NULL DEFAULT 'waiting',
                 lifo BOOLEAN NOT NULL DEFAULT FALSE
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // Add lifo column for existing databases
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             ALTER TABLE jobs ADD COLUMN IF NOT EXISTS lifo BOOLEAN NOT NULL DEFAULT FALSE
-        "#).execute(&self.pool).await.ok();
+        "#,
+        )
+        .execute(&self.pool)
+        .await
+        .ok();
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_jobs_queue_state ON jobs(queue, state)
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         sqlx::query(r#"
             CREATE INDEX IF NOT EXISTS idx_jobs_run_at ON jobs(run_at) WHERE state IN ('waiting', 'delayed')
         "#).execute(&self.pool).await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS job_results (
                 job_id BIGINT PRIMARY KEY,
                 result JSONB NOT NULL,
                 completed_at BIGINT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS dlq_jobs (
                 id BIGSERIAL PRIMARY KEY,
                 job_id BIGINT NOT NULL,
@@ -85,13 +102,21 @@ impl PostgresStorage {
                 failed_at BIGINT NOT NULL,
                 attempts INT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_dlq_queue ON dlq_jobs(queue)
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS cron_jobs (
                 name VARCHAR(255) PRIMARY KEY,
                 queue VARCHAR(255) NOT NULL,
@@ -100,9 +125,13 @@ impl PostgresStorage {
                 priority INT NOT NULL DEFAULT 0,
                 next_run BIGINT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS webhooks (
                 id VARCHAR(255) PRIMARY KEY,
                 url TEXT NOT NULL,
@@ -111,16 +140,23 @@ impl PostgresStorage {
                 secret VARCHAR(255),
                 created_at BIGINT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS queue_config (
                 queue VARCHAR(255) PRIMARY KEY,
                 paused BOOLEAN NOT NULL DEFAULT FALSE,
                 rate_limit INT,
                 concurrency_limit INT
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -216,10 +252,12 @@ impl PostgresStorage {
             .execute(&mut *tx)
             .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO dlq_jobs (job_id, queue, data, error, failed_at, attempts)
             VALUES ($1, $2, $3, $4, $5, $6)
-        "#)
+        "#,
+        )
         .bind(job.id as i64)
         .bind(&job.queue)
         .bind(&job.data)
@@ -234,7 +272,12 @@ impl PostgresStorage {
     }
 
     /// Mark job as failed and update for retry.
-    pub async fn fail_job(&self, job_id: u64, new_run_at: u64, attempts: u32) -> Result<(), sqlx::Error> {
+    pub async fn fail_job(
+        &self,
+        job_id: u64,
+        new_run_at: u64,
+        attempts: u32,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE jobs SET state = 'waiting', run_at = $1, attempts = $2, started_at = 0 WHERE id = $3")
             .bind(new_run_at as i64)
             .bind(attempts as i32)
@@ -255,13 +298,15 @@ impl PostgresStorage {
 
     /// Load all pending jobs from PostgreSQL for recovery.
     pub async fn load_pending_jobs(&self) -> Result<Vec<(Job, String)>, sqlx::Error> {
-        let rows = sqlx::query(r#"
+        let rows = sqlx::query(
+            r#"
             SELECT id, queue, data, priority, created_at, run_at, started_at, attempts,
                    max_attempts, backoff, ttl, timeout, unique_key, depends_on, progress,
                    progress_msg, tags, state, lifo
             FROM jobs
             WHERE state IN ('waiting', 'delayed', 'active', 'waiting_children')
-        "#)
+        "#,
+        )
         .fetch_all(&self.pool)
         .await?;
 
@@ -297,13 +342,15 @@ impl PostgresStorage {
 
     /// Load DLQ jobs.
     pub async fn load_dlq_jobs(&self) -> Result<Vec<Job>, sqlx::Error> {
-        let rows = sqlx::query(r#"
+        let rows = sqlx::query(
+            r#"
             SELECT j.id, j.queue, j.data, j.priority, j.created_at, j.run_at, j.started_at,
                    j.attempts, j.max_attempts, j.backoff, j.ttl, j.timeout, j.unique_key,
                    j.depends_on, j.progress, j.progress_msg, j.tags, j.lifo
             FROM jobs j
             INNER JOIN dlq_jobs d ON j.id = d.job_id
-        "#)
+        "#,
+        )
         .fetch_all(&self.pool)
         .await?;
 
@@ -339,7 +386,8 @@ impl PostgresStorage {
 
     /// Save a cron job.
     pub async fn save_cron(&self, cron: &CronJob) -> Result<(), sqlx::Error> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO cron_jobs (name, queue, data, schedule, priority, next_run)
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (name) DO UPDATE SET
@@ -348,7 +396,8 @@ impl PostgresStorage {
                 schedule = EXCLUDED.schedule,
                 priority = EXCLUDED.priority,
                 next_run = EXCLUDED.next_run
-        "#)
+        "#,
+        )
         .bind(&cron.name)
         .bind(&cron.queue)
         .bind(&cron.data)
@@ -371,9 +420,10 @@ impl PostgresStorage {
 
     /// Load all cron jobs.
     pub async fn load_crons(&self) -> Result<Vec<CronJob>, sqlx::Error> {
-        let rows = sqlx::query("SELECT name, queue, data, schedule, priority, next_run FROM cron_jobs")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows =
+            sqlx::query("SELECT name, queue, data, schedule, priority, next_run FROM cron_jobs")
+                .fetch_all(&self.pool)
+                .await?;
 
         let mut crons = Vec::with_capacity(rows.len());
         for row in rows {
@@ -404,7 +454,8 @@ impl PostgresStorage {
 
     /// Save a webhook.
     pub async fn save_webhook(&self, webhook: &WebhookConfig) -> Result<(), sqlx::Error> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO webhooks (id, url, events, queue, secret, created_at)
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (id) DO UPDATE SET
@@ -412,7 +463,8 @@ impl PostgresStorage {
                 events = EXCLUDED.events,
                 queue = EXCLUDED.queue,
                 secret = EXCLUDED.secret
-        "#)
+        "#,
+        )
         .bind(&webhook.id)
         .bind(&webhook.url)
         .bind(&webhook.events)

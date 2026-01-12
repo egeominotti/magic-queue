@@ -9,8 +9,10 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
+use crate::protocol::{
+    Job as InternalJob, JobInput as InternalJobInput, JobState as InternalJobState,
+};
 use crate::queue::QueueManager;
-use crate::protocol::{Job as InternalJob, JobInput as InternalJobInput, JobState as InternalJobState};
 
 // Include generated protobuf code
 pub mod pb {
@@ -84,26 +86,60 @@ impl QueueService for QueueServiceImpl {
         let data: serde_json::Value = serde_json::from_slice(&req.data)
             .map_err(|e| Status::invalid_argument(format!("Invalid JSON data: {}", e)))?;
 
-        match self.queue_manager.push(
-            req.queue,
-            data,
-            req.priority,
-            if req.delay_ms > 0 { Some(req.delay_ms) } else { None },
-            if req.ttl_ms > 0 { Some(req.ttl_ms) } else { None },
-            if req.timeout_ms > 0 { Some(req.timeout_ms) } else { None },
-            if req.max_attempts > 0 { Some(req.max_attempts) } else { None },
-            if req.backoff_ms > 0 { Some(req.backoff_ms) } else { None },
-            req.unique_key,
-            if req.depends_on.is_empty() { None } else { Some(req.depends_on) },
-            None, // tags not supported in gRPC yet
-            req.lifo,
-        ).await {
-            Ok(job) => Ok(Response::new(PushResponse { ok: true, id: job.id })),
+        match self
+            .queue_manager
+            .push(
+                req.queue,
+                data,
+                req.priority,
+                if req.delay_ms > 0 {
+                    Some(req.delay_ms)
+                } else {
+                    None
+                },
+                if req.ttl_ms > 0 {
+                    Some(req.ttl_ms)
+                } else {
+                    None
+                },
+                if req.timeout_ms > 0 {
+                    Some(req.timeout_ms)
+                } else {
+                    None
+                },
+                if req.max_attempts > 0 {
+                    Some(req.max_attempts)
+                } else {
+                    None
+                },
+                if req.backoff_ms > 0 {
+                    Some(req.backoff_ms)
+                } else {
+                    None
+                },
+                req.unique_key,
+                if req.depends_on.is_empty() {
+                    None
+                } else {
+                    Some(req.depends_on)
+                },
+                None, // tags not supported in gRPC yet
+                req.lifo,
+            )
+            .await
+        {
+            Ok(job) => Ok(Response::new(PushResponse {
+                ok: true,
+                id: job.id,
+            })),
             Err(e) => Err(Status::internal(e)),
         }
     }
 
-    async fn push_batch(&self, request: Request<PushBatchRequest>) -> Result<Response<PushBatchResponse>, Status> {
+    async fn push_batch(
+        &self,
+        request: Request<PushBatchRequest>,
+    ) -> Result<Response<PushBatchResponse>, Status> {
         let req = request.into_inner();
 
         let mut jobs = Vec::with_capacity(req.jobs.len());
@@ -114,13 +150,33 @@ impl QueueService for QueueServiceImpl {
             jobs.push(InternalJobInput {
                 data,
                 priority: j.priority,
-                delay: if j.delay_ms > 0 { Some(j.delay_ms) } else { None },
+                delay: if j.delay_ms > 0 {
+                    Some(j.delay_ms)
+                } else {
+                    None
+                },
                 ttl: if j.ttl_ms > 0 { Some(j.ttl_ms) } else { None },
-                timeout: if j.timeout_ms > 0 { Some(j.timeout_ms) } else { None },
-                max_attempts: if j.max_attempts > 0 { Some(j.max_attempts) } else { None },
-                backoff: if j.backoff_ms > 0 { Some(j.backoff_ms) } else { None },
+                timeout: if j.timeout_ms > 0 {
+                    Some(j.timeout_ms)
+                } else {
+                    None
+                },
+                max_attempts: if j.max_attempts > 0 {
+                    Some(j.max_attempts)
+                } else {
+                    None
+                },
+                backoff: if j.backoff_ms > 0 {
+                    Some(j.backoff_ms)
+                } else {
+                    None
+                },
                 unique_key: j.unique_key,
-                depends_on: if j.depends_on.is_empty() { None } else { Some(j.depends_on) },
+                depends_on: if j.depends_on.is_empty() {
+                    None
+                } else {
+                    Some(j.depends_on)
+                },
                 tags: None,
                 lifo: j.lifo,
             });
@@ -136,7 +192,10 @@ impl QueueService for QueueServiceImpl {
         Ok(Response::new(job.into()))
     }
 
-    async fn pull_batch(&self, request: Request<PullBatchRequest>) -> Result<Response<PullBatchResponse>, Status> {
+    async fn pull_batch(
+        &self,
+        request: Request<PullBatchRequest>,
+    ) -> Result<Response<PullBatchResponse>, Status> {
         let req = request.into_inner();
         // Limit batch size to prevent DOS attacks (max 1000 jobs per request)
         const MAX_BATCH_SIZE: u32 = 1000;
@@ -151,8 +210,10 @@ impl QueueService for QueueServiceImpl {
         let req = request.into_inner();
 
         let result = if let Some(data) = req.result {
-            Some(serde_json::from_slice(&data)
-                .map_err(|e| Status::invalid_argument(format!("Invalid result JSON: {}", e)))?)
+            Some(
+                serde_json::from_slice(&data)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid result JSON: {}", e)))?,
+            )
         } else {
             None
         };
@@ -163,10 +224,16 @@ impl QueueService for QueueServiceImpl {
         }
     }
 
-    async fn ack_batch(&self, request: Request<AckBatchRequest>) -> Result<Response<AckBatchResponse>, Status> {
+    async fn ack_batch(
+        &self,
+        request: Request<AckBatchRequest>,
+    ) -> Result<Response<AckBatchResponse>, Status> {
         let req = request.into_inner();
         let acked = self.queue_manager.ack_batch(&req.ids).await;
-        Ok(Response::new(AckBatchResponse { ok: true, acked: acked as u32 }))
+        Ok(Response::new(AckBatchResponse {
+            ok: true,
+            acked: acked as u32,
+        }))
     }
 
     async fn fail(&self, request: Request<FailRequest>) -> Result<Response<FailResponse>, Status> {
@@ -177,7 +244,10 @@ impl QueueService for QueueServiceImpl {
         }
     }
 
-    async fn get_state(&self, request: Request<GetStateRequest>) -> Result<Response<GetStateResponse>, Status> {
+    async fn get_state(
+        &self,
+        request: Request<GetStateRequest>,
+    ) -> Result<Response<GetStateResponse>, Status> {
         let req = request.into_inner();
         let state = self.queue_manager.get_state(req.id);
         Ok(Response::new(GetStateResponse {
@@ -186,7 +256,10 @@ impl QueueService for QueueServiceImpl {
         }))
     }
 
-    async fn stats(&self, _request: Request<StatsRequest>) -> Result<Response<StatsResponse>, Status> {
+    async fn stats(
+        &self,
+        _request: Request<StatsRequest>,
+    ) -> Result<Response<StatsResponse>, Status> {
         let (queued, processing, delayed, dlq) = self.queue_manager.stats().await;
         Ok(Response::new(StatsResponse {
             queued: queued as u64,
@@ -209,7 +282,11 @@ impl QueueService for QueueServiceImpl {
         // Limit batch size to prevent DOS attacks
         const MAX_BATCH_SIZE: usize = 100;
         const MAX_PREFETCH: usize = 1000;
-        let batch_size = if req.batch_size > 0 { (req.batch_size as usize).min(MAX_BATCH_SIZE) } else { 1 };
+        let batch_size = if req.batch_size > 0 {
+            (req.batch_size as usize).min(MAX_BATCH_SIZE)
+        } else {
+            1
+        };
         let qm = Arc::clone(&self.queue_manager);
 
         let (tx, rx) = mpsc::channel((req.prefetch as usize).clamp(1, MAX_PREFETCH));
@@ -225,10 +302,9 @@ impl QueueService for QueueServiceImpl {
 
                 if batch_size == 1 {
                     // Use timeout to periodically check for client disconnect
-                    let pull_result = tokio::time::timeout(
-                        tokio::time::Duration::from_secs(30),
-                        qm.pull(&queue)
-                    ).await;
+                    let pull_result =
+                        tokio::time::timeout(tokio::time::Duration::from_secs(30), qm.pull(&queue))
+                            .await;
 
                     match pull_result {
                         Ok(job) => {
@@ -280,9 +356,9 @@ impl QueueService for QueueServiceImpl {
                 match result {
                     Ok(job_result) => {
                         if job_result.success {
-                            let result_data = job_result.result.and_then(|d| {
-                                serde_json::from_slice(&d).ok()
-                            });
+                            let result_data = job_result
+                                .result
+                                .and_then(|d| serde_json::from_slice(&d).ok());
                             let _ = qm.ack(job_result.id, result_data).await;
                         } else {
                             let _ = qm.fail(job_result.id, job_result.error).await;

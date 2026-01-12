@@ -238,7 +238,7 @@ pub struct Shard {
     pub unique_keys: GxHashMap<Arc<str>, GxHashSet<String>>,
     pub waiting_deps: GxHashMap<u64, Job>,
     pub queue_state: GxHashMap<Arc<str>, QueueState>,
-    pub notify: Arc<Notify>,  // Per-shard notify for targeted wakeups
+    pub notify: Arc<Notify>, // Per-shard notify for targeted wakeups
 }
 
 impl Shard {
@@ -362,7 +362,13 @@ pub struct Webhook {
 }
 
 impl Webhook {
-    pub fn new(id: String, url: String, events: Vec<String>, queue: Option<String>, secret: Option<String>) -> Self {
+    pub fn new(
+        id: String,
+        url: String,
+        events: Vec<String>,
+        queue: Option<String>,
+        secret: Option<String>,
+    ) -> Self {
         Self {
             id,
             url,

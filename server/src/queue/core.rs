@@ -5,9 +5,9 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::time::Duration;
 
-use crate::protocol::{next_id, Job, JobEvent, JobInput};
-use super::types::{intern, now_ms, JobLocation};
 use super::manager::QueueManager;
+use super::types::{intern, now_ms, JobLocation};
+use crate::protocol::{next_id, Job, JobEvent, JobInput};
 
 /// Maximum job data size in bytes (1MB) to prevent DoS attacks
 const MAX_JOB_DATA_SIZE: usize = 1_048_576;
@@ -22,10 +22,19 @@ fn validate_queue_name(name: &str) -> Result<(), String> {
         return Err("Queue name cannot be empty".to_string());
     }
     if name.len() > MAX_QUEUE_NAME_LENGTH {
-        return Err(format!("Queue name too long (max {} chars)", MAX_QUEUE_NAME_LENGTH));
+        return Err(format!(
+            "Queue name too long (max {} chars)",
+            MAX_QUEUE_NAME_LENGTH
+        ));
     }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
-        return Err("Queue name must contain only alphanumeric characters, underscores, hyphens, or dots".to_string());
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return Err(
+            "Queue name must contain only alphanumeric characters, underscores, hyphens, or dots"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -35,7 +44,10 @@ fn validate_queue_name(name: &str) -> Result<(), String> {
 fn validate_job_data(data: &Value) -> Result<(), String> {
     let size = serde_json::to_string(data).map(|s| s.len()).unwrap_or(0);
     if size > MAX_JOB_DATA_SIZE {
-        return Err(format!("Job data too large ({} bytes, max {} bytes)", size, MAX_JOB_DATA_SIZE));
+        return Err(format!(
+            "Job data too large ({} bytes, max {} bytes)",
+            size, MAX_JOB_DATA_SIZE
+        ));
     }
     Ok(())
 }
@@ -100,8 +112,18 @@ impl QueueManager {
         validate_job_data(&data)?;
 
         let job = self.create_job(
-            queue.clone(), data, priority, delay, ttl, timeout, max_attempts, backoff,
-            unique_key.clone(), depends_on.clone(), tags, lifo
+            queue.clone(),
+            data,
+            priority,
+            delay,
+            ttl,
+            timeout,
+            max_attempts,
+            backoff,
+            unique_key.clone(),
+            depends_on.clone(),
+            tags,
+            lifo,
         );
 
         let idx = Self::shard_index(&queue);
@@ -112,7 +134,10 @@ impl QueueManager {
 
             // Check unique key
             if let Some(ref key) = unique_key {
-                let keys = shard.unique_keys.entry(Arc::clone(&queue_name)).or_default();
+                let keys = shard
+                    .unique_keys
+                    .entry(Arc::clone(&queue_name))
+                    .or_default();
                 if keys.contains(key) {
                     return Err(format!("Duplicate job with key: {}", key));
                 }
@@ -132,7 +157,11 @@ impl QueueManager {
                 }
             }
 
-            shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new).push(job.clone());
+            shard
+                .queues
+                .entry(queue_name)
+                .or_insert_with(BinaryHeap::new)
+                .push(job.clone());
             self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
             self.persist_push(&job, "waiting");
         }
@@ -174,9 +203,18 @@ impl QueueManager {
                 continue;
             }
             let job = self.create_job(
-                queue.clone(), input.data, input.priority, input.delay,
-                input.ttl, input.timeout, input.max_attempts, input.backoff,
-                input.unique_key, input.depends_on, input.tags, input.lifo,
+                queue.clone(),
+                input.data,
+                input.priority,
+                input.delay,
+                input.ttl,
+                input.timeout,
+                input.max_attempts,
+                input.backoff,
+                input.unique_key,
+                input.depends_on,
+                input.tags,
+                input.lifo,
             );
             ids.push(job.id);
 
@@ -191,7 +229,10 @@ impl QueueManager {
 
         {
             let mut shard = self.shards[idx].write();
-            let heap = shard.queues.entry(queue_name).or_insert_with(BinaryHeap::new);
+            let heap = shard
+                .queues
+                .entry(queue_name)
+                .or_insert_with(BinaryHeap::new);
             for job in &created_jobs {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job.clone());
@@ -238,14 +279,21 @@ impl QueueManager {
                     PullResult::SleepPaused
                 }
                 // Check rate limit
-                else if state.rate_limiter.as_mut().map_or(false, |l| !l.try_acquire()) {
+                else if state
+                    .rate_limiter
+                    .as_mut()
+                    .map_or(false, |l| !l.try_acquire())
+                {
                     PullResult::SleepRateLimit
                 }
                 // Check concurrency limit
-                else if state.concurrency.as_mut().map_or(false, |c| !c.try_acquire()) {
+                else if state
+                    .concurrency
+                    .as_mut()
+                    .map_or(false, |c| !c.try_acquire())
+                {
                     PullResult::SleepConcurrency
-                }
-                else {
+                } else {
                     // Try to get a job (with lazy TTL deletion)
                     let mut result = None;
                     if let Some(heap) = shard.queues.get_mut(&queue_arc) {
@@ -483,7 +531,9 @@ impl QueueManager {
             self.persist_ack_batch(ids);
         }
 
-        self.metrics.total_completed.fetch_add(acked as u64, Ordering::Relaxed);
+        self.metrics
+            .total_completed
+            .fetch_add(acked as u64, Ordering::Relaxed);
         acked
     }
 
@@ -507,7 +557,12 @@ impl QueueManager {
             if job.should_go_to_dlq() {
                 self.notify_subscribers("failed", &job.queue, &job);
                 self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
-                self.shards[idx].write().dlq.entry(queue_arc).or_default().push_back(job.clone());
+                self.shards[idx]
+                    .write()
+                    .dlq
+                    .entry(queue_arc)
+                    .or_default()
+                    .push_back(job.clone());
                 self.metrics.record_fail();
 
                 // Persist to PostgreSQL
@@ -541,7 +596,12 @@ impl QueueManager {
             }
 
             self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
-            self.shards[idx].write().queues.entry(queue_arc).or_insert_with(BinaryHeap::new).push(job.clone());
+            self.shards[idx]
+                .write()
+                .queues
+                .entry(queue_arc)
+                .or_insert_with(BinaryHeap::new)
+                .push(job.clone());
 
             // Persist to PostgreSQL
             self.persist_fail(job_id, new_run_at, job.attempts);

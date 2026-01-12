@@ -13,11 +13,23 @@ mod tests {
     async fn test_push_and_pull() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(),
-            json!({"key": "value"}),
-            0, None, None, None, None, None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"key": "value"}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         assert!(job.id > 0);
         assert_eq!(job.queue, "test");
@@ -30,20 +42,23 @@ mod tests {
     async fn test_push_with_all_options() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(),
-            json!({"payload": "data"}),
-            10,                    // priority
-            Some(0),               // delay (0 = immediate)
-            Some(60000),           // ttl
-            Some(30000),           // timeout
-            Some(3),               // max_attempts
-            Some(1000),            // backoff
-            Some("key-1".to_string()), // unique_key
-            None,                  // depends_on
-            None,                  // tags
-            false,                 // lifo
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"payload": "data"}),
+                10,                        // priority
+                Some(0),                   // delay (0 = immediate)
+                Some(60000),               // ttl
+                Some(30000),               // timeout
+                Some(3),                   // max_attempts
+                Some(1000),                // backoff
+                Some("key-1".to_string()), // unique_key
+                None,                      // depends_on
+                None,                      // tags
+                false,                     // lifo
+            )
+            .await
+            .unwrap();
 
         assert_eq!(job.priority, 10);
         assert_eq!(job.ttl, 60000);
@@ -101,8 +116,8 @@ mod tests {
     async fn test_push_batch_large() {
         let qm = setup();
 
-        let inputs: Vec<_> = (0..100).map(|i| {
-            crate::protocol::JobInput {
+        let inputs: Vec<_> = (0..100)
+            .map(|i| crate::protocol::JobInput {
                 data: json!({"i": i}),
                 priority: i as i32,
                 delay: None,
@@ -114,8 +129,8 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
-            }
-        }).collect();
+            })
+            .collect();
 
         let ids = qm.push_batch("test".to_string(), inputs).await;
         assert_eq!(ids.len(), 100);
@@ -129,8 +144,23 @@ mod tests {
     async fn test_ack() {
         let qm = setup();
 
-        let job = qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         let pulled = qm.pull("test").await;
 
         let result = qm.ack(pulled.id, None).await;
@@ -145,8 +175,23 @@ mod tests {
     async fn test_ack_with_result() {
         let qm = setup();
 
-        let job = qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         let pulled = qm.pull("test").await;
 
         let result_data = json!({"computed": 42, "success": true});
@@ -170,8 +215,22 @@ mod tests {
         let qm = setup();
 
         for i in 0..10 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         let jobs = qm.pull_batch("test", 5).await;
@@ -187,8 +246,22 @@ mod tests {
         let qm = setup();
 
         for i in 0..5 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         let jobs = qm.pull_batch("test", 5).await;
@@ -207,8 +280,23 @@ mod tests {
     async fn test_fail_and_retry() {
         let qm = setup();
 
-        let job = qm.push("test".to_string(), json!({}), 0, None, None, None, Some(3), None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(3),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         assert_eq!(pulled.attempts, 0);
@@ -226,10 +314,23 @@ mod tests {
     async fn test_fail_with_backoff() {
         let qm = setup();
 
-        let _job = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None,
-            Some(3), Some(100), None, None, None, false  // max_attempts=3, backoff=100ms, tags, lifo
-        ).await.unwrap();
+        let _job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(3),
+                Some(100),
+                None,
+                None,
+                None,
+                false, // max_attempts=3, backoff=100ms, tags, lifo
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         qm.fail(pulled.id, None).await.unwrap();
@@ -252,8 +353,23 @@ mod tests {
         let qm = setup();
 
         // Job with max_attempts=1 goes to DLQ after first failure
-        let job = qm.push("test".to_string(), json!({}), 0, None, None, None, Some(1), None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         qm.fail(pulled.id, None).await.unwrap();
@@ -275,10 +391,40 @@ mod tests {
         let qm = setup();
 
         // Create two jobs that will fail
-        let job1 = qm.push("test".to_string(), json!({"i": 1}), 0, None, None, None, Some(1), None, None, None, None, false)
-            .await.unwrap();
-        let job2 = qm.push("test".to_string(), json!({"i": 2}), 0, None, None, None, Some(1), None, None, None, None, false)
-            .await.unwrap();
+        let job1 = qm
+            .push(
+                "test".to_string(),
+                json!({"i": 1}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({"i": 2}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Fail both
         let p1 = qm.pull("test").await;
@@ -304,8 +450,22 @@ mod tests {
 
         // Create 10 jobs that will fail
         for i in 0..10 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, Some(1), None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         // Fail all
@@ -325,27 +485,63 @@ mod tests {
     async fn test_unique_key() {
         let qm = setup();
 
-        let job1 = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, None, None,
-            Some("unique-123".to_string()), None, None, false
-        ).await;
+        let job1 = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("unique-123".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job1.is_ok());
 
         // Duplicate should fail
-        let job2 = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, None, None,
-            Some("unique-123".to_string()), None, None, false
-        ).await;
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("unique-123".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job2.is_err());
 
         // After ack, key should be released
         let pulled = qm.pull("test").await;
         qm.ack(pulled.id, None).await.unwrap();
 
-        let job3 = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, None, None,
-            Some("unique-123".to_string()), None, None, false
-        ).await;
+        let job3 = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("unique-123".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job3.is_ok());
     }
 
@@ -354,16 +550,40 @@ mod tests {
         let qm = setup();
 
         // Same unique key in different queues should work
-        let job1 = qm.push(
-            "queue1".to_string(), json!({}), 0, None, None, None, None, None,
-            Some("same-key".to_string()), None, None, false
-        ).await;
+        let job1 = qm
+            .push(
+                "queue1".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("same-key".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job1.is_ok());
 
-        let job2 = qm.push(
-            "queue2".to_string(), json!({}), 0, None, None, None, None, None,
-            Some("same-key".to_string()), None, None, false
-        ).await;
+        let job2 = qm
+            .push(
+                "queue2".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("same-key".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job2.is_ok());
     }
 
@@ -371,10 +591,23 @@ mod tests {
     async fn test_unique_key_released_on_fail() {
         let qm = setup();
 
-        let _job = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, Some(1), None,
-            Some("unique-fail".to_string()), None, None, false
-        ).await.unwrap();
+        let _job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                Some("unique-fail".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         qm.fail(pulled.id, None).await.unwrap(); // Goes to DLQ
@@ -389,8 +622,23 @@ mod tests {
     async fn test_cancel() {
         let qm = setup();
 
-        let job = qm.push("test".to_string(), json!({}), 0, Some(60000), None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                Some(60000),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let result = qm.cancel(job.id).await;
         assert!(result.is_ok());
@@ -404,8 +652,23 @@ mod tests {
     async fn test_cancel_processing_job() {
         let qm = setup();
 
-        let job = qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         let _pulled = qm.pull("test").await;
 
         // Cancel while processing
@@ -422,12 +685,29 @@ mod tests {
     async fn test_progress() {
         let qm = setup();
 
-        let _job = qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let _job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         let pulled = qm.pull("test").await;
 
         // Update progress
-        qm.update_progress(pulled.id, 50, Some("halfway".to_string())).await.unwrap();
+        qm.update_progress(pulled.id, 50, Some("halfway".to_string()))
+            .await
+            .unwrap();
 
         let (progress, msg) = qm.get_progress(pulled.id).await.unwrap();
         assert_eq!(progress, 50);
@@ -438,8 +718,23 @@ mod tests {
     async fn test_progress_max_100() {
         let qm = setup();
 
-        let _job = qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let _job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         let pulled = qm.pull("test").await;
 
         // Progress should cap at 100
@@ -463,9 +758,54 @@ mod tests {
         let qm = setup();
 
         // Push jobs with different priorities
-        qm.push("test".to_string(), json!({"p": 1}), 1, None, None, None, None, None, None, None, None, false).await.unwrap();
-        qm.push("test".to_string(), json!({"p": 3}), 3, None, None, None, None, None, None, None, None, false).await.unwrap();
-        qm.push("test".to_string(), json!({"p": 2}), 2, None, None, None, None, None, None, None, None, false).await.unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({"p": 1}),
+            1,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({"p": 3}),
+            3,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({"p": 2}),
+            2,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         // Should get highest priority first
         let j1 = qm.pull("test").await;
@@ -482,9 +822,54 @@ mod tests {
     async fn test_priority_negative() {
         let qm = setup();
 
-        qm.push("test".to_string(), json!({}), -10, None, None, None, None, None, None, None, None, false).await.unwrap();
-        qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false).await.unwrap();
-        qm.push("test".to_string(), json!({}), 10, None, None, None, None, None, None, None, None, false).await.unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({}),
+            -10,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({}),
+            10,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let j1 = qm.pull("test").await;
         assert_eq!(j1.priority, 10);
@@ -501,9 +886,57 @@ mod tests {
         let qm = setup();
 
         // Jobs with same priority should be FIFO (by created_at)
-        let job1 = qm.push("test".to_string(), json!({"order": 1}), 0, None, None, None, None, None, None, None, None, false).await.unwrap();
-        let job2 = qm.push("test".to_string(), json!({"order": 2}), 0, None, None, None, None, None, None, None, None, false).await.unwrap();
-        let job3 = qm.push("test".to_string(), json!({"order": 3}), 0, None, None, None, None, None, None, None, None, false).await.unwrap();
+        let job1 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 1}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 2}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let job3 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 3}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let p1 = qm.pull("test").await;
         let p2 = qm.pull("test").await;
@@ -521,8 +954,23 @@ mod tests {
         let qm = setup();
 
         // Job delayed by 100ms
-        let job = qm.push("test".to_string(), json!({}), 0, Some(100), None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                Some(100),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         assert!(job.run_at > job.created_at);
     }
@@ -532,12 +980,42 @@ mod tests {
         let qm = setup();
 
         // Job 1: delayed 200ms
-        let _job1 = qm.push("test".to_string(), json!({"order": 1}), 0, Some(200), None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let _job1 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 1}),
+                0,
+                Some(200),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Job 2: immediate
-        let job2 = qm.push("test".to_string(), json!({"order": 2}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 2}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Immediate job should be pulled first
         let pulled = qm.pull("test").await;
@@ -551,14 +1029,42 @@ mod tests {
         let qm = setup();
 
         // Create parent job
-        let parent = qm.push("test".to_string(), json!({"parent": true}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let parent = qm
+            .push(
+                "test".to_string(),
+                json!({"parent": true}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Create child job that depends on parent
-        let child = qm.push(
-            "test".to_string(), json!({"child": true}), 0, None, None, None, None, None, None,
-            Some(vec![parent.id]), None, false
-        ).await.unwrap();
+        let child = qm
+            .push(
+                "test".to_string(),
+                json!({"child": true}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent.id]),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Child should not be pullable yet
         let pulled_parent = qm.pull("test").await;
@@ -580,16 +1086,59 @@ mod tests {
         let qm = setup();
 
         // Create two parent jobs
-        let parent1 = qm.push("test".to_string(), json!({"p": 1}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
-        let parent2 = qm.push("test".to_string(), json!({"p": 2}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let parent1 = qm
+            .push(
+                "test".to_string(),
+                json!({"p": 1}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let parent2 = qm
+            .push(
+                "test".to_string(),
+                json!({"p": 2}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Create child that depends on both
-        let _child = qm.push(
-            "test".to_string(), json!({"child": true}), 0, None, None, None, None, None, None,
-            Some(vec![parent1.id, parent2.id]), None, false
-        ).await.unwrap();
+        let _child = qm
+            .push(
+                "test".to_string(),
+                json!({"child": true}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent1.id, parent2.id]),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Pull and ack first parent
         let p1 = qm.pull("test").await;
@@ -616,8 +1165,22 @@ mod tests {
         let qm = setup();
 
         // Need to push a job first so the queue appears in list_queues
-        qm.push("test".to_string(), json!({"x": 1}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({"x": 1}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         qm.pause("test").await;
 
@@ -644,8 +1207,22 @@ mod tests {
         qm.set_rate_limit("test".to_string(), 100).await;
 
         // Check via list_queues that rate limit is set
-        qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        qm.push(
+            "test".to_string(),
+            json!({}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let queues = qm.list_queues().await;
         let test_queue = queues.iter().find(|q| q.name == "test");
@@ -669,8 +1246,22 @@ mod tests {
 
         // Push 3 jobs
         for i in 0..3 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         // Check via list_queues
@@ -693,8 +1284,10 @@ mod tests {
             "test".to_string(),
             json!({"cron": true}),
             "*/60".to_string(),
-            0
-        ).await.unwrap();
+            0,
+        )
+        .await
+        .unwrap();
 
         let crons = qm.list_crons().await;
         assert_eq!(crons.len(), 1);
@@ -724,8 +1317,10 @@ mod tests {
             "test".to_string(),
             json!({}),
             "*/30".to_string(),
-            100  // high priority
-        ).await.unwrap();
+            100, // high priority
+        )
+        .await
+        .unwrap();
 
         let crons = qm.list_crons().await;
         assert_eq!(crons[0].priority, 100);
@@ -741,8 +1336,22 @@ mod tests {
 
         // Push some jobs
         for i in 0..5 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         let (queued, processing, delayed, dlq) = qm.stats().await;
@@ -765,8 +1374,22 @@ mod tests {
 
         // Push and complete some jobs
         for _ in 0..5 {
-            qm.push("test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
             let pulled = qm.pull("test").await;
             qm.ack(pulled.id, None).await.unwrap();
         }
@@ -781,12 +1404,54 @@ mod tests {
         let qm = setup();
 
         // Push to create queues
-        qm.push("queue1".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
-        qm.push("queue2".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
-        qm.push("queue2".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        qm.push(
+            "queue1".to_string(),
+            json!({}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "queue2".to_string(),
+            json!({}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        qm.push(
+            "queue2".to_string(),
+            json!({}),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let queues = qm.list_queues().await;
         assert!(queues.len() >= 2);
@@ -819,7 +1484,11 @@ mod tests {
     async fn test_auth_multiple_tokens() {
         let qm = QueueManager::with_auth_tokens(
             false,
-            vec!["token1".to_string(), "token2".to_string(), "token3".to_string()]
+            vec![
+                "token1".to_string(),
+                "token2".to_string(),
+                "token3".to_string(),
+            ],
         );
 
         assert!(qm.verify_token("token1"));
@@ -836,8 +1505,22 @@ mod tests {
 
         // Push to many different queues
         for i in 0..100 {
-            qm.push(format!("queue-{}", i), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                format!("queue-{}", i),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         let queues = qm.list_queues().await;
@@ -864,7 +1547,22 @@ mod tests {
         let qm = setup();
 
         // Empty queue names should be rejected
-        let result = qm.push("".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false).await;
+        let result = qm
+            .push(
+                "".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("cannot be empty"));
     }
@@ -875,8 +1573,23 @@ mod tests {
 
         // Create a large payload (but within limits)
         let large_data: Vec<i32> = (0..10000).collect();
-        let job = qm.push("test".to_string(), json!({"data": large_data}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"data": large_data}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         assert_eq!(pulled.id, job.id);
@@ -895,8 +1608,23 @@ mod tests {
         ];
 
         for name in valid_queues {
-            let job = qm.push(name.to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            let job = qm
+                .push(
+                    name.to_string(),
+                    json!({}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
             assert_eq!(job.queue, name);
             let pulled = qm.pull(name).await;
             qm.ack(pulled.id, None).await.unwrap();
@@ -911,7 +1639,22 @@ mod tests {
         ];
 
         for name in invalid_queues {
-            let result = qm.push(name.to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false).await;
+            let result = qm
+                .push(
+                    name.to_string(),
+                    json!({}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await;
             assert!(result.is_err(), "Queue name '{}' should be rejected", name);
         }
     }
@@ -920,8 +1663,23 @@ mod tests {
     async fn test_unicode_queue_name() {
         let qm = setup();
 
-        let job = qm.push("队列名称".to_string(), json!({"emoji": "🚀"}), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        let job = qm
+            .push(
+                "队列名称".to_string(),
+                json!({"emoji": "🚀"}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         assert_eq!(job.queue, "队列名称");
 
@@ -933,8 +1691,22 @@ mod tests {
     async fn test_null_json_data() {
         let qm = setup();
 
-        qm.push("test".to_string(), json!(null), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        qm.push(
+            "test".to_string(),
+            json!(null),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let pulled = qm.pull("test").await;
         assert_eq!(pulled.data, json!(null));
@@ -955,8 +1727,22 @@ mod tests {
             "array": [1, 2, {"nested": true}]
         });
 
-        qm.push("test".to_string(), nested.clone(), 0, None, None, None, None, None, None, None, None, false)
-            .await.unwrap();
+        qm.push(
+            "test".to_string(),
+            nested.clone(),
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
 
         let pulled = qm.pull("test").await;
         assert_eq!(pulled.data, nested);
@@ -972,8 +1758,23 @@ mod tests {
         for i in 0..100 {
             let qm_clone = qm.clone();
             handles.push(tokio::spawn(async move {
-                qm_clone.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                    .await.unwrap()
+                qm_clone
+                    .push(
+                        "test".to_string(),
+                        json!({"i": i}),
+                        0,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                    )
+                    .await
+                    .unwrap()
             }));
         }
 
@@ -991,8 +1792,22 @@ mod tests {
 
         // Pre-populate
         for i in 0..50 {
-            qm.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                .await.unwrap();
+            qm.push(
+                "test".to_string(),
+                json!({"i": i}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
         }
 
         let mut push_handles = vec![];
@@ -1002,17 +1817,30 @@ mod tests {
         for i in 50..100 {
             let qm_clone = qm.clone();
             push_handles.push(tokio::spawn(async move {
-                qm_clone.push("test".to_string(), json!({"i": i}), 0, None, None, None, None, None, None, None, None, false)
-                    .await.unwrap()
+                qm_clone
+                    .push(
+                        "test".to_string(),
+                        json!({"i": i}),
+                        0,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                    )
+                    .await
+                    .unwrap()
             }));
         }
 
         // Concurrent pulls
         for _ in 0..50 {
             let qm_clone = qm.clone();
-            pull_handles.push(tokio::spawn(async move {
-                qm_clone.pull("test").await
-            }));
+            pull_handles.push(tokio::spawn(async move { qm_clone.pull("test").await }));
         }
 
         for handle in push_handles {
@@ -1038,7 +1866,7 @@ mod tests {
             data: json!({}),
             priority: 0,
             created_at: 900,
-            run_at: 950,  // In the past
+            run_at: 950, // In the past
             started_at: 0,
             attempts: 0,
             max_attempts: 0,
@@ -1056,7 +1884,7 @@ mod tests {
         assert!(job.is_ready(now));
 
         let delayed_job = crate::protocol::Job {
-            run_at: 2000,  // In the future
+            run_at: 2000, // In the future
             ..job.clone()
         };
 
@@ -1078,7 +1906,7 @@ mod tests {
             attempts: 0,
             max_attempts: 0,
             backoff: 0,
-            ttl: 400,  // Expires at 900
+            ttl: 400, // Expires at 900
             timeout: 0,
             unique_key: None,
             depends_on: vec![],
@@ -1091,14 +1919,14 @@ mod tests {
         assert!(job.is_expired(now)); // 1000 > 900
 
         let valid_job = crate::protocol::Job {
-            ttl: 600,  // Expires at 1100
+            ttl: 600, // Expires at 1100
             ..job.clone()
         };
 
         assert!(!valid_job.is_expired(now)); // 1000 < 1100
 
         let no_ttl_job = crate::protocol::Job {
-            ttl: 0,  // No TTL
+            ttl: 0, // No TTL
             ..job.clone()
         };
 
@@ -1121,7 +1949,7 @@ mod tests {
             max_attempts: 0,
             backoff: 0,
             ttl: 0,
-            timeout: 300,  // Times out at 900
+            timeout: 300, // Times out at 900
             unique_key: None,
             depends_on: vec![],
             progress: 0,
@@ -1133,7 +1961,7 @@ mod tests {
         assert!(job.is_timed_out(now)); // 1000 > 900
 
         let valid_job = crate::protocol::Job {
-            timeout: 500,  // Times out at 1100
+            timeout: 500, // Times out at 1100
             ..job.clone()
         };
 
@@ -1199,7 +2027,7 @@ mod tests {
             started_at: 0,
             attempts: 0,
             max_attempts: 5,
-            backoff: 1000,  // 1 second base
+            backoff: 1000, // 1 second base
             ttl: 0,
             timeout: 0,
             unique_key: None,
@@ -1211,16 +2039,25 @@ mod tests {
         };
 
         // Exponential backoff: base * 2^attempts
-        assert_eq!(job.next_backoff(), 1000);  // 1000 * 2^0
+        assert_eq!(job.next_backoff(), 1000); // 1000 * 2^0
 
-        let job1 = crate::protocol::Job { attempts: 1, ..job.clone() };
-        assert_eq!(job1.next_backoff(), 2000);  // 1000 * 2^1
+        let job1 = crate::protocol::Job {
+            attempts: 1,
+            ..job.clone()
+        };
+        assert_eq!(job1.next_backoff(), 2000); // 1000 * 2^1
 
-        let job2 = crate::protocol::Job { attempts: 2, ..job.clone() };
-        assert_eq!(job2.next_backoff(), 4000);  // 1000 * 2^2
+        let job2 = crate::protocol::Job {
+            attempts: 2,
+            ..job.clone()
+        };
+        assert_eq!(job2.next_backoff(), 4000); // 1000 * 2^2
 
-        let no_backoff = crate::protocol::Job { backoff: 0, ..job.clone() };
-        assert_eq!(no_backoff.next_backoff(), 0);  // No backoff configured
+        let no_backoff = crate::protocol::Job {
+            backoff: 0,
+            ..job.clone()
+        };
+        assert_eq!(no_backoff.next_backoff(), 0); // No backoff configured
     }
 
     // ==================== JOB TAGS TESTS ====================
@@ -1229,12 +2066,23 @@ mod tests {
     async fn test_push_with_tags() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(),
-            json!({"data": "with tags"}),
-            0, None, None, None, None, None, None, None,
-            Some(vec!["urgent".to_string(), "backend".to_string()]), false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"data": "with tags"}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec!["urgent".to_string(), "backend".to_string()]),
+                false,
+            )
+            .await
+            .unwrap();
 
         assert_eq!(job.tags, vec!["urgent", "backend"]);
     }
@@ -1243,12 +2091,23 @@ mod tests {
     async fn test_push_with_empty_tags() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(),
-            json!({}),
-            0, None, None, None, None, None, None, None,
-            Some(vec![]), false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![]),
+                false,
+            )
+            .await
+            .unwrap();
 
         assert!(job.tags.is_empty());
     }
@@ -1257,12 +2116,23 @@ mod tests {
     async fn test_tags_preserved_after_pull() {
         let qm = setup();
 
-        let original = qm.push(
-            "test".to_string(),
-            json!({}),
-            0, None, None, None, None, None, None, None,
-            Some(vec!["tag1".to_string(), "tag2".to_string()]), false
-        ).await.unwrap();
+        let original = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec!["tag1".to_string(), "tag2".to_string()]),
+                false,
+            )
+            .await
+            .unwrap();
 
         let pulled = qm.pull("test").await;
         assert_eq!(pulled.id, original.id);
@@ -1285,8 +2155,9 @@ mod tests {
         qm.worker_heartbeat(
             "worker-1".to_string(),
             vec!["queue-a".to_string(), "queue-b".to_string()],
-            4
-        ).await;
+            4,
+        )
+        .await;
 
         let workers = qm.list_workers().await;
         assert_eq!(workers.len(), 1);
@@ -1300,18 +2171,16 @@ mod tests {
         let qm = setup();
 
         // First heartbeat
-        qm.worker_heartbeat(
-            "worker-1".to_string(),
-            vec!["queue-a".to_string()],
-            2
-        ).await;
+        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2)
+            .await;
 
         // Second heartbeat with different settings
         qm.worker_heartbeat(
             "worker-1".to_string(),
             vec!["queue-a".to_string(), "queue-b".to_string()],
-            4
-        ).await;
+            4,
+        )
+        .await;
 
         let workers = qm.list_workers().await;
         assert_eq!(workers.len(), 1);
@@ -1323,9 +2192,16 @@ mod tests {
     async fn test_multiple_workers() {
         let qm = setup();
 
-        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2).await;
-        qm.worker_heartbeat("worker-2".to_string(), vec!["queue-b".to_string()], 4).await;
-        qm.worker_heartbeat("worker-3".to_string(), vec!["queue-a".to_string(), "queue-b".to_string()], 8).await;
+        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2)
+            .await;
+        qm.worker_heartbeat("worker-2".to_string(), vec!["queue-b".to_string()], 4)
+            .await;
+        qm.worker_heartbeat(
+            "worker-3".to_string(),
+            vec!["queue-a".to_string(), "queue-b".to_string()],
+            8,
+        )
+        .await;
 
         let workers = qm.list_workers().await;
         assert_eq!(workers.len(), 3);
@@ -1344,12 +2220,14 @@ mod tests {
     async fn test_add_webhook() {
         let qm = setup();
 
-        let id = qm.add_webhook(
-            "https://example.com/webhook".to_string(),
-            vec!["job.pushed".to_string(), "job.completed".to_string()],
-            Some("my-queue".to_string()),
-            Some("secret123".to_string())
-        ).await;
+        let id = qm
+            .add_webhook(
+                "https://example.com/webhook".to_string(),
+                vec!["job.pushed".to_string(), "job.completed".to_string()],
+                Some("my-queue".to_string()),
+                Some("secret123".to_string()),
+            )
+            .await;
 
         let webhooks = qm.list_webhooks().await;
         assert_eq!(webhooks.len(), 1);
@@ -1368,8 +2246,9 @@ mod tests {
             "https://example.com/global".to_string(),
             vec!["job.failed".to_string()],
             None,
-            None
-        ).await;
+            None,
+        )
+        .await;
 
         let webhooks = qm.list_webhooks().await;
         assert_eq!(webhooks.len(), 1);
@@ -1381,16 +2260,22 @@ mod tests {
     async fn test_delete_webhook() {
         let qm = setup();
 
-        let id1 = qm.add_webhook(
-            "https://example.com/1".to_string(),
-            vec!["job.pushed".to_string()],
-            None, None
-        ).await;
-        let id2 = qm.add_webhook(
-            "https://example.com/2".to_string(),
-            vec!["job.completed".to_string()],
-            None, None
-        ).await;
+        let id1 = qm
+            .add_webhook(
+                "https://example.com/1".to_string(),
+                vec!["job.pushed".to_string()],
+                None,
+                None,
+            )
+            .await;
+        let id2 = qm
+            .add_webhook(
+                "https://example.com/2".to_string(),
+                vec!["job.completed".to_string()],
+                None,
+                None,
+            )
+            .await;
 
         assert_eq!(qm.list_webhooks().await.len(), 2);
 
@@ -1417,8 +2302,10 @@ mod tests {
             qm.add_webhook(
                 format!("https://example.com/{}", i),
                 vec!["job.pushed".to_string()],
-                None, None
-            ).await;
+                None,
+                None,
+            )
+            .await;
         }
 
         assert_eq!(qm.list_webhooks().await.len(), 5);
@@ -1434,9 +2321,23 @@ mod tests {
         let mut rx = qm.subscribe_events(None);
 
         // Push a job (should trigger event)
-        let job = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Try to receive the event
         tokio::select! {
@@ -1457,9 +2358,23 @@ mod tests {
     async fn test_broadcast_event_on_ack() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, None, None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Subscribe after pushing (will miss push event)
         let mut rx = qm.subscribe_events(None);
@@ -1485,15 +2400,31 @@ mod tests {
     async fn test_broadcast_event_on_fail() {
         let qm = setup();
 
-        let job = qm.push(
-            "test".to_string(), json!({}), 0, None, None, None, Some(1), None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let mut rx = qm.subscribe_events(None);
 
         // Pull and fail
         let pulled = qm.pull("test").await;
-        qm.fail(pulled.id, Some("test error".to_string())).await.unwrap();
+        qm.fail(pulled.id, Some("test error".to_string()))
+            .await
+            .unwrap();
 
         // Should receive failed event
         tokio::select! {
@@ -1515,13 +2446,23 @@ mod tests {
     async fn test_get_job_includes_tags() {
         let qm = setup();
 
-        let original = qm.push(
-            "test".to_string(),
-            json!({"key": "value"}),
-            5,
-            None, None, None, None, None, None, None,
-            Some(vec!["priority".to_string(), "email".to_string()]), false
-        ).await.unwrap();
+        let original = qm
+            .push(
+                "test".to_string(),
+                json!({"key": "value"}),
+                5,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec!["priority".to_string(), "email".to_string()]),
+                false,
+            )
+            .await
+            .unwrap();
 
         let (job_opt, state) = qm.get_job(original.id);
         let job = job_opt.unwrap();
@@ -1535,12 +2476,23 @@ mod tests {
         let qm = setup();
 
         // Push with tags
-        let job = qm.push(
-            "test".to_string(),
-            json!({}),
-            0, None, None, None, None, None, None, None,
-            Some(vec!["test-tag".to_string()]), false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec!["test-tag".to_string()]),
+                false,
+            )
+            .await
+            .unwrap();
 
         // Check state is waiting
         let state = qm.get_state(job.id);
@@ -1570,10 +2522,23 @@ mod tests {
 
         // Push and complete many jobs
         for i in 0..100 {
-            let job = qm.push(
-                "test".to_string(), json!({"i": i}), 0,
-                None, None, None, None, None, None, None, None, false
-            ).await.unwrap();
+            let job = qm
+                .push(
+                    "test".to_string(),
+                    json!({"i": i}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
             let pulled = qm.pull("test").await;
             qm.ack(pulled.id, None).await.unwrap();
         }
@@ -1594,10 +2559,23 @@ mod tests {
         // Push multiple jobs
         let mut job_ids = Vec::new();
         for i in 0..10 {
-            let job = qm.push(
-                "test".to_string(), json!({"i": i}), i as i32,
-                None, None, None, None, None, None, None, None, false
-            ).await.unwrap();
+            let job = qm
+                .push(
+                    "test".to_string(),
+                    json!({"i": i}),
+                    i as i32,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
             job_ids.push(job.id);
         }
 
@@ -1619,21 +2597,44 @@ mod tests {
         let qm = setup();
 
         // Push job with unique key
-        let job = qm.push(
-            "test".to_string(), json!({}), 0,
-            None, None, None, None, None,
-            Some("cancel-test-key".to_string()), None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("cancel-test-key".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Cancel the job
         qm.cancel(job.id).await.unwrap();
 
         // Should be able to push with same key again
-        let job2 = qm.push(
-            "test".to_string(), json!({}), 0,
-            None, None, None, None, None,
-            Some("cancel-test-key".to_string()), None, None, false
-        ).await;
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("cancel-test-key".to_string()),
+                None,
+                None,
+                false,
+            )
+            .await;
         assert!(job2.is_ok());
     }
 
@@ -1644,10 +2645,23 @@ mod tests {
         // Push multiple jobs
         let mut job_ids = Vec::new();
         for i in 0..50 {
-            let job = qm.push(
-                "test".to_string(), json!({"i": i}), 0,
-                None, None, None, None, None, None, None, None, false
-            ).await.unwrap();
+            let job = qm
+                .push(
+                    "test".to_string(),
+                    json!({"i": i}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
             job_ids.push(job.id);
         }
 
@@ -1656,9 +2670,7 @@ mod tests {
         for id in job_ids.iter().take(25) {
             let qm_clone = qm.clone();
             let id = *id;
-            handles.push(tokio::spawn(async move {
-                qm_clone.cancel(id).await
-            }));
+            handles.push(tokio::spawn(async move { qm_clone.cancel(id).await }));
         }
 
         let mut cancelled = 0;
@@ -1683,10 +2695,23 @@ mod tests {
         let qm = setup();
 
         // Push job
-        let job = qm.push(
-            "test".to_string(), json!({}), 0,
-            None, None, None, None, None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         // Check index shows Queue location
         let loc = qm.job_index.read().get(&job.id).copied();
@@ -1713,10 +2738,23 @@ mod tests {
         let qm = setup();
 
         // Push job with max_attempts=1
-        let job = qm.push(
-            "test".to_string(), json!({}), 0,
-            None, None, None, Some(1), None, None, None, None, false
-        ).await.unwrap();
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
 
         let _pulled = qm.pull("test").await;
         qm.fail(job.id, None).await.unwrap();

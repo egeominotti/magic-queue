@@ -1,8 +1,8 @@
 use axum::{
+    http::header,
     response::{Html, IntoResponse},
     routing::get,
     Router,
-    http::header,
 };
 
 // Static file contents embedded at compile time for single-binary distribution
@@ -39,35 +39,50 @@ async fn serve_css() -> impl IntoResponse {
 
 async fn serve_dashboard_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         DASHBOARD_JS,
     )
 }
 
 async fn serve_utils_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         UTILS_JS,
     )
 }
 
 async fn serve_api_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         API_JS,
     )
 }
 
 async fn serve_charts_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         CHARTS_JS,
     )
 }
 
 async fn serve_settings_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         SETTINGS_JS,
     )
 }
