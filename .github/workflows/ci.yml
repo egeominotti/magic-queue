@@ -177,6 +177,7 @@ jobs:
           sleep 2
         env:
           RUST_LOG: info
+          HTTP: "1"
 
       - name: Setup Python
         uses: actions/setup-python@v5

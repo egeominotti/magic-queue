@@ -7,6 +7,10 @@
 /client/bun.lockb
 /sdk/typescript/node_modules/
 
+# PHP
+/sdk/php/vendor/
+/sdk/php/composer.lock
+
 # Python
 /python/__pycache__/
 /python/**/__pycache__/
