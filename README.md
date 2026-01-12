@@ -59,11 +59,11 @@ Built with Rust for teams who refuse to compromise on performance.
 
 ## ⚡ Performance
 
-Real benchmarks on Apple Silicon M2. No synthetic tests. No asterisks.
+Real benchmarks on Apple M1 Max. No synthetic tests. No asterisks.
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/benchmark.png" alt="flashQ Benchmark Results" width="800">
+<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/benchmark.svg" alt="flashQ Benchmark Results" width="850">
 
 </div>
 

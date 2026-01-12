@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520">
+  <defs>
+    <linearGradient id="flashqGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="520" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Header -->
+  <text x="450" y="45" text-anchor="middle" fill="#f8fafc" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700">⚡ flashQ Benchmark</text>
+  <text x="450" y="72" text-anchor="middle" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="14">Apple M1 Max • macOS • Rust 1.75</text>
+
+  <!-- Latency Section -->
+  <text x="50" y="115" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Latency P50 (lower is better)</text>
+
+  <!-- Latency Bars -->
+  <!-- flashQ -->
+  <rect x="50" y="135" width="380" height="32" fill="url(#flashqGrad)" rx="4" filter="url(#shadow)"/>
+  <text x="60" y="156" fill="#0f172a" font-family="system-ui, sans-serif" font-size="13" font-weight="600">flashQ</text>
+  <text x="420" y="156" fill="#10b981" font-family="system-ui, sans-serif" font-size="14" font-weight="700">103 μs</text>
+
+  <!-- BullMQ -->
+  <rect x="50" y="175" width="170" height="28" fill="#64748b" rx="4"/>
+  <text x="60" y="194" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="12">BullMQ</text>
+  <text x="230" y="194" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">645 μs</text>
+
+  <!-- Sidekiq -->
+  <rect x="50" y="210" width="140" height="28" fill="#475569" rx="4"/>
+  <text x="60" y="229" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="12">Sidekiq</text>
+  <text x="200" y="229" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">800 μs</text>
+
+  <!-- RabbitMQ -->
+  <rect x="50" y="245" width="125" height="28" fill="#475569" rx="4"/>
+  <text x="60" y="264" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="12">RabbitMQ</text>
+  <text x="185" y="264" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">890 μs</text>
+
+  <!-- Celery -->
+  <rect x="50" y="280" width="55" height="28" fill="#475569" rx="4"/>
+  <text x="60" y="299" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="12">Celery</text>
+  <text x="115" y="299" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">2.1 ms</text>
+
+  <!-- Speedup badge -->
+  <rect x="500" y="135" width="120" height="40" fill="#065f46" rx="20"/>
+  <text x="560" y="161" text-anchor="middle" fill="#34d399" font-family="system-ui, sans-serif" font-size="16" font-weight="700">6.3x faster</text>
+
+  <!-- Throughput Section -->
+  <text x="50" y="355" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Throughput - Batch Push (higher is better)</text>
+
+  <!-- Throughput Bars -->
+  <!-- flashQ -->
+  <rect x="50" y="375" width="500" height="32" fill="url(#flashqGrad)" rx="4" filter="url(#shadow)"/>
+  <text x="60" y="396" fill="#0f172a" font-family="system-ui, sans-serif" font-size="13" font-weight="600">flashQ</text>
+  <text x="560" y="396" fill="#10b981" font-family="system-ui, sans-serif" font-size="14" font-weight="700">1.17M ops/sec</text>
+
+  <!-- RabbitMQ -->
+  <rect x="50" y="415" width="22" height="28" fill="#64748b" rx="4"/>
+  <text x="80" y="434" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">RabbitMQ</text>
+  <text x="165" y="434" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">50K/s</text>
+
+  <!-- BullMQ -->
+  <rect x="50" y="450" width="15" height="28" fill="#475569" rx="4"/>
+  <text x="75" y="469" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12">BullMQ</text>
+  <text x="145" y="469" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="13">33K/s</text>
+
+  <!-- Speedup badge -->
+  <rect x="500" y="375" width="130" height="40" fill="#065f46" rx="20"/>
+  <text x="565" y="401" text-anchor="middle" fill="#34d399" font-family="system-ui, sans-serif" font-size="16" font-weight="700">35x faster</text>
+
+  <!-- Stats boxes -->
+  <rect x="680" y="130" width="190" height="180" fill="#1e293b" stroke="#334155" stroke-width="1" rx="8"/>
+
+  <text x="775" y="160" text-anchor="middle" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11" font-weight="500">PEAK THROUGHPUT</text>
+  <text x="775" y="190" text-anchor="middle" fill="#10b981" font-family="system-ui, sans-serif" font-size="28" font-weight="700">1.17M</text>
+  <text x="775" y="210" text-anchor="middle" fill="#64748b" font-family="system-ui, sans-serif" font-size="12">ops/sec</text>
+
+  <line x1="700" y1="225" x2="850" y2="225" stroke="#334155" stroke-width="1"/>
+
+  <text x="775" y="250" text-anchor="middle" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11" font-weight="500">P99 LATENCY</text>
+  <text x="775" y="280" text-anchor="middle" fill="#10b981" font-family="system-ui, sans-serif" font-size="28" font-weight="700">280μs</text>
+  <text x="775" y="300" text-anchor="middle" fill="#64748b" font-family="system-ui, sans-serif" font-size="12">sub-millisecond</text>
+
+  <!-- Footer -->
+  <text x="450" y="500" text-anchor="middle" fill="#475569" font-family="system-ui, sans-serif" font-size="11">Benchmark: 10K samples • TCP protocol • Single connection • github.com/egeominotti/flashq</text>
+</svg>
