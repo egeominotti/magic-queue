@@ -15,6 +15,10 @@ import type {
   WebhookOptions,
   WorkerInfo,
   ApiResponse,
+  JobLogEntry,
+  FlowChild,
+  FlowOptions,
+  FlowResult,
 } from './types';
 
 /**
@@ -186,19 +190,19 @@ export class FlashQ extends EventEmitter {
 
   // ============== Internal Methods ==============
 
-  private async send<T>(command: Record<string, unknown>): Promise<T> {
+  private async send<T>(command: Record<string, unknown>, customTimeout?: number): Promise<T> {
     // Auto-connect if not connected
     if (!this.connected) {
       await this.connect();
     }
 
     if (this.options.useHttp) {
-      return this.sendHttp<T>(command);
+      return this.sendHttp<T>(command, customTimeout);
     }
-    return this.sendTcp<T>(command);
+    return this.sendTcp<T>(command, customTimeout);
   }
 
-  private async sendTcp<T>(command: Record<string, unknown>): Promise<T> {
+  private async sendTcp<T>(command: Record<string, unknown>, customTimeout?: number): Promise<T> {
     if (!this.socket || !this.connected) {
       throw new Error('Not connected');
     }
@@ -206,7 +210,7 @@ export class FlashQ extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Request timeout'));
-      }, this.options.timeout);
+      }, customTimeout ?? this.options.timeout);
 
       this.responseQueue.push({
         resolve: (value) => {
@@ -223,7 +227,7 @@ export class FlashQ extends EventEmitter {
     });
   }
 
-  private async sendHttp<T>(command: Record<string, unknown>): Promise<T> {
+  private async sendHttp<T>(command: Record<string, unknown>, _customTimeout?: number): Promise<T> {
     const { cmd, ...params } = command;
     const baseUrl = `http://${this.options.host}:${this.options.httpPort}`;
 
@@ -263,6 +267,15 @@ export class FlashQ extends EventEmitter {
           unique_key: params.unique_key,
           depends_on: params.depends_on,
           tags: params.tags,
+          lifo: params.lifo,
+          remove_on_complete: params.remove_on_complete,
+          remove_on_fail: params.remove_on_fail,
+          stall_timeout: params.stall_timeout,
+          debounce_id: params.debounce_id,
+          debounce_ttl: params.debounce_ttl,
+          job_id: params.job_id,
+          keep_completed_age: params.keep_completed_age,
+          keep_completed_count: params.keep_completed_count,
         });
         break;
       case 'PULL':
@@ -349,6 +362,15 @@ export class FlashQ extends EventEmitter {
       unique_key: options.unique_key,
       depends_on: options.depends_on,
       tags: options.tags,
+      lifo: options.lifo ?? false,
+      remove_on_complete: options.remove_on_complete ?? false,
+      remove_on_fail: options.remove_on_fail ?? false,
+      stall_timeout: options.stall_timeout,
+      debounce_id: options.debounce_id,
+      debounce_ttl: options.debounce_ttl,
+      job_id: options.jobId,
+      keep_completed_age: options.keepCompletedAge,
+      keep_completed_count: options.keepCompletedCount,
     });
 
     return {
@@ -368,6 +390,19 @@ export class FlashQ extends EventEmitter {
       depends_on: options.depends_on ?? [],
       progress: 0,
       tags: options.tags ?? [],
+      lifo: options.lifo ?? false,
+      remove_on_complete: options.remove_on_complete ?? false,
+      remove_on_fail: options.remove_on_fail ?? false,
+      last_heartbeat: 0,
+      stall_timeout: options.stall_timeout ?? 30000,
+      stall_count: 0,
+      parent_id: undefined,
+      children_ids: [],
+      children_completed: 0,
+      custom_id: options.jobId,
+      keep_completed_age: options.keepCompletedAge ?? 0,
+      keep_completed_count: options.keepCompletedCount ?? 0,
+      completed_at: 0,
     };
   }
 
@@ -418,6 +453,15 @@ export class FlashQ extends EventEmitter {
         unique_key: j.unique_key,
         depends_on: j.depends_on,
         tags: j.tags,
+        lifo: j.lifo ?? false,
+        remove_on_complete: j.remove_on_complete ?? false,
+        remove_on_fail: j.remove_on_fail ?? false,
+        stall_timeout: j.stall_timeout,
+        debounce_id: j.debounce_id,
+        debounce_ttl: j.debounce_ttl,
+        job_id: j.jobId,
+        keep_completed_age: j.keepCompletedAge,
+        keep_completed_count: j.keepCompletedCount,
       })),
     });
     return response.ids;
@@ -528,6 +572,79 @@ export class FlashQ extends EventEmitter {
       id: jobId,
     });
     return response.result;
+  }
+
+  /**
+   * Wait for a job to complete and return its result.
+   * This is useful for synchronous workflows where you need to wait
+   * for a job to finish before continuing.
+   *
+   * @param jobId - Job ID to wait for
+   * @param timeout - Optional timeout in milliseconds (default: 30000)
+   * @returns The job result, or null if job completed without result
+   * @throws Error if job fails or times out
+   *
+   * @example
+   * ```typescript
+   * // Push a job and wait for it to complete
+   * const job = await client.push('process', { data: 'value' });
+   * const result = await client.finished(job.id);
+   * console.log('Job completed with result:', result);
+   *
+   * // With custom timeout
+   * const result = await client.finished(job.id, 60000); // 60 seconds
+   * ```
+   */
+  async finished<T = unknown>(jobId: number, timeout?: number): Promise<T | null> {
+    const waitTimeout = timeout ?? 30000;
+    // Use a longer request timeout than the wait timeout to allow server to respond
+    const requestTimeout = waitTimeout + 5000;
+
+    const response = await this.send<{
+      ok: boolean;
+      result: T | null;
+      error?: string;
+    }>({
+      cmd: 'WAITJOB',
+      id: jobId,
+      timeout: waitTimeout,
+    }, requestTimeout);
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    return response.result;
+  }
+
+  /**
+   * Get a job by its custom ID.
+   * Custom IDs are set using the `jobId` option when pushing a job.
+   *
+   * @param customId - The custom job ID
+   * @returns Job with state, or null if not found
+   *
+   * @example
+   * ```typescript
+   * // Push a job with custom ID for idempotency
+   * await client.push('process', { orderId: 123 }, { jobId: 'order-123' });
+   *
+   * // Later, retrieve the job by custom ID
+   * const jobWithState = await client.getJobByCustomId('order-123');
+   * if (jobWithState) {
+   *   console.log('Job state:', jobWithState.state);
+   * }
+   * ```
+   */
+  async getJobByCustomId(customId: string): Promise<JobWithState | null> {
+    const response = await this.send<{
+      ok: boolean;
+      job: Job | null;
+      state: JobState | null;
+    }>({
+      cmd: 'GETJOBBYCUSTOMID',
+      job_id: customId,
+    });
+    if (!response.job) return null;
+    return { job: response.job, state: response.state! };
   }
 
   /**
@@ -681,15 +798,20 @@ export class FlashQ extends EventEmitter {
    *
    * @example
    * ```typescript
-   * // Run every minute
+   * // Run every minute using cron schedule
    * await client.addCron('cleanup', {
    *   queue: 'maintenance',
    *   data: { task: 'cleanup' },
    *   schedule: '0 * * * * *', // Every minute at second 0
    * });
    *
-   * // Using interval shorthand: use string like "STAR/60" where STAR is asterisk
-   * // This runs every 60 seconds
+   * // Run every 5 seconds using repeat_every
+   * await client.addCron('heartbeat', {
+   *   queue: 'health',
+   *   data: { check: 'health' },
+   *   repeat_every: 5000, // Every 5 seconds
+   *   limit: 100, // Stop after 100 executions
+   * });
    * ```
    */
   async addCron(name: string, options: CronOptions): Promise<void> {
@@ -699,7 +821,9 @@ export class FlashQ extends EventEmitter {
       queue: options.queue,
       data: options.data,
       schedule: options.schedule,
+      repeat_every: options.repeat_every,
       priority: options.priority ?? 0,
+      limit: options.limit,
     });
   }
 
@@ -755,6 +879,434 @@ export class FlashQ extends EventEmitter {
       cmd: 'METRICS',
     });
     return response.metrics;
+  }
+
+  // ============== Job Logs (BullMQ-like) ==============
+
+  /**
+   * Add a log entry to a job
+   *
+   * @example
+   * ```typescript
+   * await client.log(jobId, 'Processing step 1', 'info');
+   * await client.log(jobId, 'Warning: low memory', 'warn');
+   * await client.log(jobId, 'Error: failed to connect', 'error');
+   * ```
+   */
+  async log(
+    jobId: number,
+    message: string,
+    level: 'info' | 'warn' | 'error' = 'info'
+  ): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'LOG',
+      job_id: jobId,
+      message,
+      level,
+    });
+  }
+
+  /**
+   * Get log entries for a job
+   */
+  async getLogs(jobId: number): Promise<JobLogEntry[]> {
+    const response = await this.send<{ ok: boolean; logs: JobLogEntry[] }>({
+      cmd: 'GETLOGS',
+      job_id: jobId,
+    });
+    return response.logs;
+  }
+
+  // ============== Stalled Jobs Detection (BullMQ-like) ==============
+
+  /**
+   * Send a heartbeat for a job to prevent it from being marked as stalled.
+   * Workers should call this periodically for long-running jobs.
+   *
+   * @example
+   * ```typescript
+   * // In your job processor
+   * async function processJob(job) {
+   *   for (const item of largeDataset) {
+   *     await processItem(item);
+   *     await client.heartbeat(job.id); // Keep job alive
+   *   }
+   * }
+   * ```
+   */
+  async heartbeat(jobId: number): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'HEARTBEAT',
+      job_id: jobId,
+    });
+  }
+
+  // ============== Flows (Parent-Child Jobs) ==============
+
+  /**
+   * Push a flow (parent job with children).
+   * The parent job will wait until all children complete before becoming ready.
+   *
+   * @example
+   * ```typescript
+   * const flow = await client.pushFlow(
+   *   'reports',
+   *   { reportType: 'monthly' },
+   *   [
+   *     { queue: 'process', data: { section: 'sales' } },
+   *     { queue: 'process', data: { section: 'marketing' } },
+   *     { queue: 'process', data: { section: 'operations' } },
+   *   ]
+   * );
+   * console.log('Parent job:', flow.parent_id);
+   * console.log('Child jobs:', flow.children_ids);
+   * ```
+   */
+  async pushFlow<T = unknown>(
+    queue: string,
+    parentData: T,
+    children: FlowChild[],
+    options: FlowOptions = {}
+  ): Promise<FlowResult> {
+    const response = await this.send<{
+      ok: boolean;
+      parent_id: number;
+      children_ids: number[];
+    }>({
+      cmd: 'FLOW',
+      queue,
+      parent_data: parentData,
+      children,
+      priority: options.priority ?? 0,
+      delay: options.delay,
+      ttl: options.ttl,
+      timeout: options.timeout,
+      max_attempts: options.max_attempts,
+      backoff: options.backoff,
+      unique_key: options.unique_key,
+      tags: options.tags,
+    });
+    return {
+      parent_id: response.parent_id,
+      children_ids: response.children_ids,
+    };
+  }
+
+  /**
+   * Get children job IDs for a parent job in a flow
+   */
+  async getChildren(jobId: number): Promise<number[]> {
+    const response = await this.send<{ ok: boolean; children_ids: number[] }>({
+      cmd: 'GETCHILDREN',
+      parent_id: jobId,
+    });
+    return response.children_ids;
+  }
+
+  // ============== BullMQ Advanced Features ==============
+
+  /**
+   * Get jobs filtered by queue and/or state with pagination.
+   *
+   * @example
+   * ```typescript
+   * // Get all waiting jobs
+   * const { jobs, total } = await client.getJobs({ state: 'waiting' });
+   *
+   * // Get failed jobs from a specific queue
+   * const { jobs } = await client.getJobs({ queue: 'emails', state: 'failed' });
+   *
+   * // Paginate results
+   * const { jobs, total } = await client.getJobs({ limit: 10, offset: 20 });
+   * ```
+   */
+  async getJobs(options: {
+    queue?: string;
+    state?: JobState;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ jobs: JobWithState[]; total: number }> {
+    const response = await this.send<{
+      ok: boolean;
+      jobs: Array<{ job: Job; state: JobState }>;
+      total: number;
+    }>({
+      cmd: 'GETJOBS',
+      queue: options.queue,
+      state: options.state,
+      limit: options.limit ?? 100,
+      offset: options.offset ?? 0,
+    });
+    return {
+      jobs: response.jobs.map((j) => ({ job: j.job, state: j.state })),
+      total: response.total,
+    };
+  }
+
+  /**
+   * Clean jobs older than grace period by state.
+   *
+   * @param queue - Queue name
+   * @param grace - Grace period in ms (keep jobs newer than this)
+   * @param state - Job state to clean: 'waiting', 'delayed', 'completed', 'failed'
+   * @param limit - Optional max jobs to clean
+   * @returns Number of jobs cleaned
+   *
+   * @example
+   * ```typescript
+   * // Clean completed jobs older than 1 hour
+   * const cleaned = await client.clean('emails', 3600000, 'completed');
+   *
+   * // Clean at most 100 failed jobs older than 1 day
+   * const cleaned = await client.clean('emails', 86400000, 'failed', 100);
+   * ```
+   */
+  async clean(
+    queue: string,
+    grace: number,
+    state: 'waiting' | 'delayed' | 'completed' | 'failed',
+    limit?: number
+  ): Promise<number> {
+    const response = await this.send<{ ok: boolean; count: number }>({
+      cmd: 'CLEAN',
+      queue,
+      grace,
+      state,
+      limit,
+    });
+    return response.count;
+  }
+
+  /**
+   * Drain all waiting jobs from a queue.
+   * Does NOT remove jobs that are processing or in DLQ.
+   *
+   * @param queue - Queue name
+   * @returns Number of jobs drained
+   *
+   * @example
+   * ```typescript
+   * const drained = await client.drain('emails');
+   * console.log(`Drained ${drained} jobs`);
+   * ```
+   */
+  async drain(queue: string): Promise<number> {
+    const response = await this.send<{ ok: boolean; count: number }>({
+      cmd: 'DRAIN',
+      queue,
+    });
+    return response.count;
+  }
+
+  /**
+   * Remove ALL data for a queue: jobs, DLQ, cron jobs, unique keys, queue state.
+   * Use with caution - this is destructive!
+   *
+   * @param queue - Queue name
+   * @returns Total number of items removed
+   *
+   * @example
+   * ```typescript
+   * const removed = await client.obliterate('test-queue');
+   * console.log(`Removed ${removed} items`);
+   * ```
+   */
+  async obliterate(queue: string): Promise<number> {
+    const response = await this.send<{ ok: boolean; count: number }>({
+      cmd: 'OBLITERATE',
+      queue,
+    });
+    return response.count;
+  }
+
+  /**
+   * Change the priority of a job.
+   * Works for jobs in any state (waiting, delayed, processing, DLQ).
+   *
+   * @param jobId - Job ID
+   * @param priority - New priority (higher = processed first)
+   *
+   * @example
+   * ```typescript
+   * // Increase priority of a job
+   * await client.changePriority(jobId, 100);
+   *
+   * // Lower priority
+   * await client.changePriority(jobId, -10);
+   * ```
+   */
+  async changePriority(jobId: number, priority: number): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'CHANGEPRIORITY',
+      id: jobId,
+      priority,
+    });
+  }
+
+  /**
+   * Move a job from processing back to delayed state.
+   * Useful for "snoozing" a job or deferring it for later.
+   *
+   * @param jobId - Job ID (must be in processing state)
+   * @param delay - Delay in milliseconds before job becomes ready again
+   *
+   * @example
+   * ```typescript
+   * // Delay a job for 5 minutes
+   * await client.moveToDelayed(jobId, 300000);
+   *
+   * // Delay for 1 hour
+   * await client.moveToDelayed(jobId, 3600000);
+   * ```
+   */
+  async moveToDelayed(jobId: number, delay: number): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'MOVETODELAYED',
+      id: jobId,
+      delay,
+    });
+  }
+
+  /**
+   * Promote a delayed job to waiting state immediately.
+   * The job becomes ready to process without waiting for its scheduled time.
+   *
+   * @param jobId - Job ID (must be in delayed state)
+   *
+   * @example
+   * ```typescript
+   * // Job was scheduled for later, but we want it now
+   * await client.promote(jobId);
+   * ```
+   */
+  async promote(jobId: number): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'PROMOTE',
+      id: jobId,
+    });
+  }
+
+  /**
+   * Update the data payload of a job.
+   * Works for jobs in any state (waiting, delayed, processing, DLQ).
+   *
+   * @param jobId - Job ID
+   * @param data - New data payload
+   *
+   * @example
+   * ```typescript
+   * // Update job data
+   * await client.update(jobId, { email: 'new@example.com', retry: true });
+   * ```
+   */
+  async update<T = unknown>(jobId: number, data: T): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'UPDATEJOB',
+      id: jobId,
+      data,
+    });
+  }
+
+  /**
+   * Discard a job - immediately move it to DLQ without retrying.
+   * Use when you know a job should not be processed.
+   *
+   * @param jobId - Job ID (must be in waiting, delayed, or processing state)
+   *
+   * @example
+   * ```typescript
+   * // Skip retries and move directly to DLQ
+   * await client.discard(jobId);
+   * ```
+   */
+  async discard(jobId: number): Promise<void> {
+    await this.send<{ ok: boolean }>({
+      cmd: 'DISCARD',
+      id: jobId,
+    });
+  }
+
+  /**
+   * Check if a queue is paused.
+   *
+   * @param queue - Queue name
+   * @returns true if queue is paused, false otherwise
+   *
+   * @example
+   * ```typescript
+   * if (await client.isPaused('emails')) {
+   *   console.log('Email queue is paused');
+   * }
+   * ```
+   */
+  async isPaused(queue: string): Promise<boolean> {
+    const response = await this.send<{ ok: boolean; paused: boolean }>({
+      cmd: 'ISPAUSED',
+      queue,
+    });
+    return response.paused;
+  }
+
+  /**
+   * Get the total count of jobs in a queue (waiting + delayed).
+   *
+   * @param queue - Queue name
+   * @returns Total job count
+   *
+   * @example
+   * ```typescript
+   * const total = await client.count('emails');
+   * console.log(`${total} jobs in queue`);
+   * ```
+   */
+  async count(queue: string): Promise<number> {
+    const response = await this.send<{ ok: boolean; count: number }>({
+      cmd: 'COUNT',
+      queue,
+    });
+    return response.count;
+  }
+
+  /**
+   * Get detailed job counts by state for a queue.
+   *
+   * @param queue - Queue name
+   * @returns Object with counts for each state
+   *
+   * @example
+   * ```typescript
+   * const counts = await client.getJobCounts('emails');
+   * console.log(`Waiting: ${counts.waiting}`);
+   * console.log(`Active: ${counts.active}`);
+   * console.log(`Delayed: ${counts.delayed}`);
+   * console.log(`Failed: ${counts.failed}`);
+   * ```
+   */
+  async getJobCounts(queue: string): Promise<{
+    waiting: number;
+    active: number;
+    delayed: number;
+    completed: number;
+    failed: number;
+  }> {
+    const response = await this.send<{
+      ok: boolean;
+      waiting: number;
+      active: number;
+      delayed: number;
+      completed: number;
+      failed: number;
+    }>({
+      cmd: 'GETJOBCOUNTS',
+      queue,
+    });
+    return {
+      waiting: response.waiting,
+      active: response.active,
+      delayed: response.delayed,
+      completed: response.completed,
+      failed: response.failed,
+    };
   }
 }
 

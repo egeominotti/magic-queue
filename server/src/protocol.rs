@@ -26,7 +26,36 @@ pub enum JobState {
     Completed,       // Successfully completed
     Failed,          // In DLQ after max_attempts
     WaitingChildren, // Waiting for dependencies to complete
+    WaitingParent,   // Parent waiting for children to complete (Flows)
+    Stalled,         // Job is stalled (no heartbeat)
     Unknown,         // Job not found or state cannot be determined
+}
+
+/// Job log entry for debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobLogEntry {
+    pub timestamp: u64,
+    pub message: String,
+    pub level: String, // "info", "warn", "error", "debug"
+}
+
+/// Flow child definition
+#[derive(Debug, Clone, Deserialize)]
+pub struct FlowChild {
+    pub queue: String,
+    pub data: Value,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default)]
+    pub delay: Option<u64>,
+}
+
+/// Flow result
+#[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
+pub struct FlowResult {
+    pub parent_id: u64,
+    pub children_ids: Vec<u64>,
 }
 
 #[inline(always)]
@@ -61,6 +90,22 @@ pub enum Command {
         tags: Option<Vec<String>>, // Job tags for filtering
         #[serde(default)]
         lifo: bool, // LIFO mode: last in, first out
+        #[serde(default)]
+        remove_on_complete: bool, // Don't store in completed_jobs after ACK
+        #[serde(default)]
+        remove_on_fail: bool, // Don't store in DLQ after failure
+        #[serde(default)]
+        stall_timeout: Option<u64>, // Stall detection timeout in ms (default 30s)
+        #[serde(default)]
+        debounce_id: Option<String>, // Debounce identifier (prevents duplicates within ttl window)
+        #[serde(default)]
+        debounce_ttl: Option<u64>, // Debounce window in ms (default 5000)
+        #[serde(default)]
+        job_id: Option<String>, // Custom job ID for idempotency
+        #[serde(default)]
+        keep_completed_age: Option<u64>, // Keep completed job for N ms (retention policy)
+        #[serde(default)]
+        keep_completed_count: Option<usize>, // Keep in last N completed jobs (retention policy)
     },
     Pushb {
         queue: String,
@@ -93,6 +138,16 @@ pub enum Command {
     },
     GetState {
         id: u64,
+    },
+    /// Wait for job to complete and return result (finished() promise)
+    WaitJob {
+        id: u64,
+        #[serde(default)]
+        timeout: Option<u64>, // Timeout in ms (default 30000)
+    },
+    /// Get job by custom ID
+    GetJobByCustomId {
+        job_id: String,
     },
 
     // === New Commands ===
@@ -127,14 +182,19 @@ pub enum Command {
     Metrics,
     Stats,
 
-    // === Cron Jobs ===
+    // === Cron Jobs / Repeatable Jobs ===
     Cron {
         name: String,
         queue: String,
         data: Value,
-        schedule: String, // Cron expression
+        #[serde(default)]
+        schedule: Option<String>, // Cron expression (optional if repeat_every is set)
+        #[serde(default)]
+        repeat_every: Option<u64>, // Repeat every N ms (alternative to schedule)
         #[serde(default)]
         priority: i32,
+        #[serde(default)]
+        limit: Option<u64>, // Max executions (None = infinite)
     },
     CronDelete {
         name: String,
@@ -170,6 +230,102 @@ pub enum Command {
     Auth {
         token: String,
     },
+
+    // === Job Logs ===
+    Log {
+        id: u64,
+        message: String,
+        #[serde(default = "default_log_level")]
+        level: String,
+    },
+    GetLogs {
+        id: u64,
+    },
+
+    // === Stalled Jobs ===
+    Heartbeat {
+        id: u64,
+    },
+
+    // === Flows (Parent-Child) ===
+    Flow {
+        queue: String,
+        data: Value,
+        children: Vec<FlowChild>,
+        #[serde(default)]
+        priority: i32,
+    },
+    GetChildren {
+        parent_id: u64,
+    },
+
+    // === BullMQ Advanced Commands ===
+    /// Get jobs filtered by queue and/or state with pagination
+    GetJobs {
+        #[serde(default)]
+        queue: Option<String>,
+        #[serde(default)]
+        state: Option<String>, // "waiting", "delayed", "active", "completed", "failed"
+        #[serde(default)]
+        limit: Option<usize>,
+        #[serde(default)]
+        offset: Option<usize>,
+    },
+    /// Clean jobs older than grace period by state
+    Clean {
+        queue: String,
+        grace: u64,    // Keep jobs newer than this (ms)
+        state: String, // "completed", "failed", "waiting", "delayed"
+        #[serde(default)]
+        limit: Option<usize>,
+    },
+    /// Drain all waiting jobs from a queue
+    Drain {
+        queue: String,
+    },
+    /// Remove ALL data for a queue (jobs, DLQ, cron, etc.)
+    Obliterate {
+        queue: String,
+    },
+    /// Change priority of a job
+    ChangePriority {
+        id: u64,
+        priority: i32,
+    },
+    /// Move a processing job back to delayed state
+    MoveToDelayed {
+        id: u64,
+        delay: u64,
+    },
+    /// Promote a delayed job to waiting (make it ready immediately)
+    Promote {
+        id: u64,
+    },
+    /// Update job data
+    UpdateJob {
+        id: u64,
+        data: Value,
+    },
+    /// Discard a job (prevent further retries, move to DLQ)
+    Discard {
+        id: u64,
+    },
+    /// Check if a queue is paused
+    IsPaused {
+        queue: String,
+    },
+    /// Get total job count for a queue
+    Count {
+        queue: String,
+    },
+    /// Get job counts by state for a queue
+    GetJobCounts {
+        queue: String,
+    },
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,6 +351,22 @@ pub struct JobInput {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub lifo: bool,
+    #[serde(default)]
+    pub remove_on_complete: bool,
+    #[serde(default)]
+    pub remove_on_fail: bool,
+    #[serde(default)]
+    pub stall_timeout: Option<u64>,
+    #[serde(default)]
+    pub debounce_id: Option<String>,
+    #[serde(default)]
+    pub debounce_ttl: Option<u64>,
+    #[serde(default)]
+    pub job_id: Option<String>, // Custom job ID for idempotency
+    #[serde(default)]
+    pub keep_completed_age: Option<u64>, // Retention: keep for N ms after completion
+    #[serde(default)]
+    pub keep_completed_count: Option<usize>, // Retention: keep in last N completed
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +401,33 @@ pub struct Job {
     pub tags: Vec<String>, // Job tags for filtering
     #[serde(default)]
     pub lifo: bool, // LIFO mode: last in, first out
+    // === New fields for BullMQ-like features ===
+    #[serde(default)]
+    pub remove_on_complete: bool, // Don't store in completed_jobs after ACK
+    #[serde(default)]
+    pub remove_on_fail: bool, // Don't store in DLQ after failure
+    #[serde(default)]
+    pub last_heartbeat: u64, // Last heartbeat from worker (for stall detection)
+    #[serde(default)]
+    pub stall_timeout: u64, // Stall detection timeout in ms (0 = disabled, default 30s)
+    #[serde(default)]
+    pub stall_count: u32, // Number of times job was marked as stalled
+    // === Flow (Parent-Child) fields ===
+    #[serde(default)]
+    pub parent_id: Option<u64>, // Parent job ID (for child jobs in flows)
+    #[serde(default)]
+    pub children_ids: Vec<u64>, // Child job IDs (for parent jobs in flows)
+    #[serde(default)]
+    pub children_completed: u32, // Number of children that completed
+    // === Custom ID and Retention ===
+    #[serde(default)]
+    pub custom_id: Option<String>, // User-provided custom job ID
+    #[serde(default)]
+    pub keep_completed_age: u64, // Keep completed job for N ms (0 = use default)
+    #[serde(default)]
+    pub keep_completed_count: usize, // Keep in last N completed (0 = use default)
+    #[serde(default)]
+    pub completed_at: u64, // When job was completed (for retention)
 }
 
 /// Job with its current state (for browser/API)
@@ -320,14 +519,21 @@ impl PartialOrd for Job {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CronJob {
     pub name: String,
     pub queue: String,
     pub data: Value,
-    pub schedule: String,
+    #[serde(default)]
+    pub schedule: Option<String>, // Cron expression (optional if repeat_every is set)
+    #[serde(default)]
+    pub repeat_every: Option<u64>, // Repeat every N ms (alternative to schedule)
     pub priority: i32,
     pub next_run: u64,
+    #[serde(default)]
+    pub executions: u64, // Number of times this job has been executed
+    #[serde(default)]
+    pub limit: Option<u64>, // Max executions (None = infinite)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -413,6 +619,56 @@ pub enum Response {
         ok: bool,
         id: u64,
         state: JobState,
+    },
+    Logs {
+        ok: bool,
+        id: u64,
+        logs: Vec<JobLogEntry>,
+    },
+    Flow {
+        ok: bool,
+        parent_id: u64,
+        children_ids: Vec<u64>,
+    },
+    Children {
+        ok: bool,
+        parent_id: u64,
+        children: Vec<Job>,
+        completed: u32,
+        total: u32,
+    },
+    /// Response for GetJobs with pagination
+    JobsWithTotal {
+        ok: bool,
+        jobs: Vec<JobBrowserItem>,
+        total: usize,
+    },
+    /// Response for operations that return a count (Clean, Drain, Obliterate)
+    Count {
+        ok: bool,
+        count: usize,
+    },
+    /// Response for isPaused
+    Paused {
+        ok: bool,
+        paused: bool,
+    },
+    /// Response for getJobCounts
+    JobCounts {
+        ok: bool,
+        waiting: usize,
+        active: usize,
+        delayed: usize,
+        completed: usize,
+        failed: usize,
+    },
+    /// Response for WaitJob (finished() promise)
+    JobResult {
+        ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     Error {
         ok: bool,
@@ -569,6 +825,68 @@ impl Response {
         Response::Error {
             ok: false,
             error: msg.into(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn logs(id: u64, logs: Vec<JobLogEntry>) -> Self {
+        Response::Logs { ok: true, id, logs }
+    }
+
+    #[inline(always)]
+    pub fn flow(parent_id: u64, children_ids: Vec<u64>) -> Self {
+        Response::Flow {
+            ok: true,
+            parent_id,
+            children_ids,
+        }
+    }
+
+    #[inline(always)]
+    pub fn children(parent_id: u64, children: Vec<Job>, completed: u32, total: u32) -> Self {
+        Response::Children {
+            ok: true,
+            parent_id,
+            children,
+            completed,
+            total,
+        }
+    }
+
+    #[inline(always)]
+    pub fn jobs_with_total(jobs: Vec<JobBrowserItem>, total: usize) -> Self {
+        Response::JobsWithTotal {
+            ok: true,
+            jobs,
+            total,
+        }
+    }
+
+    #[inline(always)]
+    pub fn count(count: usize) -> Self {
+        Response::Count { ok: true, count }
+    }
+
+    #[inline(always)]
+    pub fn paused(paused: bool) -> Self {
+        Response::Paused { ok: true, paused }
+    }
+
+    #[inline(always)]
+    pub fn job_counts(
+        waiting: usize,
+        active: usize,
+        delayed: usize,
+        completed: usize,
+        failed: usize,
+    ) -> Self {
+        Response::JobCounts {
+            ok: true,
+            waiting,
+            active,
+            delayed,
+            completed,
+            failed,
         }
     }
 }

@@ -16,6 +16,7 @@ impl QueueManager {
         let mut cron_ticker = interval(Duration::from_secs(1));
         let mut cleanup_ticker = interval(Duration::from_secs(60));
         let mut timeout_ticker = interval(Duration::from_millis(500));
+        let mut stalled_ticker = interval(Duration::from_secs(10)); // Check stalled jobs every 10s
         let mut metrics_ticker = interval(Duration::from_secs(5)); // Collect metrics every 5s
         let mut cluster_ticker = interval(Duration::from_secs(5)); // Cluster heartbeat every 5s
         let mut snapshot_ticker = interval(Duration::from_secs(1)); // Check snapshot every 1s
@@ -34,6 +35,12 @@ impl QueueManager {
                         self.check_timed_out_jobs().await;
                     }
                 }
+                _ = stalled_ticker.tick() => {
+                    // Only leader checks stalled jobs
+                    if self.is_leader() {
+                        self.check_stalled_jobs();
+                    }
+                }
                 _ = cron_ticker.tick() => {
                     // Only leader runs cron jobs
                     if self.is_leader() {
@@ -45,7 +52,9 @@ impl QueueManager {
                     if self.is_leader() {
                         self.cleanup_completed_jobs();
                         self.cleanup_job_results();
+                        self.cleanup_job_logs();
                         self.cleanup_stale_index_entries();
+                        self.cleanup_debounce_cache();
                         cleanup_interned_strings();
                     }
                 }
@@ -115,6 +124,11 @@ impl QueueManager {
             // Jobs waiting for dependencies
             for job in shard.waiting_deps.values() {
                 jobs_to_persist.push((job.clone(), "waiting_children".to_string()));
+            }
+
+            // Parent jobs waiting for children (Flows)
+            for job in shard.waiting_children.values() {
+                jobs_to_persist.push((job.clone(), "waiting_parent".to_string()));
             }
 
             // DLQ jobs
@@ -467,16 +481,40 @@ impl QueueManager {
         let now = Self::now_ms();
         let mut to_run = Vec::new();
         let mut next_run_updates = Vec::new();
+        let mut to_remove = Vec::new();
 
         {
             let mut crons = self.cron_jobs.write();
             for cron in crons.values_mut() {
                 if cron.next_run <= now {
+                    // Check if limit reached
+                    if let Some(limit) = cron.limit {
+                        if cron.executions >= limit {
+                            to_remove.push(cron.name.clone());
+                            continue;
+                        }
+                    }
+
                     to_run.push((cron.queue.clone(), cron.data.clone(), cron.priority));
-                    let new_next_run = Self::parse_next_cron_run(&cron.schedule, now);
+                    cron.executions += 1;
+
+                    // Calculate next run time
+                    let new_next_run = if let Some(interval) = cron.repeat_every {
+                        now + interval
+                    } else if let Some(ref schedule) = cron.schedule {
+                        Self::parse_next_cron_run(schedule, now)
+                    } else {
+                        // Fallback: 1 minute
+                        now + 60_000
+                    };
                     cron.next_run = new_next_run;
                     next_run_updates.push((cron.name.clone(), new_next_run));
                 }
+            }
+
+            // Remove crons that reached their limit
+            for name in &to_remove {
+                crons.remove(name);
             }
         }
 
@@ -485,10 +523,16 @@ impl QueueManager {
             self.persist_cron_next_run(&name, next_run);
         }
 
+        // Remove completed crons from PostgreSQL
+        for name in to_remove {
+            self.persist_cron_delete(&name);
+        }
+
         for (queue, data, priority) in to_run {
             let _ = self
                 .push(
                     queue, data, priority, None, None, None, None, None, None, None, None, false,
+                    false, false, None, None, None, None, None, None,
                 )
                 .await;
         }

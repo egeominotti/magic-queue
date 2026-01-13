@@ -71,6 +71,8 @@ impl From<InternalJobState> for JobState {
             InternalJobState::Completed => JobState::Completed,
             InternalJobState::Failed => JobState::Failed,
             InternalJobState::WaitingChildren => JobState::WaitingChildren,
+            InternalJobState::WaitingParent => JobState::WaitingChildren, // Map to same gRPC enum
+            InternalJobState::Stalled => JobState::Active, // Map stalled to active for gRPC
             InternalJobState::Unknown => JobState::Unknown,
         }
     }
@@ -125,6 +127,14 @@ impl QueueService for QueueServiceImpl {
                 },
                 None, // tags not supported in gRPC yet
                 req.lifo,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id (custom ID)
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
         {
@@ -179,6 +189,14 @@ impl QueueService for QueueServiceImpl {
                 },
                 tags: None,
                 lifo: j.lifo,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             });
         }
 

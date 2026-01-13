@@ -386,6 +386,19 @@ impl PostgresStorage {
                 progress_msg: row.get("progress_msg"),
                 tags: row.get("tags"),
                 lifo: row.get("lifo"),
+                // New fields with defaults
+                remove_on_complete: false,
+                remove_on_fail: false,
+                last_heartbeat: 0,
+                stall_timeout: 0,
+                stall_count: 0,
+                parent_id: None,
+                children_ids: Vec::new(),
+                children_completed: 0,
+                custom_id: None,
+                keep_completed_age: 0,
+                keep_completed_count: 0,
+                completed_at: 0,
             };
             let state: String = row.get("state");
             jobs.push((job, state));
@@ -430,6 +443,19 @@ impl PostgresStorage {
                 progress_msg: row.get("progress_msg"),
                 tags: row.get("tags"),
                 lifo: row.get("lifo"),
+                // New fields with defaults
+                remove_on_complete: false,
+                remove_on_fail: false,
+                last_heartbeat: 0,
+                stall_timeout: 0,
+                stall_count: 0,
+                parent_id: None,
+                children_ids: Vec::new(),
+                children_completed: 0,
+                custom_id: None,
+                keep_completed_age: 0,
+                keep_completed_count: 0,
+                completed_at: 0,
             });
         }
 
@@ -481,13 +507,17 @@ impl PostgresStorage {
 
         let mut crons = Vec::with_capacity(rows.len());
         for row in rows {
+            let schedule: Option<String> = row.get("schedule");
             crons.push(CronJob {
                 name: row.get("name"),
                 queue: row.get("queue"),
                 data: row.get("data"),
-                schedule: row.get("schedule"),
+                schedule,
+                repeat_every: None, // Not stored in DB yet
                 priority: row.get("priority"),
                 next_run: row.get::<i64, _>("next_run") as u64,
+                executions: 0,
+                limit: None,
             });
         }
 
@@ -695,6 +725,19 @@ impl PostgresStorage {
                     progress_msg: row.get("progress_msg"),
                     tags: row.get("tags"),
                     lifo: row.get("lifo"),
+                    // New fields with defaults
+                    remove_on_complete: false,
+                    remove_on_fail: false,
+                    last_heartbeat: 0,
+                    stall_timeout: 0,
+                    stall_count: 0,
+                    parent_id: None,
+                    children_ids: Vec::new(),
+                    children_completed: 0,
+                    custom_id: None,
+                    keep_completed_age: 0,
+                    keep_completed_count: 0,
+                    completed_at: 0,
                 };
                 let state: String = row.get("state");
                 Ok(Some((job, state)))
@@ -826,6 +869,170 @@ impl PostgresStorage {
         Ok(())
     }
 
+    // ============== Distributed Pull (SELECT FOR UPDATE SKIP LOCKED) ==============
+
+    /// Pull a single job atomically using SELECT FOR UPDATE SKIP LOCKED.
+    /// This prevents duplicate job processing across cluster nodes.
+    /// Returns the job and updates its state to 'active' in a single atomic operation.
+    pub async fn pull_job_distributed(
+        &self,
+        queue: &str,
+        now_ms: i64,
+    ) -> Result<Option<Job>, sqlx::Error> {
+        // Single atomic operation: SELECT + UPDATE in one query
+        // FOR UPDATE SKIP LOCKED ensures no two nodes can claim the same job
+        let row = sqlx::query(
+            r#"
+            WITH selected AS (
+                SELECT id FROM jobs
+                WHERE queue = $1
+                  AND state = 'waiting'
+                  AND run_at <= $2
+                ORDER BY
+                    priority DESC,
+                    CASE WHEN lifo THEN created_at END DESC,
+                    CASE WHEN NOT lifo THEN run_at END ASC,
+                    CASE WHEN NOT lifo THEN id END ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE jobs SET
+                state = 'active',
+                started_at = $2
+            WHERE id = (SELECT id FROM selected)
+            RETURNING
+                id, queue, data, priority, created_at, run_at, started_at,
+                attempts, max_attempts, backoff, ttl, timeout, unique_key,
+                depends_on, progress, progress_msg, tags, lifo
+            "#,
+        )
+        .bind(queue)
+        .bind(now_ms)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let depends_on: Vec<i64> = row.get("depends_on");
+                Ok(Some(Job {
+                    id: row.get::<i64, _>("id") as u64,
+                    queue: row.get("queue"),
+                    data: row.get("data"),
+                    priority: row.get("priority"),
+                    created_at: row.get::<i64, _>("created_at") as u64,
+                    run_at: row.get::<i64, _>("run_at") as u64,
+                    started_at: row.get::<i64, _>("started_at") as u64,
+                    attempts: row.get::<i32, _>("attempts") as u32,
+                    max_attempts: row.get::<i32, _>("max_attempts") as u32,
+                    backoff: row.get::<i64, _>("backoff") as u64,
+                    ttl: row.get::<i64, _>("ttl") as u64,
+                    timeout: row.get::<i64, _>("timeout") as u64,
+                    unique_key: row.get("unique_key"),
+                    depends_on: depends_on.into_iter().map(|x| x as u64).collect(),
+                    progress: row.get::<i16, _>("progress") as u8,
+                    progress_msg: row.get("progress_msg"),
+                    tags: row.get("tags"),
+                    lifo: row.get("lifo"),
+                    // Default values for fields not in DB
+                    remove_on_complete: false,
+                    remove_on_fail: false,
+                    last_heartbeat: now_ms as u64,
+                    stall_timeout: 0,
+                    stall_count: 0,
+                    parent_id: None,
+                    children_ids: Vec::new(),
+                    children_completed: 0,
+                    custom_id: None,
+                    keep_completed_age: 0,
+                    keep_completed_count: 0,
+                    completed_at: 0,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Pull multiple jobs atomically using SELECT FOR UPDATE SKIP LOCKED.
+    /// Batch version of pull_job_distributed for better performance.
+    pub async fn pull_jobs_distributed_batch(
+        &self,
+        queue: &str,
+        count: i32,
+        now_ms: i64,
+    ) -> Result<Vec<Job>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            WITH selected AS (
+                SELECT id FROM jobs
+                WHERE queue = $1
+                  AND state = 'waiting'
+                  AND run_at <= $3
+                ORDER BY
+                    priority DESC,
+                    CASE WHEN lifo THEN created_at END DESC,
+                    CASE WHEN NOT lifo THEN run_at END ASC,
+                    CASE WHEN NOT lifo THEN id END ASC
+                LIMIT $2
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE jobs SET
+                state = 'active',
+                started_at = $3
+            WHERE id IN (SELECT id FROM selected)
+            RETURNING
+                id, queue, data, priority, created_at, run_at, started_at,
+                attempts, max_attempts, backoff, ttl, timeout, unique_key,
+                depends_on, progress, progress_msg, tags, lifo
+            "#,
+        )
+        .bind(queue)
+        .bind(count)
+        .bind(now_ms)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let jobs = rows
+            .into_iter()
+            .map(|row| {
+                let depends_on: Vec<i64> = row.get("depends_on");
+                Job {
+                    id: row.get::<i64, _>("id") as u64,
+                    queue: row.get("queue"),
+                    data: row.get("data"),
+                    priority: row.get("priority"),
+                    created_at: row.get::<i64, _>("created_at") as u64,
+                    run_at: row.get::<i64, _>("run_at") as u64,
+                    started_at: row.get::<i64, _>("started_at") as u64,
+                    attempts: row.get::<i32, _>("attempts") as u32,
+                    max_attempts: row.get::<i32, _>("max_attempts") as u32,
+                    backoff: row.get::<i64, _>("backoff") as u64,
+                    ttl: row.get::<i64, _>("ttl") as u64,
+                    timeout: row.get::<i64, _>("timeout") as u64,
+                    unique_key: row.get("unique_key"),
+                    depends_on: depends_on.into_iter().map(|x| x as u64).collect(),
+                    progress: row.get::<i16, _>("progress") as u8,
+                    progress_msg: row.get("progress_msg"),
+                    tags: row.get("tags"),
+                    lifo: row.get("lifo"),
+                    remove_on_complete: false,
+                    remove_on_fail: false,
+                    last_heartbeat: now_ms as u64,
+                    stall_timeout: 0,
+                    stall_count: 0,
+                    parent_id: None,
+                    children_ids: Vec::new(),
+                    children_completed: 0,
+                    custom_id: None,
+                    keep_completed_age: 0,
+                    keep_completed_count: 0,
+                    completed_at: 0,
+                }
+            })
+            .collect();
+
+        Ok(jobs)
+    }
+
     /// Load jobs in a range by IDs (for batch sync)
     pub async fn load_jobs_by_queue_since(
         &self,
@@ -872,11 +1079,153 @@ impl PostgresStorage {
                 progress_msg: row.get("progress_msg"),
                 tags: row.get("tags"),
                 lifo: row.get("lifo"),
+                // New fields with defaults
+                remove_on_complete: false,
+                remove_on_fail: false,
+                last_heartbeat: 0,
+                stall_timeout: 0,
+                stall_count: 0,
+                parent_id: None,
+                children_ids: Vec::new(),
+                children_completed: 0,
+                custom_id: None,
+                keep_completed_age: 0,
+                keep_completed_count: 0,
+                completed_at: 0,
             };
             let state: String = row.get("state");
             jobs.push((job, state));
         }
 
         Ok(jobs)
+    }
+
+    // ============== BullMQ Advanced Operations ==============
+
+    /// Drain all waiting jobs from a queue (delete from DB)
+    pub async fn drain_queue(&self, queue: &str) -> Result<u64, sqlx::Error> {
+        let result =
+            sqlx::query("DELETE FROM jobs WHERE queue = $1 AND state IN ('waiting', 'delayed')")
+                .bind(queue)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Obliterate all data for a queue (delete everything)
+    pub async fn obliterate_queue(&self, queue: &str) -> Result<u64, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        let mut total = 0u64;
+
+        // Delete from jobs
+        let r1 = sqlx::query("DELETE FROM jobs WHERE queue = $1")
+            .bind(queue)
+            .execute(&mut *tx)
+            .await?;
+        total += r1.rows_affected();
+
+        // Delete from DLQ
+        let r2 = sqlx::query("DELETE FROM dlq_jobs WHERE queue = $1")
+            .bind(queue)
+            .execute(&mut *tx)
+            .await?;
+        total += r2.rows_affected();
+
+        // Delete cron jobs for this queue
+        sqlx::query("DELETE FROM cron_jobs WHERE queue = $1")
+            .bind(queue)
+            .execute(&mut *tx)
+            .await?;
+
+        // Delete queue config
+        sqlx::query("DELETE FROM queue_config WHERE queue = $1")
+            .bind(queue)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(total)
+    }
+
+    /// Change priority of a job
+    pub async fn change_priority(&self, job_id: u64, priority: i32) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE jobs SET priority = $1 WHERE id = $2")
+            .bind(priority)
+            .bind(job_id as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Move a job to delayed state
+    pub async fn move_to_delayed(&self, job_id: u64, run_at: u64) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE jobs SET state = 'delayed', run_at = $1, started_at = 0, progress = 0 WHERE id = $2",
+        )
+        .bind(run_at as i64)
+        .bind(job_id as i64)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Clean jobs by age and state
+    pub async fn clean_jobs(
+        &self,
+        queue: &str,
+        cutoff: u64,
+        state: &str,
+    ) -> Result<u64, sqlx::Error> {
+        let result =
+            sqlx::query("DELETE FROM jobs WHERE queue = $1 AND state = $2 AND created_at < $3")
+                .bind(queue)
+                .bind(state)
+                .bind(cutoff as i64)
+                .execute(&self.pool)
+                .await?;
+
+        // Also clean from DLQ if state is 'failed'
+        if state == "failed" {
+            sqlx::query("DELETE FROM dlq_jobs WHERE queue = $1 AND failed_at < $2")
+                .bind(queue)
+                .bind(cutoff as i64)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(result.rows_affected())
+    }
+
+    /// Promote a delayed job to waiting
+    pub async fn promote_job(&self, job_id: u64, run_at: u64) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE jobs SET run_at = $1, state = 'waiting' WHERE id = $2")
+            .bind(run_at as i64)
+            .bind(job_id as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Update job data
+    pub async fn update_job_data(
+        &self,
+        job_id: u64,
+        data: &serde_json::Value,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE jobs SET data = $1 WHERE id = $2")
+            .bind(data)
+            .bind(job_id as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Discard a job (move to DLQ)
+    pub async fn discard_job(&self, job_id: u64) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE jobs SET state = 'failed' WHERE id = $1")
+            .bind(job_id as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }

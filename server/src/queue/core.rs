@@ -72,6 +72,12 @@ impl QueueManager {
         depends_on: Option<Vec<u64>>,
         tags: Option<Vec<String>>,
         lifo: bool,
+        remove_on_complete: bool,
+        remove_on_fail: bool,
+        stall_timeout: Option<u64>,
+        custom_id: Option<String>,
+        keep_completed_age: Option<u64>,
+        keep_completed_count: Option<usize>,
     ) -> Job {
         let now = now_ms();
         Job {
@@ -93,6 +99,20 @@ impl QueueManager {
             progress_msg: None,
             tags: tags.unwrap_or_default(),
             lifo,
+            // New BullMQ-like fields
+            remove_on_complete,
+            remove_on_fail,
+            last_heartbeat: 0,
+            stall_timeout: stall_timeout.unwrap_or(0),
+            stall_count: 0,
+            parent_id: None,
+            children_ids: Vec::new(),
+            children_completed: 0,
+            // Custom ID and retention
+            custom_id,
+            keep_completed_age: keep_completed_age.unwrap_or(0),
+            keep_completed_count: keep_completed_count.unwrap_or(0),
+            completed_at: 0,
         }
     }
 
@@ -111,16 +131,50 @@ impl QueueManager {
         depends_on: Option<Vec<u64>>,
         tags: Option<Vec<String>>,
         lifo: bool,
+        remove_on_complete: bool,
+        remove_on_fail: bool,
+        stall_timeout: Option<u64>,
+        debounce_id: Option<String>,
+        debounce_ttl: Option<u64>,
+        job_id: Option<String>,
+        keep_completed_age: Option<u64>,
+        keep_completed_count: Option<usize>,
     ) -> Result<Job, String> {
         // Validate inputs to prevent DoS attacks
         validate_queue_name(&queue)?;
         validate_job_data(&data)?;
 
+        // Check debounce - prevent duplicate jobs within time window
+        if let Some(ref id) = debounce_id {
+            let now = now_ms();
+            let debounce_key = format!("{}:{}", queue, id);
+            let debounce_cache = self.debounce_cache.read();
+            if let Some(&expiry) = debounce_cache.get(&debounce_key) {
+                if now < expiry {
+                    return Err(format!(
+                        "Debounced: job with id '{}' was pushed recently",
+                        id
+                    ));
+                }
+            }
+        }
+
+        // Check custom job ID for idempotency
+        if let Some(ref custom_id) = job_id {
+            let custom_id_map = self.custom_id_map.read();
+            if let Some(&existing_id) = custom_id_map.get(custom_id) {
+                // Return the existing job instead of creating a duplicate
+                if let Some(job) = self.get_job_by_internal_id(existing_id) {
+                    return Ok(job);
+                }
+            }
+        }
+
         // Get cluster-wide unique ID from PostgreSQL sequence
-        let job_id = self.next_job_id().await;
+        let internal_id = self.next_job_id().await;
 
         let job = self.create_job_with_id(
-            job_id,
+            internal_id,
             queue.clone(),
             data,
             priority,
@@ -133,6 +187,12 @@ impl QueueManager {
             depends_on.clone(),
             tags,
             lifo,
+            remove_on_complete,
+            remove_on_fail,
+            stall_timeout,
+            job_id.clone(),
+            keep_completed_age,
+            keep_completed_count,
         );
 
         let idx = Self::shard_index(&queue);
@@ -178,6 +238,19 @@ impl QueueManager {
         self.metrics.record_push(1);
         self.notify_shard(idx);
 
+        // Update debounce cache
+        if let Some(ref id) = debounce_id {
+            let debounce_key = format!("{}:{}", queue, id);
+            let ttl = debounce_ttl.unwrap_or(5000); // Default 5 seconds
+            let expiry = now_ms() + ttl;
+            self.debounce_cache.write().insert(debounce_key, expiry);
+        }
+
+        // Store custom ID mapping for idempotency
+        if let Some(ref custom_id) = job_id {
+            self.custom_id_map.write().insert(custom_id.clone(), job.id);
+        }
+
         // Broadcast pushed event
         self.broadcast_event(JobEvent {
             event_type: "pushed".to_string(),
@@ -203,11 +276,29 @@ impl QueueManager {
             return Vec::new();
         }
 
-        // Filter valid jobs first
-        let valid_jobs: Vec<_> = jobs
-            .into_iter()
-            .filter(|input| validate_job_data(&input.data).is_ok())
-            .collect();
+        // Filter valid jobs and check debounce
+        let now = now_ms();
+        let valid_jobs: Vec<_> = {
+            let debounce_cache = self.debounce_cache.read();
+            jobs.into_iter()
+                .filter(|input| {
+                    // Check data validity
+                    if validate_job_data(&input.data).is_err() {
+                        return false;
+                    }
+                    // Check debounce
+                    if let Some(ref id) = input.debounce_id {
+                        let debounce_key = format!("{}:{}", queue, id);
+                        if let Some(&expiry) = debounce_cache.get(&debounce_key) {
+                            if now < expiry {
+                                return false; // Debounced
+                            }
+                        }
+                    }
+                    true
+                })
+                .collect()
+        };
 
         if valid_jobs.is_empty() {
             return Vec::new();
@@ -219,12 +310,19 @@ impl QueueManager {
         let mut ids = Vec::with_capacity(valid_jobs.len());
         let mut created_jobs = Vec::with_capacity(valid_jobs.len());
         let mut waiting_jobs = Vec::new();
+        let mut debounce_updates: Vec<(String, u64)> = Vec::new();
 
         let idx = Self::shard_index(&queue);
         let queue_name = intern(&queue);
         let completed = self.completed_jobs.read().clone();
 
         for (input, job_id) in valid_jobs.into_iter().zip(job_ids.into_iter()) {
+            // Track debounce updates
+            if let Some(ref id) = input.debounce_id {
+                let debounce_key = format!("{}:{}", queue, id);
+                let ttl = input.debounce_ttl.unwrap_or(5000);
+                debounce_updates.push((debounce_key, now + ttl));
+            }
             let job = self.create_job_with_id(
                 job_id,
                 queue.clone(),
@@ -239,6 +337,12 @@ impl QueueManager {
                 input.depends_on,
                 input.tags,
                 input.lifo,
+                input.remove_on_complete,
+                input.remove_on_fail,
+                input.stall_timeout,
+                input.job_id,
+                input.keep_completed_age,
+                input.keep_completed_count,
             );
             ids.push(job.id);
 
@@ -267,6 +371,14 @@ impl QueueManager {
         // Persist to PostgreSQL (includes cluster notification)
         self.persist_push_batch(&created_jobs, "waiting");
         self.persist_push_batch(&waiting_jobs, "waiting_children");
+
+        // Update debounce cache
+        if !debounce_updates.is_empty() {
+            let mut cache = self.debounce_cache.write();
+            for (key, expiry) in debounce_updates {
+                cache.insert(key, expiry);
+            }
+        }
 
         self.metrics.record_push(ids.len() as u64);
         self.notify_shard(idx);
@@ -322,6 +434,7 @@ impl QueueManager {
                             if job.is_ready(now) {
                                 let mut job = heap.pop().unwrap();
                                 job.started_at = now;
+                                job.last_heartbeat = now; // Initialize heartbeat for stall detection
                                 result = Some(job);
                                 break;
                             }
@@ -414,6 +527,7 @@ impl QueueManager {
                                     Some(job) if job.is_ready(now) => {
                                         let mut job = heap.pop().unwrap();
                                         job.started_at = now;
+                                        job.last_heartbeat = now; // Initialize heartbeat for stall detection
                                         jobs.push(job);
                                     }
                                     _ => break,
@@ -485,13 +599,21 @@ impl QueueManager {
                 }
             }
 
-            // Store result if provided
-            if let Some(ref res) = result {
-                self.job_results.write().insert(job_id, res.clone());
+            // Handle remove_on_complete option
+            if job.remove_on_complete {
+                // Don't store in completed_jobs or job_results
+                self.unindex_job(job_id);
+                // Clean up logs for this job
+                self.job_logs.write().remove(&job_id);
+                self.stalled_count.write().remove(&job_id);
+            } else {
+                // Store result if provided
+                if let Some(ref res) = result {
+                    self.job_results.write().insert(job_id, res.clone());
+                }
+                self.completed_jobs.write().insert(job_id);
+                self.index_job(job_id, JobLocation::Completed);
             }
-
-            self.completed_jobs.write().insert(job_id);
-            self.index_job(job_id, JobLocation::Completed);
 
             // Persist to PostgreSQL
             self.persist_ack(job_id, result.clone());
@@ -504,10 +626,25 @@ impl QueueManager {
                 queue: job.queue.clone(),
                 job_id: job.id,
                 timestamp: now_ms(),
-                data: result,
+                data: result.clone(),
                 error: None,
                 progress: None,
             });
+
+            // Notify any waiters (finished() promise)
+            self.notify_job_waiters(job.id, result.clone());
+
+            // Store retention info if needed
+            if job.keep_completed_age > 0 || job.keep_completed_count > 0 {
+                self.completed_retention
+                    .write()
+                    .insert(job.id, (now_ms(), job.keep_completed_age, result));
+            }
+
+            // If this job has a parent (is part of a flow), notify the parent
+            if let Some(parent_id) = job.parent_id {
+                self.on_child_completed(parent_id);
+            }
 
             return Ok(());
         }
@@ -573,13 +710,23 @@ impl QueueManager {
 
             if job.should_go_to_dlq() {
                 self.notify_subscribers("failed", &job.queue, &job);
-                self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
-                self.shards[idx]
-                    .write()
-                    .dlq
-                    .entry(queue_arc)
-                    .or_default()
-                    .push_back(job.clone());
+
+                // Handle remove_on_fail option
+                if job.remove_on_fail {
+                    // Don't store in DLQ, just discard
+                    self.unindex_job(job_id);
+                    self.job_logs.write().remove(&job_id);
+                    self.stalled_count.write().remove(&job_id);
+                } else {
+                    self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
+                    self.shards[idx]
+                        .write()
+                        .dlq
+                        .entry(queue_arc.clone())
+                        .or_default()
+                        .push_back(job.clone());
+                }
+
                 self.metrics.record_fail();
 
                 // Persist to PostgreSQL
@@ -631,5 +778,146 @@ impl QueueManager {
 
     pub async fn get_result(&self, job_id: u64) -> Option<Value> {
         self.job_results.read().get(&job_id).cloned()
+    }
+
+    // ============== Distributed Pull (Cluster Mode) ==============
+
+    /// Pull a job using PostgreSQL's SELECT FOR UPDATE SKIP LOCKED.
+    /// This prevents duplicate job processing across cluster nodes.
+    /// Use this in cluster mode for consistency at the cost of performance.
+    pub async fn pull_distributed(&self, queue_name: &str, timeout_ms: u64) -> Option<Job> {
+        let storage = self.storage.as_ref()?;
+        let deadline = now_ms() + timeout_ms;
+        let idx = Self::shard_index(queue_name);
+        let queue_arc = intern(queue_name);
+
+        loop {
+            let now = now_ms();
+
+            // Check if queue is paused
+            let is_paused = {
+                let shard = self.shards[idx].read();
+                let state = shard.queue_state.get(&queue_arc);
+                state.map(|s| s.paused).unwrap_or(false)
+            };
+            if is_paused {
+                if now >= deadline {
+                    return None;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+
+            // Try to claim a job atomically from PostgreSQL
+            match storage.pull_job_distributed(queue_name, now as i64).await {
+                Ok(Some(job)) => {
+                    // Update local state for consistency
+                    self.processing.write().insert(job.id, job.clone());
+                    self.index_job(job.id, JobLocation::Processing);
+
+                    // Remove from local queue if present (sync)
+                    {
+                        let mut shard = self.shards[idx].write();
+                        if let Some(heap) = shard.queues.get_mut(&queue_arc) {
+                            heap.retain(|j| j.id != job.id);
+                        }
+                    }
+
+                    return Some(job);
+                }
+                Ok(None) => {
+                    // No jobs available
+                    if now >= deadline {
+                        return None;
+                    }
+                    // Wait a bit before retrying
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(e) => {
+                    eprintln!("Distributed pull error: {}", e);
+                    if now >= deadline {
+                        return None;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    /// Pull multiple jobs using PostgreSQL's SELECT FOR UPDATE SKIP LOCKED.
+    /// Batch version of pull_distributed for better performance.
+    pub async fn pull_distributed_batch(
+        &self,
+        queue_name: &str,
+        count: usize,
+        timeout_ms: u64,
+    ) -> Vec<Job> {
+        let storage = match self.storage.as_ref() {
+            Some(s) => s,
+            None => return Vec::new(),
+        };
+        let deadline = now_ms() + timeout_ms;
+        let idx = Self::shard_index(queue_name);
+        let queue_arc = intern(queue_name);
+
+        loop {
+            let now = now_ms();
+
+            // Check if queue is paused
+            let is_paused = {
+                let shard = self.shards[idx].read();
+                let state = shard.queue_state.get(&queue_arc);
+                state.map(|s| s.paused).unwrap_or(false)
+            };
+            if is_paused {
+                if now >= deadline {
+                    return Vec::new();
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+
+            // Try to claim jobs atomically from PostgreSQL
+            match storage
+                .pull_jobs_distributed_batch(queue_name, count as i32, now as i64)
+                .await
+            {
+                Ok(jobs) if !jobs.is_empty() => {
+                    // Update local state
+                    let mut proc = self.processing.write();
+                    for job in &jobs {
+                        proc.insert(job.id, job.clone());
+                        self.index_job(job.id, JobLocation::Processing);
+                    }
+                    drop(proc);
+
+                    // Remove from local queue if present
+                    {
+                        let job_ids: std::collections::HashSet<u64> =
+                            jobs.iter().map(|j| j.id).collect();
+                        let mut shard = self.shards[idx].write();
+                        if let Some(heap) = shard.queues.get_mut(&queue_arc) {
+                            heap.retain(|j| !job_ids.contains(&j.id));
+                        }
+                    }
+
+                    return jobs;
+                }
+                Ok(_) => {
+                    // No jobs available
+                    if now >= deadline {
+                        return Vec::new();
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(e) => {
+                    eprintln!("Distributed batch pull error: {}", e);
+                    if now >= deadline {
+                        return Vec::new();
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
 }

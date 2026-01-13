@@ -49,6 +49,22 @@ pub struct PushRequest {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub lifo: bool,
+    #[serde(default)]
+    pub remove_on_complete: bool,
+    #[serde(default)]
+    pub remove_on_fail: bool,
+    #[serde(default)]
+    pub stall_timeout: Option<u64>,
+    #[serde(default)]
+    pub debounce_id: Option<String>,
+    #[serde(default)]
+    pub debounce_ttl: Option<u64>,
+    #[serde(default)]
+    pub job_id: Option<String>,
+    #[serde(default)]
+    pub keep_completed_age: Option<u64>,
+    #[serde(default)]
+    pub keep_completed_count: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -151,6 +167,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/queues/{queue}/rate-limit", delete(clear_rate_limit))
         .route("/queues/{queue}/concurrency", post(set_concurrency))
         .route("/queues/{queue}/concurrency", delete(clear_concurrency))
+        // BullMQ Advanced queue operations
+        .route("/queues/{queue}/drain", post(drain_queue))
+        .route("/queues/{queue}/obliterate", delete(obliterate_queue))
+        .route("/queues/{queue}/clean", post(clean_queue))
         // Job operations
         .route("/jobs", get(list_jobs))
         .route("/jobs/{id}", get(get_job))
@@ -160,6 +180,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/jobs/{id}/progress", post(update_progress))
         .route("/jobs/{id}/progress", get(get_progress))
         .route("/jobs/{id}/result", get(get_result))
+        // BullMQ Advanced job operations
+        .route("/jobs/{id}/priority", post(change_priority))
+        .route("/jobs/{id}/move-to-delayed", post(move_to_delayed))
         // Cron jobs
         .route("/crons", get(list_crons))
         .route("/crons/{name}", post(create_cron))
@@ -236,6 +259,14 @@ async fn push_job(
             req.depends_on,
             req.tags,
             req.lifo,
+            req.remove_on_complete,
+            req.remove_on_fail,
+            req.stall_timeout,
+            req.debounce_id,
+            req.debounce_ttl,
+            req.job_id,
+            req.keep_completed_age,
+            req.keep_completed_count,
         )
         .await
     {
@@ -323,6 +354,48 @@ async fn clear_concurrency(
 ) -> Json<ApiResponse<()>> {
     qm.clear_concurrency(&queue).await;
     ApiResponse::success(())
+}
+
+// === BullMQ Advanced Queue Operations ===
+
+#[derive(Deserialize)]
+pub struct CleanRequest {
+    pub grace: u64,
+    pub state: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+async fn drain_queue(
+    State(qm): State<AppState>,
+    Path(queue): Path<String>,
+) -> Json<ApiResponse<usize>> {
+    let count = qm.drain(&queue).await;
+    ApiResponse::success(count)
+}
+
+async fn obliterate_queue(
+    State(qm): State<AppState>,
+    Path(queue): Path<String>,
+) -> Json<ApiResponse<usize>> {
+    let count = qm.obliterate(&queue).await;
+    ApiResponse::success(count)
+}
+
+async fn clean_queue(
+    State(qm): State<AppState>,
+    Path(queue): Path<String>,
+    Json(req): Json<CleanRequest>,
+) -> Json<ApiResponse<usize>> {
+    let state_enum = match req.state.to_lowercase().as_str() {
+        "waiting" => JobState::Waiting,
+        "delayed" => JobState::Delayed,
+        "completed" => JobState::Completed,
+        "failed" => JobState::Failed,
+        _ => return ApiResponse::error("Invalid state. Use: waiting, delayed, completed, failed"),
+    };
+    let count = qm.clean(&queue, req.grace, state_enum, req.limit).await;
+    ApiResponse::success(count)
 }
 
 // === Job Browser ===
@@ -441,6 +514,40 @@ async fn get_result(
 ) -> Json<ApiResponse<Option<Value>>> {
     let result = qm.get_result(id).await;
     ApiResponse::success(result)
+}
+
+// === BullMQ Advanced Job Operations ===
+
+#[derive(Deserialize)]
+pub struct ChangePriorityRequest {
+    pub priority: i32,
+}
+
+#[derive(Deserialize)]
+pub struct MoveToDelayedRequest {
+    pub delay: u64,
+}
+
+async fn change_priority(
+    State(qm): State<AppState>,
+    Path(id): Path<u64>,
+    Json(req): Json<ChangePriorityRequest>,
+) -> Json<ApiResponse<()>> {
+    match qm.change_priority(id, req.priority).await {
+        Ok(()) => ApiResponse::success(()),
+        Err(e) => ApiResponse::error(e),
+    }
+}
+
+async fn move_to_delayed(
+    State(qm): State<AppState>,
+    Path(id): Path<u64>,
+    Json(req): Json<MoveToDelayedRequest>,
+) -> Json<ApiResponse<()>> {
+    match qm.move_to_delayed(id, req.delay).await {
+        Ok(()) => ApiResponse::success(()),
+        Err(e) => ApiResponse::error(e),
+    }
 }
 
 // === Cron Jobs ===
@@ -805,7 +912,8 @@ async fn incoming_webhook(
 ) -> Json<ApiResponse<Job>> {
     match qm
         .push(
-            queue, data, 0, None, None, None, None, None, None, None, None, false,
+            queue, data, 0, None, None, None, None, None, None, None, None, false, false, false,
+            None, None, None, None, None, None,
         )
         .await
     {

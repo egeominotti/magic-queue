@@ -35,6 +35,10 @@ export { Queue } from './queue';
 export { FlashQ, FlashQ as default } from './client';
 export { Worker } from './worker';
 
+// Sandboxed Processors
+export { SandboxedWorker, createProcessor } from './sandbox';
+export type { SandboxOptions } from './sandbox';
+
 // Types
 export * from './types';
 export type {
@@ -50,4 +54,9 @@ export type {
   WorkerOptions,
   ClientOptions,
   JobProcessor,
+  // BullMQ-like features
+  JobLogEntry,
+  FlowChild,
+  FlowOptions,
+  FlowResult,
 } from './types';

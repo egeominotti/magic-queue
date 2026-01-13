@@ -12,8 +12,8 @@ use super::types::{
     SnapshotConfig, Subscriber, Webhook, Worker,
 };
 use crate::protocol::{
-    set_id_counter, CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint,
-    WebhookConfig, WorkerInfo,
+    set_id_counter, CronJob, Job, JobBrowserItem, JobEvent, JobLogEntry, JobState,
+    MetricsHistoryPoint, WebhookConfig, WorkerInfo,
 };
 use tokio::sync::broadcast;
 
@@ -46,6 +46,26 @@ pub struct QueueManager {
     pub(crate) snapshot_config: Option<SnapshotConfig>,
     pub(crate) snapshot_changes: std::sync::atomic::AtomicU64,
     pub(crate) last_snapshot: std::sync::atomic::AtomicU64,
+    // === New BullMQ-like features ===
+    // Job logs storage (job_id -> logs)
+    pub(crate) job_logs: RwLock<GxHashMap<u64, Vec<JobLogEntry>>>,
+    // Stalled job tracking (job_id -> stall_count)
+    pub(crate) stalled_count: RwLock<GxHashMap<u64, u32>>,
+    // Distributed pull mode: use SELECT FOR UPDATE SKIP LOCKED
+    // Prevents duplicate job processing in cluster mode (slower but consistent)
+    pub(crate) distributed_pull: bool,
+    // Debounce cache: maps "queue:debounce_id" -> expiry_timestamp
+    // Used to prevent duplicate jobs within a time window
+    pub(crate) debounce_cache: RwLock<GxHashMap<String, u64>>,
+    // Custom job ID mapping: custom_id -> internal job ID
+    pub(crate) custom_id_map: RwLock<GxHashMap<String, u64>>,
+    // Job waiters for finished() promise: job_id -> list of waiting channels
+    #[allow(clippy::type_complexity)]
+    pub(crate) job_waiters:
+        RwLock<GxHashMap<u64, Vec<tokio::sync::oneshot::Sender<Option<Value>>>>>,
+    // Completed jobs with retention: job_id -> (completed_at, keep_age, result)
+    #[allow(clippy::type_complexity)]
+    pub(crate) completed_retention: RwLock<GxHashMap<u64, (u64, u64, Option<Value>)>>,
 }
 
 impl QueueManager {
@@ -169,6 +189,20 @@ impl QueueManager {
         };
         let snapshot_enabled = snapshot_config.is_some();
 
+        // Check for distributed pull mode (SELECT FOR UPDATE SKIP LOCKED)
+        // Enabled by default in cluster mode, can be disabled with DISTRIBUTED_PULL=0
+        let distributed_pull = if cluster_enabled {
+            // In cluster mode, default to distributed pull unless explicitly disabled
+            std::env::var("DISTRIBUTED_PULL")
+                .map(|v| v != "0" && v.to_lowercase() != "false")
+                .unwrap_or(true)
+        } else {
+            // In non-cluster mode, only enable if explicitly requested
+            std::env::var("DISTRIBUTED_PULL")
+                .map(|v| v == "1" || v.to_lowercase() == "true")
+                .unwrap_or(false)
+        };
+
         let manager = Arc::new(Self {
             shards,
             processing: RwLock::new(GxHashMap::with_capacity_and_hasher(
@@ -194,6 +228,15 @@ impl QueueManager {
             snapshot_config,
             snapshot_changes: AtomicU64::new(0),
             last_snapshot: AtomicU64::new(now_ms()),
+            // New BullMQ-like features
+            job_logs: RwLock::new(GxHashMap::default()),
+            stalled_count: RwLock::new(GxHashMap::default()),
+            distributed_pull,
+            debounce_cache: RwLock::new(GxHashMap::default()),
+            // Custom job ID and finished() promise support
+            custom_id_map: RwLock::new(GxHashMap::default()),
+            job_waiters: RwLock::new(GxHashMap::default()),
+            completed_retention: RwLock::new(GxHashMap::default()),
         });
 
         let mgr = Arc::clone(&manager);
@@ -210,6 +253,9 @@ impl QueueManager {
         }
         if cluster_enabled {
             println!("Cluster mode enabled");
+        }
+        if distributed_pull {
+            println!("Distributed pull enabled (SELECT FOR UPDATE SKIP LOCKED)");
         }
 
         manager
@@ -316,6 +362,13 @@ impl QueueManager {
             .as_ref()
             .map(|c| c.is_enabled())
             .unwrap_or(false)
+    }
+
+    /// Check if distributed pull mode is enabled
+    /// When enabled, uses SELECT FOR UPDATE SKIP LOCKED for consistent job claiming
+    #[inline]
+    pub fn is_distributed_pull(&self) -> bool {
+        self.distributed_pull
     }
 
     /// Get the node ID
@@ -770,6 +823,11 @@ impl QueueManager {
                 let job = shard.waiting_deps.get(&id).cloned();
                 (job, JobState::WaitingChildren)
             }
+            JobLocation::WaitingChildren { shard_idx } => {
+                let shard = self.shards[shard_idx].read();
+                let job = shard.waiting_children.get(&id).cloned();
+                (job, JobState::WaitingParent)
+            }
             JobLocation::Completed => {
                 // Job completed, no data stored (only result if any)
                 (None, JobState::Completed)
@@ -798,6 +856,65 @@ impl QueueManager {
                 }
             }
             None => JobState::Unknown,
+        }
+    }
+
+    /// Get job by internal ID - returns just the Job (for idempotency check)
+    pub fn get_job_by_internal_id(&self, id: u64) -> Option<Job> {
+        self.get_job(id).0
+    }
+
+    /// Get job by custom ID
+    pub fn get_job_by_custom_id(&self, custom_id: &str) -> Option<(Job, JobState)> {
+        let internal_id = self.custom_id_map.read().get(custom_id).copied()?;
+        let (job, state) = self.get_job(internal_id);
+        job.map(|j| (j, state))
+    }
+
+    /// Wait for job to complete and return result (finished() promise)
+    pub async fn wait_for_job(
+        &self,
+        id: u64,
+        timeout_ms: Option<u64>,
+    ) -> Result<Option<Value>, String> {
+        let timeout = timeout_ms.unwrap_or(30000);
+
+        // First check if job is already completed
+        let state = self.get_state(id);
+        if state == JobState::Completed {
+            return Ok(self.job_results.read().get(&id).cloned());
+        }
+        if state == JobState::Failed {
+            return Err("Job failed".to_string());
+        }
+        if state == JobState::Unknown {
+            return Err("Job not found".to_string());
+        }
+
+        // Create a oneshot channel to wait for completion
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        // Register the waiter
+        self.job_waiters.write().entry(id).or_default().push(tx);
+
+        // Wait with timeout
+        match tokio::time::timeout(std::time::Duration::from_millis(timeout), rx).await {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(_)) => Err("Waiter channel closed".to_string()),
+            Err(_) => Err(format!(
+                "Timeout waiting for job {} after {}ms",
+                id, timeout
+            )),
+        }
+    }
+
+    /// Notify all waiters when a job completes
+    pub fn notify_job_waiters(&self, job_id: u64, result: Option<Value>) {
+        let waiters = self.job_waiters.write().remove(&job_id);
+        if let Some(waiters) = waiters {
+            for tx in waiters {
+                let _ = tx.send(result.clone());
+            }
         }
     }
 

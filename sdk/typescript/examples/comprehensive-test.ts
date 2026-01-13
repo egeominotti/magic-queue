@@ -16,6 +16,10 @@
  * - Stats and Metrics
  * - Job state tracking
  * - Unique keys (deduplication)
+ * - Debouncing
+ * - Custom Job ID (Idempotency)
+ * - Wait for Job Completion (finished)
+ * - Advanced Queue Operations
  */
 
 import { FlashQ } from '../src/index';
@@ -50,7 +54,7 @@ function section(name: string) {
 }
 
 async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function runTests() {
@@ -147,7 +151,7 @@ async function runTests() {
       const jobs = await client.pullBatch('batch-queue', 5);
       if (jobs.length === 5) {
         success(`Pull batch (${jobs.length} jobs)`);
-        const acked = await client.ackBatch(jobs.map(j => j.id));
+        const acked = await client.ackBatch(jobs.map((j) => j.id));
         success(`Ack batch (${jobs.length} jobs acked)`);
       } else {
         fail('Pull batch', `Expected 5 jobs, got ${jobs.length}`);
@@ -172,10 +176,19 @@ async function runTests() {
       await client.ack(second.id);
       await client.ack(third.id);
 
-      if (first.data.priority === 'high' && second.data.priority === 'medium' && third.data.priority === 'low') {
-        success(`Priority ordering (high=${first.priority}, medium=${second.priority}, low=${third.priority})`);
+      if (
+        first.data.priority === 'high' &&
+        second.data.priority === 'medium' &&
+        third.data.priority === 'low'
+      ) {
+        success(
+          `Priority ordering (high=${first.priority}, medium=${second.priority}, low=${third.priority})`
+        );
       } else {
-        fail('Priority ordering', `Order: ${first.data.priority}, ${second.data.priority}, ${third.data.priority}`);
+        fail(
+          'Priority ordering',
+          `Order: ${first.data.priority}, ${second.data.priority}, ${third.data.priority}`
+        );
       }
     } catch (e) {
       fail('Priority ordering', e);
@@ -232,18 +245,22 @@ async function runTests() {
       let prog = await client.getProgress(pulled.id);
       // Note: getProgress returns { progress: number, message?: string }
       // The SDK needs to extract from the nested response
-      const progress25 = typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
+      const progress25 =
+        typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
       if (progress25 !== 25) fail('Progress 25%', `Got ${progress25}`);
 
       await client.progress(pulled.id, 50, 'Halfway...');
       prog = await client.getProgress(pulled.id);
-      const progress50 = typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
+      const progress50 =
+        typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
       if (progress50 !== 50) fail('Progress 50%', `Got ${progress50}`);
 
       await client.progress(pulled.id, 100, 'Complete!');
       prog = await client.getProgress(pulled.id);
-      const progress100 = typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
-      const message100 = typeof prog.progress === 'object' ? (prog.progress as any).message : prog.message;
+      const progress100 =
+        typeof prog.progress === 'object' ? (prog.progress as any).progress : prog.progress;
+      const message100 =
+        typeof prog.progress === 'object' ? (prog.progress as any).message : prog.message;
 
       await client.ack(pulled.id);
 
@@ -316,7 +333,11 @@ async function runTests() {
       success(`First job with unique key (id: ${job1.id})`);
 
       try {
-        const job2 = await client.push('unique-queue', { data: 2 }, { unique_key: 'unique-test-key' });
+        const job2 = await client.push(
+          'unique-queue',
+          { data: 2 },
+          { unique_key: 'unique-test-key' }
+        );
         fail('Duplicate unique key', 'Should have been rejected');
       } catch (e) {
         success(`Duplicate rejected: ${e}`);
@@ -336,6 +357,150 @@ async function runTests() {
       fail('Unique keys', e);
     }
 
+    // ==================== DEBOUNCING ====================
+    section('Debouncing');
+
+    try {
+      const job1 = await client.push(
+        'debounce-queue',
+        { event: 1 },
+        { debounce_id: 'event-stream', debounce_ttl: 1000 }
+      );
+      success(`First debounced job (id: ${job1.id})`);
+
+      try {
+        await client.push(
+          'debounce-queue',
+          { event: 2 },
+          { debounce_id: 'event-stream', debounce_ttl: 1000 }
+        );
+        fail('Debounce duplicate', 'Should have been debounced');
+      } catch (e) {
+        success(`Duplicate debounced: ${e}`);
+      }
+
+      // Wait for debounce window to expire
+      await sleep(1100);
+
+      const job2 = await client.push(
+        'debounce-queue',
+        { event: 3 },
+        { debounce_id: 'event-stream', debounce_ttl: 1000 }
+      );
+      success(`After debounce window expired (id: ${job2.id})`);
+
+      // Cleanup
+      const p1 = await client.pull('debounce-queue');
+      await client.ack(p1.id);
+      const p2 = await client.pull('debounce-queue');
+      await client.ack(p2.id);
+    } catch (e) {
+      fail('Debouncing', e);
+    }
+
+    // ==================== CUSTOM JOB ID (IDEMPOTENCY) ====================
+    section('Custom Job ID (Idempotency)');
+
+    try {
+      const job1 = await client.push(
+        'idempotent-queue',
+        { order: 'ORD-001' },
+        { jobId: 'order-ORD-001' }
+      );
+      success(`First job with custom ID (id: ${job1.id}, customId: ${job1.custom_id})`);
+
+      // Push same jobId - should return same job
+      const job2 = await client.push(
+        'idempotent-queue',
+        { order: 'ORD-001' },
+        { jobId: 'order-ORD-001' }
+      );
+
+      if (job1.id === job2.id) {
+        success(`Idempotent push returned same job (${job1.id} === ${job2.id})`);
+      } else {
+        fail('Idempotent push', `Different IDs: ${job1.id} vs ${job2.id}`);
+      }
+
+      // Lookup by custom ID
+      const found = await client.getJobByCustomId('order-ORD-001');
+      if (found && found.job.id === job1.id) {
+        success(`getJobByCustomId found job (id: ${found.job.id}, state: ${found.state})`);
+      } else {
+        fail('getJobByCustomId', `Not found or wrong ID`);
+      }
+
+      // Lookup non-existent
+      const notFound = await client.getJobByCustomId('non-existent-id');
+      if (notFound === null) {
+        success(`getJobByCustomId returns null for non-existent ID`);
+      } else {
+        fail('getJobByCustomId', `Should return null`);
+      }
+
+      // Cleanup
+      const pulled = await client.pull('idempotent-queue');
+      await client.ack(pulled.id);
+    } catch (e) {
+      fail('Custom Job ID', e);
+    }
+
+    // ==================== WAIT FOR JOB COMPLETION (finished) ====================
+    section('Wait for Job Completion (finished)');
+
+    try {
+      // Use a separate client for the worker to avoid TCP response interleaving
+      const workerClient = new FlashQ({ host: 'localhost', port: 6789 });
+      await workerClient.connect();
+
+      const job = await client.push('finished-queue', { task: 'process' });
+
+      // Start waiting in background
+      const waitPromise = client.finished(job.id, 5000);
+
+      // Small delay to ensure WAITJOB is sent first
+      await sleep(50);
+
+      // Simulate worker processing on separate connection
+      const pulled = await workerClient.pull('finished-queue');
+      await sleep(100); // Simulate work
+      await workerClient.ack(pulled.id, { result: 'done', value: 123 });
+
+      // Wait should resolve with result
+      const result = await waitPromise;
+      await workerClient.close();
+
+      if (result && (result as any).result === 'done') {
+        success(`finished() returned result: ${JSON.stringify(result)}`);
+      } else {
+        fail('finished()', `Unexpected result: ${JSON.stringify(result)}`);
+      }
+    } catch (e) {
+      fail('Wait for completion', e);
+    }
+
+    try {
+      // Test timeout
+      const job = await client.push('finished-timeout-queue', { task: 'slow' });
+
+      try {
+        await client.finished(job.id, 100); // Very short timeout
+        fail('finished() timeout', 'Should have timed out');
+      } catch (e: any) {
+        if (e.message.toLowerCase().includes('timeout')) {
+          success(`finished() correctly times out`);
+        } else {
+          fail('finished() timeout', e.message);
+        }
+      }
+
+      // Cleanup
+      const pulled = await client.pull('finished-timeout-queue');
+      await client.ack(pulled.id);
+    } catch (e) {
+      fail('finished() timeout', e);
+    }
+
     // ==================== PAUSE/RESUME ====================
     section('Pause/Resume Queue');
 
@@ -344,7 +509,7 @@ async function runTests() {
       await client.pause('pause-queue');
 
       const queues = await client.listQueues();
-      const pausedQueue = queues.find(q => q.name === 'pause-queue');
+      const pausedQueue = queues.find((q) => q.name === 'pause-queue');
 
       if (pausedQueue?.paused) {
         success(`Queue paused`);
@@ -354,7 +519,7 @@ async function runTests() {
 
       await client.resume('pause-queue');
       const queues2 = await client.listQueues();
-      const resumedQueue = queues2.find(q => q.name === 'pause-queue');
+      const resumedQueue = queues2.find((q) => q.name === 'pause-queue');
 
       if (!resumedQueue?.paused) {
         success(`Queue resumed`);
@@ -376,7 +541,7 @@ async function runTests() {
       await client.setRateLimit('rate-queue', 100);
 
       const queues = await client.listQueues();
-      const rateQueue = queues.find(q => q.name === 'rate-queue');
+      const rateQueue = queues.find((q) => q.name === 'rate-queue');
 
       if (rateQueue?.rate_limit === 100) {
         success(`Rate limit set (${rateQueue.rate_limit} jobs/sec)`);
@@ -401,14 +566,10 @@ async function runTests() {
       await client.setConcurrency('conc-queue', 5);
 
       // Push some jobs
-      await client.pushBatch('conc-queue', [
-        { data: { n: 1 } },
-        { data: { n: 2 } },
-        { data: { n: 3 } },
-      ]);
+      await client.pushBatch('conc-queue', [{ data: { n: 1 } }, { data: { n: 2 } }, { data: { n: 3 } }]);
 
       const queues = await client.listQueues();
-      const concQueue = queues.find(q => q.name === 'conc-queue');
+      const concQueue = queues.find((q) => q.name === 'conc-queue');
 
       if (concQueue?.concurrency_limit === 5) {
         success(`Concurrency limit set (${concQueue.concurrency_limit})`);
@@ -418,7 +579,7 @@ async function runTests() {
 
       // Clean up
       const jobs = await client.pullBatch('conc-queue', 3);
-      await client.ackBatch(jobs.map(j => j.id));
+      await client.ackBatch(jobs.map((j) => j.id));
 
       await client.clearConcurrency('conc-queue');
       success(`Concurrency limit cleared`);
@@ -440,7 +601,7 @@ async function runTests() {
       success(`Cron job added`);
 
       const crons = await client.listCrons();
-      const testCron = crons.find(c => c.name === 'test-cron');
+      const testCron = crons.find((c) => c.name === 'test-cron');
 
       if (testCron) {
         success(`Cron job listed (name: ${testCron.name}, schedule: ${testCron.schedule})`);
@@ -452,7 +613,7 @@ async function runTests() {
       success(`Cron job deleted`);
 
       const crons2 = await client.listCrons();
-      if (!crons2.find(c => c.name === 'test-cron')) {
+      if (!crons2.find((c) => c.name === 'test-cron')) {
         success(`Cron job confirmed deleted`);
       } else {
         fail('Delete cron', 'Cron still exists');
@@ -461,20 +622,178 @@ async function runTests() {
       fail('Cron jobs', e);
     }
 
+    // ==================== ADVANCED QUEUE OPERATIONS ====================
+    section('Advanced Queue Operations');
+
+    // getJobs
+    try {
+      await client.obliterate('adv-queue');
+      for (let i = 0; i < 5; i++) {
+        await client.push('adv-queue', { index: i });
+      }
+      const { jobs, total } = await client.getJobs({ queue: 'adv-queue', limit: 3 });
+      if (jobs.length === 3 && total === 5) {
+        success(`getJobs with pagination (got ${jobs.length}/${total})`);
+      } else {
+        fail('getJobs', `Expected 3/5, got ${jobs.length}/${total}`);
+      }
+    } catch (e) {
+      fail('getJobs', e);
+    }
+
+    // getJobCounts
+    try {
+      const counts = await client.getJobCounts('adv-queue');
+      if (counts.waiting === 5) {
+        success(`getJobCounts (waiting: ${counts.waiting})`);
+      } else {
+        fail('getJobCounts', `Expected 5 waiting, got ${counts.waiting}`);
+      }
+    } catch (e) {
+      fail('getJobCounts', e);
+    }
+
+    // count
+    try {
+      const total = await client.count('adv-queue');
+      if (total === 5) {
+        success(`count (${total} jobs)`);
+      } else {
+        fail('count', `Expected 5, got ${total}`);
+      }
+    } catch (e) {
+      fail('count', e);
+    }
+
+    // drain
+    try {
+      const drained = await client.drain('adv-queue');
+      if (drained === 5) {
+        success(`drain removed ${drained} jobs`);
+      } else {
+        fail('drain', `Expected 5, got ${drained}`);
+      }
+    } catch (e) {
+      fail('drain', e);
+    }
+
+    // obliterate
+    try {
+      for (let i = 0; i < 3; i++) {
+        await client.push('obliterate-queue', { i });
+      }
+      const removed = await client.obliterate('obliterate-queue');
+      if (removed >= 3) {
+        success(`obliterate removed ${removed} items`);
+      } else {
+        fail('obliterate', `Expected >= 3, got ${removed}`);
+      }
+    } catch (e) {
+      fail('obliterate', e);
+    }
+
+    // changePriority
+    try {
+      const job = await client.push('priority-change-queue', { test: 1 }, { priority: 5 });
+      await client.changePriority(job.id, 100);
+      const updated = await client.getJob(job.id);
+      if (updated?.job.priority === 100) {
+        success(`changePriority (5 -> 100)`);
+      } else {
+        fail('changePriority', `Expected 100, got ${updated?.job.priority}`);
+      }
+      const pulled = await client.pull('priority-change-queue');
+      await client.ack(pulled.id);
+    } catch (e) {
+      fail('changePriority', e);
+    }
+
+    // moveToDelayed
+    try {
+      const job = await client.push('move-delayed-queue', { test: 1 });
+      const pulled = await client.pull('move-delayed-queue');
+      await client.moveToDelayed(pulled.id, 5000);
+      const state = await client.getState(pulled.id);
+      if (state === 'delayed') {
+        success(`moveToDelayed (active -> delayed)`);
+      } else {
+        fail('moveToDelayed', `Expected delayed, got ${state}`);
+      }
+      // Clean up by draining
+      await client.drain('move-delayed-queue');
+    } catch (e) {
+      fail('moveToDelayed', e);
+    }
+
+    // promote
+    try {
+      const job = await client.push('promote-queue', { test: 1 }, { delay: 60000 });
+      let state = await client.getState(job.id);
+      if (state !== 'delayed') fail('promote setup', `Expected delayed, got ${state}`);
+
+      await client.promote(job.id);
+      state = await client.getState(job.id);
+      if (state === 'waiting') {
+        success(`promote (delayed -> waiting)`);
+      } else {
+        fail('promote', `Expected waiting, got ${state}`);
+      }
+      const pulled = await client.pull('promote-queue');
+      await client.ack(pulled.id);
+    } catch (e) {
+      fail('promote', e);
+    }
+
+    // update
+    try {
+      const job = await client.push('update-queue', { original: true });
+      await client.update(job.id, { updated: true, newField: 'value' });
+      const pulled = await client.pull<{ updated?: boolean; newField?: string }>('update-queue');
+      if (pulled.data.updated && pulled.data.newField === 'value') {
+        success(`update job data`);
+      } else {
+        fail('update', `Data not updated: ${JSON.stringify(pulled.data)}`);
+      }
+      await client.ack(pulled.id);
+    } catch (e) {
+      fail('update', e);
+    }
+
+    // isPaused
+    try {
+      await client.pause('ispaused-queue');
+      const paused = await client.isPaused('ispaused-queue');
+      await client.resume('ispaused-queue');
+      const resumed = await client.isPaused('ispaused-queue');
+      if (paused && !resumed) {
+        success(`isPaused (true -> false after resume)`);
+      } else {
+        fail('isPaused', `Expected true then false, got ${paused} then ${resumed}`);
+      }
+    } catch (e) {
+      fail('isPaused', e);
+    }
+
     // ==================== STATS & METRICS ====================
     section('Stats & Metrics');
 
     try {
       const stats = await client.stats();
-      success(`Stats: queued=${stats.queued}, processing=${stats.processing}, delayed=${stats.delayed}, dlq=${stats.dlq}`);
+      success(
+        `Stats: queued=${stats.queued}, processing=${stats.processing}, delayed=${stats.delayed}, dlq=${stats.dlq}`
+      );
     } catch (e) {
       fail('Stats', e);
     }
 
     try {
       const metrics = await client.metrics();
-      success(`Metrics: pushed=${metrics.total_pushed}, completed=${metrics.total_completed}, failed=${metrics.total_failed}`);
-      success(`Throughput: ${metrics.jobs_per_second.toFixed(2)} jobs/sec, Latency: ${metrics.avg_latency_ms.toFixed(2)}ms`);
+      success(
+        `Metrics: pushed=${metrics.total_pushed}, completed=${metrics.total_completed}, failed=${metrics.total_failed}`
+      );
+      success(
+        `Throughput: ${metrics.jobs_per_second.toFixed(2)} jobs/sec, Latency: ${metrics.avg_latency_ms.toFixed(2)}ms`
+      );
     } catch (e) {
       fail('Metrics', e);
     }
@@ -484,7 +803,7 @@ async function runTests() {
 
     try {
       const queues = await client.listQueues();
-      success(`Found ${queues.length} queue(s): ${queues.map(q => q.name).join(', ')}`);
+      success(`Found ${queues.length} queue(s): ${queues.map((q) => q.name).join(', ')}`);
     } catch (e) {
       fail('List queues', e);
     }
@@ -494,7 +813,6 @@ async function runTests() {
 
     await client.close();
     success('Connection closed');
-
   } catch (e) {
     console.error(`\n${RED}Unexpected error:${RESET}`, e);
     failed++;

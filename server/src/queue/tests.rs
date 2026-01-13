@@ -27,6 +27,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -56,6 +64,14 @@ mod tests {
                 None,                      // depends_on
                 None,                      // tags
                 false,                     // lifo
+                false,                     // remove_on_complete
+                false,                     // remove_on_fail
+                None,                      // stall_timeout
+                None,                      // debounce_id
+                None,                      // debounce_ttl
+                None,                      // job_id
+                None,                      // keep_completed_age
+                None,                      // keep_completed_count
             )
             .await
             .unwrap();
@@ -85,6 +101,14 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             },
             crate::protocol::JobInput {
                 data: json!({"i": 2}),
@@ -98,6 +122,14 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             },
         ];
 
@@ -129,6 +161,14 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             })
             .collect();
 
@@ -158,6 +198,14 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             })
             .collect();
 
@@ -184,6 +232,14 @@ mod tests {
                 depends_on: None,
                 tags: None,
                 lifo: false,
+                remove_on_complete: false,
+                remove_on_fail: false,
+                stall_timeout: None,
+                debounce_id: None,
+                debounce_ttl: None,
+                job_id: None,
+                keep_completed_age: None,
+                keep_completed_count: None,
             })
             .collect();
 
@@ -209,6 +265,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -240,6 +304,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -279,6 +351,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -310,6 +390,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -345,6 +433,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -378,7 +474,15 @@ mod tests {
                 None,
                 None,
                 None,
-                false, // max_attempts=3, backoff=100ms, tags, lifo
+                false, // lifo
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -418,6 +522,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -456,6 +568,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -473,6 +593,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -514,6 +642,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -550,6 +686,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job1.is_ok());
@@ -569,6 +713,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job2.is_err());
@@ -591,6 +743,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job3.is_ok());
@@ -615,6 +775,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job1.is_ok());
@@ -633,6 +801,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job2.is_ok());
@@ -656,6 +832,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -687,6 +871,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -717,6 +909,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -750,6 +950,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -783,6 +991,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -822,6 +1038,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -838,6 +1062,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -854,6 +1086,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -886,6 +1126,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -902,6 +1150,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -918,6 +1174,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -951,6 +1215,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -968,6 +1240,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -985,6 +1265,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1016,7 +1304,15 @@ mod tests {
                 None,
                 None,
                 None,
-                true, // lifo = true
+                true,  // lifo = true
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1033,7 +1329,15 @@ mod tests {
                 None,
                 None,
                 None,
-                true, // lifo = true
+                true,  // lifo = true
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1050,7 +1354,15 @@ mod tests {
                 None,
                 None,
                 None,
-                true, // lifo = true
+                true,  // lifo = true
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1084,6 +1396,14 @@ mod tests {
                 None,
                 None,
                 false, // fifo
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1100,7 +1420,15 @@ mod tests {
                 None,
                 None,
                 None,
-                true, // lifo - should be pulled before fifo
+                true,  // lifo - should be pulled before fifo
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1134,6 +1462,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1160,6 +1496,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1179,6 +1523,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1209,6 +1561,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1228,6 +1588,14 @@ mod tests {
                 Some(vec![parent.id]),
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1266,6 +1634,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1283,6 +1659,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1302,6 +1686,14 @@ mod tests {
                 Some(vec![parent1.id, parent2.id]),
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1344,6 +1736,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1386,6 +1786,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1425,6 +1833,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1515,6 +1931,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1553,6 +1977,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1583,6 +2015,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1599,6 +2039,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1615,6 +2063,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1684,6 +2140,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1727,6 +2191,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(result.is_err());
@@ -1753,6 +2225,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1788,6 +2268,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -1819,6 +2307,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await;
             assert!(result.is_err(), "Queue name '{}' should be rejected", name);
@@ -1843,6 +2339,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1870,6 +2374,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1906,6 +2418,14 @@ mod tests {
             None,
             None,
             false,
+            false, // remove_on_complete
+            false, // remove_on_fail
+            None,  // stall_timeout
+            None,  // debounce_id
+            None,  // debounce_ttl
+            None,  // job_id
+            None,  // keep_completed_age
+            None,  // keep_completed_count
         )
         .await
         .unwrap();
@@ -1938,6 +2458,14 @@ mod tests {
                         None,
                         None,
                         false,
+                        false, // remove_on_complete
+                        false, // remove_on_fail
+                        None,  // stall_timeout
+                        None,  // debounce_id
+                        None,  // debounce_ttl
+                        None,  // job_id
+                        None,  // keep_completed_age
+                        None,  // keep_completed_count
                     )
                     .await
                     .unwrap()
@@ -1971,6 +2499,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -1997,6 +2533,14 @@ mod tests {
                         None,
                         None,
                         false,
+                        false, // remove_on_complete
+                        false, // remove_on_fail
+                        None,  // stall_timeout
+                        None,  // debounce_id
+                        None,  // debounce_ttl
+                        None,  // job_id
+                        None,  // keep_completed_age
+                        None,  // keep_completed_count
                     )
                     .await
                     .unwrap()
@@ -2045,6 +2589,18 @@ mod tests {
             progress_msg: None,
             tags: vec![],
             lifo: false,
+            remove_on_complete: false,
+            remove_on_fail: false,
+            last_heartbeat: 0,
+            stall_timeout: 0,
+            stall_count: 0,
+            parent_id: None,
+            children_ids: vec![],
+            children_completed: 0,
+            custom_id: None,
+            keep_completed_age: 0,
+            keep_completed_count: 0,
+            completed_at: 0,
         };
 
         assert!(job.is_ready(now));
@@ -2080,6 +2636,18 @@ mod tests {
             progress_msg: None,
             tags: vec![],
             lifo: false,
+            remove_on_complete: false,
+            remove_on_fail: false,
+            last_heartbeat: 0,
+            stall_timeout: 0,
+            stall_count: 0,
+            parent_id: None,
+            children_ids: vec![],
+            children_completed: 0,
+            custom_id: None,
+            keep_completed_age: 0,
+            keep_completed_count: 0,
+            completed_at: 0,
         };
 
         assert!(job.is_expired(now)); // 1000 > 900
@@ -2122,6 +2690,18 @@ mod tests {
             progress_msg: None,
             tags: vec![],
             lifo: false,
+            remove_on_complete: false,
+            remove_on_fail: false,
+            last_heartbeat: 0,
+            stall_timeout: 0,
+            stall_count: 0,
+            parent_id: None,
+            children_ids: vec![],
+            children_completed: 0,
+            custom_id: None,
+            keep_completed_age: 0,
+            keep_completed_count: 0,
+            completed_at: 0,
         };
 
         assert!(job.is_timed_out(now)); // 1000 > 900
@@ -2162,6 +2742,18 @@ mod tests {
             progress_msg: None,
             tags: vec![],
             lifo: false,
+            remove_on_complete: false,
+            remove_on_fail: false,
+            last_heartbeat: 0,
+            stall_timeout: 0,
+            stall_count: 0,
+            parent_id: None,
+            children_ids: vec![],
+            children_completed: 0,
+            custom_id: None,
+            keep_completed_age: 0,
+            keep_completed_count: 0,
+            completed_at: 0,
         };
 
         assert!(job.should_go_to_dlq()); // attempts >= max_attempts
@@ -2202,6 +2794,18 @@ mod tests {
             progress_msg: None,
             tags: vec![],
             lifo: false,
+            remove_on_complete: false,
+            remove_on_fail: false,
+            last_heartbeat: 0,
+            stall_timeout: 0,
+            stall_count: 0,
+            parent_id: None,
+            children_ids: vec![],
+            children_completed: 0,
+            custom_id: None,
+            keep_completed_age: 0,
+            keep_completed_count: 0,
+            completed_at: 0,
         };
 
         // Exponential backoff: base * 2^attempts
@@ -2246,6 +2850,14 @@ mod tests {
                 None,
                 Some(vec!["urgent".to_string(), "backend".to_string()]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2271,6 +2883,14 @@ mod tests {
                 None,
                 Some(vec![]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2296,6 +2916,14 @@ mod tests {
                 None,
                 Some(vec!["tag1".to_string(), "tag2".to_string()]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2501,6 +3129,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2538,6 +3174,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2580,6 +3224,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2626,6 +3278,14 @@ mod tests {
                 None,
                 Some(vec!["priority".to_string(), "email".to_string()]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2656,6 +3316,14 @@ mod tests {
                 None,
                 Some(vec!["test-tag".to_string()]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2702,6 +3370,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -2739,6 +3415,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -2777,6 +3461,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2799,6 +3491,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await;
         assert!(job2.is_ok());
@@ -2825,6 +3525,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -2875,6 +3583,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2918,6 +3634,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2951,6 +3675,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -2989,6 +3721,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .unwrap();
@@ -3076,6 +3816,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -3132,6 +3880,14 @@ mod tests {
                     None,
                     None,
                     false,
+                    false, // remove_on_complete
+                    false, // remove_on_fail
+                    None,  // stall_timeout
+                    None,  // debounce_id
+                    None,  // debounce_ttl
+                    None,  // job_id
+                    None,  // keep_completed_age
+                    None,  // keep_completed_count
                 )
                 .await
                 .unwrap();
@@ -3218,6 +3974,14 @@ mod tests {
                 None,
                 Some(vec!["tag1".to_string(), "tag2".to_string()]),
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .expect("Failed to push job");
@@ -3270,6 +4034,14 @@ mod tests {
                 None,
                 None,
                 false,
+                false, // remove_on_complete
+                false, // remove_on_fail
+                None,  // stall_timeout
+                None,  // debounce_id
+                None,  // debounce_ttl
+                None,  // job_id
+                None,  // keep_completed_age
+                None,  // keep_completed_count
             )
             .await
             .expect("Push failed");

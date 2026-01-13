@@ -38,6 +38,7 @@
     "@grpc/proto-loader": "^0.8.0"
   },
   "dependencies": {
-    "bullmq": "^5.66.4"
+    "bullmq": "^5.66.4",
+    "ioredis": "^5.9.1"
   }
 }

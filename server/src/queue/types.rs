@@ -118,6 +118,8 @@ pub enum JobLocation {
     Dlq { shard_idx: usize },
     /// Job is waiting for dependencies
     WaitingDeps { shard_idx: usize },
+    /// Parent job waiting for children to complete (Flows)
+    WaitingChildren { shard_idx: usize },
     /// Job completed (may have result stored)
     Completed,
 }
@@ -137,6 +139,7 @@ impl JobLocation {
             JobLocation::Processing => JobState::Active,
             JobLocation::Dlq { .. } => JobState::Failed,
             JobLocation::WaitingDeps { .. } => JobState::WaitingChildren,
+            JobLocation::WaitingChildren { .. } => JobState::WaitingParent,
             JobLocation::Completed => JobState::Completed,
         }
     }
@@ -237,6 +240,7 @@ pub struct Shard {
     pub dlq: GxHashMap<Arc<str>, VecDeque<Job>>,
     pub unique_keys: GxHashMap<Arc<str>, GxHashSet<String>>,
     pub waiting_deps: GxHashMap<u64, Job>,
+    pub waiting_children: GxHashMap<u64, Job>, // Parent jobs waiting for children (Flows)
     pub queue_state: GxHashMap<Arc<str>, QueueState>,
     pub notify: Arc<Notify>, // Per-shard notify for targeted wakeups
 }
@@ -249,6 +253,7 @@ impl Shard {
             dlq: GxHashMap::with_capacity_and_hasher(16, Default::default()),
             unique_keys: GxHashMap::with_capacity_and_hasher(16, Default::default()),
             waiting_deps: GxHashMap::with_capacity_and_hasher(256, Default::default()),
+            waiting_children: GxHashMap::with_capacity_and_hasher(256, Default::default()),
             queue_state: GxHashMap::with_capacity_and_hasher(16, Default::default()),
             notify: Arc::new(Notify::new()),
         }

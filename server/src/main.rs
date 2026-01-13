@@ -15,7 +15,7 @@ use parking_lot::RwLock;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, UnixListener};
 
-use protocol::{Command, Response};
+use protocol::{Command, JobState, Response};
 use queue::{generate_node_id, QueueManager};
 
 const DEFAULT_TCP_PORT: u16 = 6789;
@@ -234,6 +234,14 @@ async fn process_command(
             depends_on,
             tags,
             lifo,
+            remove_on_complete,
+            remove_on_fail,
+            stall_timeout,
+            debounce_id,
+            debounce_ttl,
+            job_id,
+            keep_completed_age,
+            keep_completed_count,
         } => {
             match queue_manager
                 .push(
@@ -249,6 +257,14 @@ async fn process_command(
                     depends_on,
                     tags,
                     lifo,
+                    remove_on_complete,
+                    remove_on_fail,
+                    stall_timeout,
+                    debounce_id,
+                    debounce_ttl,
+                    job_id,
+                    keep_completed_age,
+                    keep_completed_count,
                 )
                 .await
             {
@@ -261,12 +277,38 @@ async fn process_command(
             Response::batch(ids)
         }
         Command::Pull { queue } => {
-            let job = queue_manager.pull(&queue).await;
-            Response::job(job)
+            // Use distributed pull in cluster mode for consistency
+            if queue_manager.is_distributed_pull() {
+                match queue_manager.pull_distributed(&queue, 30_000).await {
+                    Some(job) => Response::job(job),
+                    None => {
+                        // Fallback to blocking pull if distributed returns nothing
+                        let job = queue_manager.pull(&queue).await;
+                        Response::job(job)
+                    }
+                }
+            } else {
+                let job = queue_manager.pull(&queue).await;
+                Response::job(job)
+            }
         }
         Command::Pullb { queue, count } => {
-            let jobs = queue_manager.pull_batch(&queue, count).await;
-            Response::jobs(jobs)
+            // Use distributed pull in cluster mode for consistency
+            if queue_manager.is_distributed_pull() {
+                let jobs = queue_manager
+                    .pull_distributed_batch(&queue, count, 30_000)
+                    .await;
+                if jobs.is_empty() {
+                    // Fallback to blocking pull if distributed returns nothing
+                    let jobs = queue_manager.pull_batch(&queue, count).await;
+                    Response::jobs(jobs)
+                } else {
+                    Response::jobs(jobs)
+                }
+            } else {
+                let jobs = queue_manager.pull_batch(&queue, count).await;
+                Response::jobs(jobs)
+            }
         }
         Command::Ack { id, result } => match queue_manager.ack(id, result).await {
             Ok(()) => Response::ok(),
@@ -292,6 +334,30 @@ async fn process_command(
             let state = queue_manager.get_state(id);
             Response::state(id, state)
         }
+        Command::WaitJob { id, timeout } => match queue_manager.wait_for_job(id, timeout).await {
+            Ok(result) => Response::JobResult {
+                ok: true,
+                result,
+                error: None,
+            },
+            Err(e) => Response::JobResult {
+                ok: false,
+                result: None,
+                error: Some(e),
+            },
+        },
+        Command::GetJobByCustomId { job_id } => match queue_manager.get_job_by_custom_id(&job_id) {
+            Some((job, state)) => Response::JobWithState {
+                ok: true,
+                job: Some(job),
+                state,
+            },
+            None => Response::JobWithState {
+                ok: true,
+                job: None,
+                state: JobState::Unknown,
+            },
+        },
 
         // === New Commands ===
         Command::Cancel { id } => match queue_manager.cancel(id).await {
@@ -336,16 +402,18 @@ async fn process_command(
             Response::stats(queued, processing, delayed, dlq)
         }
 
-        // === Cron Jobs ===
+        // === Cron Jobs / Repeatable Jobs ===
         Command::Cron {
             name,
             queue,
             data,
             schedule,
+            repeat_every,
             priority,
+            limit,
         } => {
             match queue_manager
-                .add_cron(name, queue, data, schedule, priority)
+                .add_cron_with_repeat(name, queue, data, schedule, repeat_every, priority, limit)
                 .await
             {
                 Ok(()) => Response::ok(),
@@ -394,6 +462,138 @@ async fn process_command(
         Command::ListQueues => {
             let queues = queue_manager.list_queues().await;
             Response::queues(queues)
+        }
+
+        // === Job Logs ===
+        Command::Log { id, message, level } => {
+            match queue_manager.add_job_log(id, message, level) {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
+        }
+        Command::GetLogs { id } => {
+            let logs = queue_manager.get_job_logs(id);
+            Response::logs(id, logs)
+        }
+
+        // === Stalled Jobs ===
+        Command::Heartbeat { id } => match queue_manager.heartbeat(id) {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
+
+        // === Flows (Parent-Child) ===
+        Command::Flow {
+            queue,
+            data,
+            children,
+            priority,
+        } => {
+            match queue_manager
+                .push_flow(queue, data, children, priority)
+                .await
+            {
+                Ok((parent_id, children_ids)) => Response::flow(parent_id, children_ids),
+                Err(e) => Response::error(e),
+            }
+        }
+        Command::GetChildren { parent_id } => match queue_manager.get_children(parent_id) {
+            Some((children, completed, total)) => {
+                Response::children(parent_id, children, completed, total)
+            }
+            None => Response::error(format!("Parent job {} not found", parent_id)),
+        },
+
+        // === BullMQ Advanced Commands ===
+        Command::GetJobs {
+            queue,
+            state,
+            limit,
+            offset,
+        } => {
+            let state_filter = state.and_then(|s| match s.to_lowercase().as_str() {
+                "waiting" => Some(protocol::JobState::Waiting),
+                "delayed" => Some(protocol::JobState::Delayed),
+                "active" => Some(protocol::JobState::Active),
+                "completed" => Some(protocol::JobState::Completed),
+                "failed" => Some(protocol::JobState::Failed),
+                "waiting-children" => Some(protocol::JobState::WaitingChildren),
+                "waiting-parent" => Some(protocol::JobState::WaitingParent),
+                "stalled" => Some(protocol::JobState::Stalled),
+                _ => None,
+            });
+            let (jobs, total) = queue_manager.get_jobs(
+                queue.as_deref(),
+                state_filter,
+                limit.unwrap_or(100),
+                offset.unwrap_or(0),
+            );
+            Response::jobs_with_total(jobs, total)
+        }
+        Command::Clean {
+            queue,
+            grace,
+            state,
+            limit,
+        } => {
+            let state_enum = match state.to_lowercase().as_str() {
+                "waiting" => protocol::JobState::Waiting,
+                "delayed" => protocol::JobState::Delayed,
+                "completed" => protocol::JobState::Completed,
+                "failed" => protocol::JobState::Failed,
+                _ => {
+                    return Response::error(
+                        "Invalid state. Use: waiting, delayed, completed, failed",
+                    )
+                }
+            };
+            let count = queue_manager.clean(&queue, grace, state_enum, limit).await;
+            Response::count(count)
+        }
+        Command::Drain { queue } => {
+            let count = queue_manager.drain(&queue).await;
+            Response::count(count)
+        }
+        Command::Obliterate { queue } => {
+            let count = queue_manager.obliterate(&queue).await;
+            Response::count(count)
+        }
+        Command::ChangePriority { id, priority } => {
+            match queue_manager.change_priority(id, priority).await {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
+        }
+        Command::MoveToDelayed { id, delay } => {
+            match queue_manager.move_to_delayed(id, delay).await {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
+        }
+        Command::Promote { id } => match queue_manager.promote(id).await {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
+        Command::UpdateJob { id, data } => match queue_manager.update_job_data(id, data).await {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
+        Command::Discard { id } => match queue_manager.discard(id).await {
+            Ok(()) => Response::ok(),
+            Err(e) => Response::error(e),
+        },
+        Command::IsPaused { queue } => {
+            let paused = queue_manager.is_paused(&queue);
+            Response::paused(paused)
+        }
+        Command::Count { queue } => {
+            let count = queue_manager.count(&queue);
+            Response::count(count)
+        }
+        Command::GetJobCounts { queue } => {
+            let (waiting, active, delayed, completed, failed) =
+                queue_manager.get_job_counts(&queue);
+            Response::job_counts(waiting, active, delayed, completed, failed)
         }
 
         // Already handled above
