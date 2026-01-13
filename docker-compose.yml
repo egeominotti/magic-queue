@@ -29,6 +29,10 @@ services:
       - GRPC=1
       - GRPC_PORT=6791
       - RUST_LOG=info
+      # Snapshot mode (Redis-style persistence) - set SNAPSHOT_MODE=1 to enable
+      - SNAPSHOT_MODE=${SNAPSHOT_MODE:-0}
+      - SNAPSHOT_INTERVAL=${SNAPSHOT_INTERVAL:-60}
+      - SNAPSHOT_MIN_CHANGES=${SNAPSHOT_MIN_CHANGES:-100}
     ports:
       - "6789:6789"   # TCP
       - "6790:6790"   # HTTP + Dashboard

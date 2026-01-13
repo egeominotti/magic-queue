@@ -350,6 +350,43 @@ impl Worker {
     }
 }
 
+// ============== Snapshot Config ==============
+// Redis-style periodic snapshot persistence
+
+pub struct SnapshotConfig {
+    /// Interval between snapshots in seconds (default: 60)
+    pub interval_secs: u64,
+    /// Minimum changes before triggering snapshot (default: 100)
+    pub min_changes: u64,
+}
+
+impl SnapshotConfig {
+    pub fn from_env() -> Option<Self> {
+        let enabled = std::env::var("SNAPSHOT_MODE")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        if !enabled {
+            return None;
+        }
+
+        let interval_secs = std::env::var("SNAPSHOT_INTERVAL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60);
+
+        let min_changes = std::env::var("SNAPSHOT_MIN_CHANGES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100);
+
+        Some(Self {
+            interval_secs,
+            min_changes,
+        })
+    }
+}
+
 // ============== Webhook ==============
 
 pub struct Webhook {

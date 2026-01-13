@@ -9,7 +9,7 @@ use super::cluster::ClusterManager;
 use super::postgres::PostgresStorage;
 use super::types::{
     init_coarse_time, intern, now_ms, GlobalMetrics, GxHashMap, GxHashSet, JobLocation, Shard,
-    Subscriber, Webhook, Worker,
+    SnapshotConfig, Subscriber, Webhook, Worker,
 };
 use crate::protocol::{
     set_id_counter, CronJob, Job, JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint,
@@ -42,6 +42,10 @@ pub struct QueueManager {
     pub(crate) metrics_history: RwLock<Vec<MetricsHistoryPoint>>,
     // Cluster manager for HA
     pub(crate) cluster: Option<Arc<ClusterManager>>,
+    // Snapshot mode (Redis-style persistence)
+    pub(crate) snapshot_config: Option<SnapshotConfig>,
+    pub(crate) snapshot_changes: std::sync::atomic::AtomicU64,
+    pub(crate) last_snapshot: std::sync::atomic::AtomicU64,
 }
 
 impl QueueManager {
@@ -147,6 +151,8 @@ impl QueueManager {
         storage: Option<Arc<PostgresStorage>>,
         cluster: Option<Arc<ClusterManager>>,
     ) -> Arc<Self> {
+        use std::sync::atomic::AtomicU64;
+
         // Initialize coarse timestamp
         init_coarse_time();
 
@@ -154,6 +160,14 @@ impl QueueManager {
         let (event_tx, _) = broadcast::channel(1024);
         let has_storage = storage.is_some();
         let cluster_enabled = cluster.as_ref().map(|c| c.is_enabled()).unwrap_or(false);
+
+        // Check for snapshot mode
+        let snapshot_config = if has_storage {
+            SnapshotConfig::from_env()
+        } else {
+            None
+        };
+        let snapshot_enabled = snapshot_config.is_some();
 
         let manager = Arc::new(Self {
             shards,
@@ -177,6 +191,9 @@ impl QueueManager {
             event_tx,
             metrics_history: RwLock::new(Vec::with_capacity(60)),
             cluster,
+            snapshot_config,
+            snapshot_changes: AtomicU64::new(0),
+            last_snapshot: AtomicU64::new(now_ms()),
         });
 
         let mgr = Arc::clone(&manager);
@@ -185,7 +202,11 @@ impl QueueManager {
         });
 
         if has_storage {
-            println!("PostgreSQL persistence enabled");
+            if snapshot_enabled {
+                println!("PostgreSQL persistence enabled (SNAPSHOT MODE)");
+            } else {
+                println!("PostgreSQL persistence enabled (SYNC MODE)");
+            }
         }
         if cluster_enabled {
             println!("Cluster mode enabled");
@@ -231,6 +252,26 @@ impl QueueManager {
     #[inline]
     pub fn is_postgres_connected(&self) -> bool {
         self.storage.is_some()
+    }
+
+    /// Check if snapshot mode is enabled
+    #[inline]
+    pub fn is_snapshot_mode(&self) -> bool {
+        self.snapshot_config.is_some()
+    }
+
+    /// Increment snapshot change counter
+    #[inline]
+    pub(crate) fn record_change(&self) {
+        self.snapshot_changes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Get current change count
+    #[inline]
+    pub fn snapshot_change_count(&self) -> u64 {
+        self.snapshot_changes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get next job ID from PostgreSQL sequence (cluster-wide unique)
@@ -407,8 +448,15 @@ impl QueueManager {
     // ============== Persistence Methods (PostgreSQL) ==============
 
     /// Persist a pushed job to PostgreSQL and notify cluster.
+    /// In snapshot mode, only records the change (actual persistence happens in background snapshot).
     #[inline]
     pub(crate) fn persist_push(&self, job: &Job, state: &str) {
+        // In snapshot mode, just record the change
+        if self.is_snapshot_mode() {
+            self.record_change();
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let job = job.clone();
@@ -432,11 +480,22 @@ impl QueueManager {
     }
 
     /// Persist a batch of jobs to PostgreSQL and notify cluster.
+    /// In snapshot mode, only records the change.
     #[inline]
     pub(crate) fn persist_push_batch(&self, jobs: &[Job], state: &str) {
         if jobs.is_empty() {
             return;
         }
+
+        // In snapshot mode, just record the changes
+        if self.is_snapshot_mode() {
+            self.snapshot_changes.fetch_add(
+                jobs.len() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let jobs = jobs.to_vec();
@@ -463,8 +522,18 @@ impl QueueManager {
     }
 
     /// Persist job acknowledgment to PostgreSQL.
+    /// In snapshot mode, only records the change.
     #[inline]
     pub(crate) fn persist_ack(&self, job_id: u64, result: Option<Value>) {
+        if self.is_snapshot_mode() {
+            self.record_change();
+            // Still store results in memory (they'll be available until cleanup)
+            if let Some(res) = result {
+                self.job_results.write().insert(job_id, res);
+            }
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {
@@ -476,11 +545,21 @@ impl QueueManager {
     }
 
     /// Persist batch acknowledgments to PostgreSQL.
+    /// In snapshot mode, only records the change.
     #[inline]
     pub(crate) fn persist_ack_batch(&self, ids: &[u64]) {
         if ids.is_empty() {
             return;
         }
+
+        if self.is_snapshot_mode() {
+            self.snapshot_changes.fetch_add(
+                ids.len() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let ids = ids.to_vec();
@@ -493,12 +572,18 @@ impl QueueManager {
     }
 
     /// Persist job failure (retry) to PostgreSQL.
+    /// In snapshot mode, only records the change.
     #[inline]
-    pub(crate) fn persist_fail(&self, job_id: u64, new_run_at: u64, attempts: u32) {
+    pub(crate) fn persist_fail(&self, job_id: u64, _new_run_at: u64, _attempts: u32) {
+        if self.is_snapshot_mode() {
+            self.record_change();
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {
-                if let Err(e) = storage.fail_job(job_id, new_run_at, attempts).await {
+                if let Err(e) = storage.fail_job(job_id, _new_run_at, _attempts).await {
                     eprintln!("Failed to persist fail {}: {}", job_id, e);
                 }
             });
@@ -506,8 +591,14 @@ impl QueueManager {
     }
 
     /// Persist job moved to DLQ.
+    /// In snapshot mode, only records the change.
     #[inline]
     pub(crate) fn persist_dlq(&self, job: &Job, error: Option<&str>) {
+        if self.is_snapshot_mode() {
+            self.record_change();
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             let job = job.clone();
@@ -521,8 +612,14 @@ impl QueueManager {
     }
 
     /// Persist job cancellation.
+    /// In snapshot mode, only records the change.
     #[inline]
     pub(crate) fn persist_cancel(&self, job_id: u64) {
+        if self.is_snapshot_mode() {
+            self.record_change();
+            return;
+        }
+
         if let Some(ref storage) = self.storage {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {

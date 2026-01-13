@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -7,7 +8,7 @@ use tokio::time::{interval, Duration};
 
 use super::manager::QueueManager;
 use super::postgres::CLUSTER_SYNC_CHANNEL;
-use super::types::{cleanup_interned_strings, intern, JobLocation};
+use super::types::{cleanup_interned_strings, intern, now_ms, JobLocation};
 
 impl QueueManager {
     pub async fn background_tasks(self: Arc<Self>) {
@@ -17,6 +18,7 @@ impl QueueManager {
         let mut timeout_ticker = interval(Duration::from_millis(500));
         let mut metrics_ticker = interval(Duration::from_secs(5)); // Collect metrics every 5s
         let mut cluster_ticker = interval(Duration::from_secs(5)); // Cluster heartbeat every 5s
+        let mut snapshot_ticker = interval(Duration::from_secs(1)); // Check snapshot every 1s
 
         loop {
             tokio::select! {
@@ -55,8 +57,107 @@ impl QueueManager {
                     // Cluster heartbeat and leader election
                     self.cluster_heartbeat().await;
                 }
+                _ = snapshot_ticker.tick() => {
+                    // Snapshot persistence (Redis-style)
+                    self.maybe_snapshot().await;
+                }
             }
         }
+    }
+
+    /// Check if snapshot should be taken and execute it
+    async fn maybe_snapshot(&self) {
+        // Only run if snapshot mode is enabled
+        let config = match &self.snapshot_config {
+            Some(c) => c,
+            None => return,
+        };
+
+        let now = now_ms();
+        let last = self.last_snapshot.load(Ordering::Relaxed);
+        let changes = self.snapshot_changes.load(Ordering::Relaxed);
+        let interval_ms = config.interval_secs * 1000;
+
+        // Check if we should snapshot:
+        // - Enough time has passed AND minimum changes reached
+        if now - last >= interval_ms && changes >= config.min_changes {
+            self.execute_snapshot().await;
+        }
+    }
+
+    /// Execute a full snapshot of all in-memory state to PostgreSQL
+    async fn execute_snapshot(&self) {
+        let storage = match &self.storage {
+            Some(s) => Arc::clone(s),
+            None => return,
+        };
+
+        let start = now_ms();
+        let mut jobs_to_persist: Vec<(crate::protocol::Job, String)> = Vec::new();
+        let mut dlq_to_persist: Vec<(crate::protocol::Job, Option<String>)> = Vec::new();
+
+        // Collect all jobs from shards
+        for shard in &self.shards {
+            let shard = shard.read();
+
+            // Jobs in queues (waiting/delayed)
+            for heap in shard.queues.values() {
+                for job in heap.iter() {
+                    let state = if job.run_at > start {
+                        "delayed"
+                    } else {
+                        "waiting"
+                    };
+                    jobs_to_persist.push((job.clone(), state.to_string()));
+                }
+            }
+
+            // Jobs waiting for dependencies
+            for job in shard.waiting_deps.values() {
+                jobs_to_persist.push((job.clone(), "waiting_children".to_string()));
+            }
+
+            // DLQ jobs
+            for dlq in shard.dlq.values() {
+                for job in dlq.iter() {
+                    dlq_to_persist.push((job.clone(), None));
+                }
+            }
+        }
+
+        // Jobs in processing (active)
+        {
+            let processing = self.processing.read();
+            for job in processing.values() {
+                jobs_to_persist.push((job.clone(), "active".to_string()));
+            }
+        }
+
+        let job_count = jobs_to_persist.len();
+        let dlq_count = dlq_to_persist.len();
+
+        // Snapshot jobs
+        if let Err(e) = storage.snapshot_jobs(&jobs_to_persist).await {
+            eprintln!("Snapshot failed: {}", e);
+            return;
+        }
+
+        // Snapshot DLQ if there are any
+        if !dlq_to_persist.is_empty() {
+            if let Err(e) = storage.snapshot_dlq(&dlq_to_persist).await {
+                eprintln!("DLQ snapshot failed: {}", e);
+            }
+        }
+
+        let elapsed = now_ms() - start;
+        println!(
+            "Snapshot completed: {} jobs, {} DLQ in {}ms",
+            job_count, dlq_count, elapsed
+        );
+
+        // Reset counters
+        self.last_snapshot.store(now_ms(), Ordering::Relaxed);
+        self.snapshot_changes.store(0, Ordering::Relaxed);
     }
 
     /// Start the cluster sync listener (runs in separate task)
