@@ -22,7 +22,7 @@ use crate::dashboard;
 use crate::protocol::{
     CronJob, Job, JobBrowserItem, JobState, MetricsData, MetricsHistoryPoint, QueueInfo,
 };
-use crate::queue::{NodeInfo, QueueManager};
+use crate::queue::{ClusterMetrics, LoadBalanceStrategy, NodeInfo, NodeMetrics, QueueManager};
 
 type AppState = Arc<QueueManager>;
 
@@ -190,6 +190,18 @@ pub fn create_router(state: AppState) -> Router {
         // Health & Cluster
         .route("/health", get(health_check))
         .route("/cluster/nodes", get(cluster_nodes))
+        .route("/cluster/nodes/metrics", get(cluster_nodes_metrics))
+        .route("/cluster/metrics", get(cluster_metrics))
+        .route("/cluster/best-node", get(cluster_best_node))
+        .route("/cluster/sticky-node/{key}", get(cluster_sticky_node))
+        .route(
+            "/cluster/load-balance-strategy",
+            get(get_load_balance_strategy),
+        )
+        .route(
+            "/cluster/load-balance-strategy",
+            post(set_load_balance_strategy),
+        )
         .with_state(state);
 
     Router::new()
@@ -923,5 +935,90 @@ async fn cluster_nodes(State(qm): State<AppState>) -> Json<ApiResponse<Vec<NodeI
                 })
                 .unwrap_or(0),
         }])
+    }
+}
+
+async fn cluster_nodes_metrics(State(qm): State<AppState>) -> Json<ApiResponse<Vec<NodeMetrics>>> {
+    if let Some(cluster) = qm.cluster() {
+        match cluster.list_nodes_with_metrics().await {
+            Ok(nodes) => ApiResponse::success(nodes),
+            Err(e) => ApiResponse::error(format!("Failed to list nodes: {}", e)),
+        }
+    } else {
+        // Return local metrics in single-node mode
+        ApiResponse::success(vec![])
+    }
+}
+
+async fn cluster_metrics(State(qm): State<AppState>) -> Json<ApiResponse<ClusterMetrics>> {
+    if let Some(cluster) = qm.cluster() {
+        match cluster.cluster_metrics().await {
+            Ok(metrics) => ApiResponse::success(metrics),
+            Err(e) => ApiResponse::error(format!("Failed to get cluster metrics: {}", e)),
+        }
+    } else {
+        // Single node mode - return basic metrics
+        ApiResponse::success(ClusterMetrics::default())
+    }
+}
+
+async fn cluster_best_node(State(qm): State<AppState>) -> Json<ApiResponse<Option<NodeMetrics>>> {
+    if let Some(cluster) = qm.cluster() {
+        match cluster.select_best_node().await {
+            Ok(node) => ApiResponse::success(node),
+            Err(e) => ApiResponse::error(format!("Failed to select best node: {}", e)),
+        }
+    } else {
+        ApiResponse::success(None)
+    }
+}
+
+async fn cluster_sticky_node(
+    State(qm): State<AppState>,
+    Path(key): Path<String>,
+) -> Json<ApiResponse<Option<NodeMetrics>>> {
+    if let Some(cluster) = qm.cluster() {
+        match cluster.get_sticky_node(&key).await {
+            Ok(node) => ApiResponse::success(node),
+            Err(e) => ApiResponse::error(format!("Failed to get sticky node: {}", e)),
+        }
+    } else {
+        ApiResponse::success(None)
+    }
+}
+
+#[derive(Serialize)]
+struct LoadBalanceStrategyResponse {
+    strategy: LoadBalanceStrategy,
+}
+
+async fn get_load_balance_strategy(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<LoadBalanceStrategyResponse>> {
+    if let Some(cluster) = qm.cluster() {
+        ApiResponse::success(LoadBalanceStrategyResponse {
+            strategy: cluster.load_balance_strategy(),
+        })
+    } else {
+        ApiResponse::success(LoadBalanceStrategyResponse {
+            strategy: LoadBalanceStrategy::LeastConnections,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct SetLoadBalanceStrategyRequest {
+    strategy: LoadBalanceStrategy,
+}
+
+async fn set_load_balance_strategy(
+    State(qm): State<AppState>,
+    Json(req): Json<SetLoadBalanceStrategyRequest>,
+) -> Json<ApiResponse<()>> {
+    if let Some(cluster) = qm.cluster() {
+        cluster.set_load_balance_strategy(req.strategy);
+        ApiResponse::success(())
+    } else {
+        ApiResponse::error("Cluster mode not enabled")
     }
 }
