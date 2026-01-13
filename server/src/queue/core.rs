@@ -14,6 +14,9 @@ const MAX_JOB_DATA_SIZE: usize = 1_048_576;
 /// Maximum queue name length
 const MAX_QUEUE_NAME_LENGTH: usize = 256;
 
+/// Maximum batch size to prevent DoS attacks
+const MAX_BATCH_SIZE: usize = 1000;
+
 /// Validate queue name - must be alphanumeric, underscores, hyphens, or dots
 #[inline]
 fn validate_queue_name(name: &str) -> Result<(), String> {
@@ -192,6 +195,11 @@ impl QueueManager {
     pub async fn push_batch(&self, queue: String, jobs: Vec<JobInput>) -> Vec<u64> {
         // Validate queue name
         if validate_queue_name(&queue).is_err() {
+            return Vec::new();
+        }
+
+        // Validate batch size to prevent DoS
+        if jobs.len() > MAX_BATCH_SIZE {
             return Vec::new();
         }
 

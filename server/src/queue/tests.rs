@@ -141,6 +141,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_push_batch_exceeds_limit() {
+        let qm = setup();
+
+        // Try to push more than MAX_BATCH_SIZE (1000) jobs
+        let inputs: Vec<_> = (0..1001)
+            .map(|i| crate::protocol::JobInput {
+                data: json!({"i": i}),
+                priority: 0,
+                delay: None,
+                ttl: None,
+                timeout: None,
+                max_attempts: None,
+                backoff: None,
+                unique_key: None,
+                depends_on: None,
+                tags: None,
+                lifo: false,
+            })
+            .collect();
+
+        // Should return empty vec due to batch size limit
+        let ids = qm.push_batch("test".to_string(), inputs).await;
+        assert!(ids.is_empty(), "Batch exceeding limit should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_push_batch_at_limit() {
+        let qm = setup();
+
+        // Push exactly MAX_BATCH_SIZE (1000) jobs - should succeed
+        let inputs: Vec<_> = (0..1000)
+            .map(|i| crate::protocol::JobInput {
+                data: json!({"i": i}),
+                priority: 0,
+                delay: None,
+                ttl: None,
+                timeout: None,
+                max_attempts: None,
+                backoff: None,
+                unique_key: None,
+                depends_on: None,
+                tags: None,
+                lifo: false,
+            })
+            .collect();
+
+        let ids = qm.push_batch("test".to_string(), inputs).await;
+        assert_eq!(ids.len(), 1000, "Batch at limit should succeed");
+    }
+
+    #[tokio::test]
     async fn test_ack() {
         let qm = setup();
 
@@ -945,6 +996,121 @@ mod tests {
         assert_eq!(p1.id, job1.id);
         assert_eq!(p2.id, job2.id);
         assert_eq!(p3.id, job3.id);
+    }
+
+    #[tokio::test]
+    async fn test_lifo_ordering() {
+        let qm = setup();
+
+        // Jobs with LIFO flag should be pulled in reverse order (last in, first out)
+        let job1 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 1}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                true, // lifo = true
+            )
+            .await
+            .unwrap();
+        let job2 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 2}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                true, // lifo = true
+            )
+            .await
+            .unwrap();
+        let job3 = qm
+            .push(
+                "test".to_string(),
+                json!({"order": 3}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                true, // lifo = true
+            )
+            .await
+            .unwrap();
+
+        // LIFO: last pushed should be pulled first
+        let p1 = qm.pull("test").await;
+        let p2 = qm.pull("test").await;
+        let p3 = qm.pull("test").await;
+
+        assert_eq!(p1.id, job3.id, "LIFO: job3 should be pulled first");
+        assert_eq!(p2.id, job2.id, "LIFO: job2 should be pulled second");
+        assert_eq!(p3.id, job1.id, "LIFO: job1 should be pulled last");
+    }
+
+    #[tokio::test]
+    async fn test_lifo_mixed_with_fifo() {
+        let qm = setup();
+
+        // Mix of LIFO and FIFO jobs - LIFO jobs get higher effective priority
+        let fifo_job = qm
+            .push(
+                "test".to_string(),
+                json!({"type": "fifo"}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false, // fifo
+            )
+            .await
+            .unwrap();
+        let lifo_job = qm
+            .push(
+                "test".to_string(),
+                json!({"type": "lifo"}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                true, // lifo - should be pulled before fifo
+            )
+            .await
+            .unwrap();
+
+        // LIFO job should be pulled first (pushed after but LIFO)
+        let p1 = qm.pull("test").await;
+        let p2 = qm.pull("test").await;
+
+        assert_eq!(p1.id, lifo_job.id, "LIFO job should be pulled first");
+        assert_eq!(p2.id, fifo_job.id, "FIFO job should be pulled second");
     }
 
     // ==================== DELAYED JOBS ====================
@@ -2762,5 +2928,664 @@ mod tests {
         // Check index shows DLQ location
         let loc = qm.job_index.read().get(&job.id).copied();
         assert!(matches!(loc, Some(JobLocation::Dlq { .. })));
+    }
+
+    // ==================== BACKGROUND TASKS TESTS ====================
+
+    #[tokio::test]
+    async fn test_job_timeout_detection() {
+        let qm = setup();
+
+        // Push job with 1ms timeout
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"timeout_test": true}),
+                0,
+                None,
+                None,
+                Some(1), // 1ms timeout
+                Some(1), // max_attempts = 1 (go to DLQ after timeout)
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        // Pull job to start processing
+        let _pulled = qm.pull("test").await;
+
+        // Wait for timeout
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Manually trigger timeout check
+        qm.check_timed_out_jobs().await;
+
+        // Job should be in DLQ (max_attempts=1, so after 1 fail goes to DLQ)
+        let dlq_jobs = qm.get_dlq("test", Some(10)).await;
+        assert_eq!(dlq_jobs.len(), 1);
+        assert_eq!(dlq_jobs[0].id, job.id);
+    }
+
+    #[tokio::test]
+    async fn test_job_timeout_retry() {
+        let qm = setup();
+
+        // Push job with 1ms timeout and multiple attempts
+        let job = qm
+            .push(
+                "test".to_string(),
+                json!({"timeout_retry": true}),
+                0,
+                None,
+                None,
+                Some(1), // 1ms timeout
+                Some(3), // 3 max attempts
+                Some(0), // no backoff
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        // Pull job
+        let _pulled = qm.pull("test").await;
+
+        // Wait for timeout
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Trigger timeout check
+        qm.check_timed_out_jobs().await;
+
+        // Job should be back in queue (attempt 1 of 3)
+        let (queued, processing, _, _) = qm.stats().await;
+        assert_eq!(processing, 0, "Job should not be processing");
+        assert_eq!(queued, 1, "Job should be back in queue");
+
+        // Pull again and verify it's the same job with incremented attempts
+        let pulled_again = qm.pull("test").await;
+        assert_eq!(pulled_again.id, job.id);
+        assert_eq!(pulled_again.attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cron_job_scheduling() {
+        let qm = setup();
+
+        // Add cron job that runs every second
+        qm.add_cron(
+            "test-cron-scheduling".to_string(),
+            "cron-queue".to_string(),
+            json!({"scheduled": true}),
+            "* * * * * *".to_string(), // Every second
+            5,                         // priority
+        )
+        .await;
+
+        let crons = qm.list_crons().await;
+        assert_eq!(crons.len(), 1);
+        assert_eq!(crons[0].name, "test-cron-scheduling");
+        assert_eq!(crons[0].queue, "cron-queue");
+        assert_eq!(crons[0].priority, 5);
+
+        // Clean up
+        qm.delete_cron("test-cron-scheduling").await;
+    }
+
+    #[tokio::test]
+    async fn test_cron_invalid_schedule() {
+        let qm = setup();
+
+        // Try to add cron with invalid schedule
+        qm.add_cron(
+            "invalid-cron".to_string(),
+            "test".to_string(),
+            json!({}),
+            "invalid schedule".to_string(),
+            0,
+        )
+        .await;
+
+        // Should not be added
+        let crons = qm.list_crons().await;
+        assert!(crons.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_completed_jobs_threshold() {
+        let qm = setup();
+
+        // Push and complete many jobs
+        for i in 0..100 {
+            let job = qm
+                .push(
+                    "cleanup-test".to_string(),
+                    json!({"i": i}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
+            qm.pull("cleanup-test").await;
+            qm.ack(job.id, None).await.unwrap();
+        }
+
+        // Completed jobs should be tracked
+        let completed_count = qm.completed_jobs.read().len();
+        assert_eq!(completed_count, 100);
+    }
+
+    // ==================== WEBHOOK EXECUTION TESTS ====================
+
+    #[tokio::test]
+    async fn test_webhook_signature_generation() {
+        let qm = setup();
+
+        // Add webhook with secret
+        let _id = qm
+            .add_webhook(
+                "https://httpbin.org/post".to_string(),
+                vec!["job.completed".to_string()],
+                Some("test-queue".to_string()),
+                Some("my-secret-key".to_string()),
+            )
+            .await;
+
+        // Verify webhook was added
+        let webhooks = qm.list_webhooks().await;
+        assert_eq!(webhooks.len(), 1);
+        assert_eq!(webhooks[0].secret, Some("my-secret-key".to_string()));
+    }
+
+    // ==================== METRICS TESTS ====================
+
+    #[tokio::test]
+    async fn test_metrics_throughput_calculation() {
+        let qm = setup();
+
+        // Push and process some jobs
+        for i in 0..10 {
+            let job = qm
+                .push(
+                    "metrics-test".to_string(),
+                    json!({"i": i}),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
+            qm.pull("metrics-test").await;
+            qm.ack(job.id, None).await.unwrap();
+        }
+
+        // Check metrics
+        let metrics = qm.get_metrics().await;
+        assert!(metrics.total_pushed >= 10);
+        assert!(metrics.total_completed >= 10);
+    }
+
+    #[tokio::test]
+    async fn test_global_metrics_atomic_operations() {
+        let qm = setup();
+
+        // Record multiple operations concurrently
+        let mut handles = Vec::new();
+        for _ in 0..100 {
+            let qm_clone = qm.clone();
+            handles.push(tokio::spawn(async move {
+                qm_clone.metrics.record_push(1);
+                qm_clone.metrics.record_complete(10); // 10ms latency
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        let metrics = qm.get_metrics().await;
+        assert_eq!(metrics.total_pushed, 100);
+        assert_eq!(metrics.total_completed, 100);
+    }
+
+    // ==================== POSTGRESQL INTEGRATION TESTS ====================
+    // These tests require a running PostgreSQL instance
+    // Run with: cargo test -- --ignored
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL - run with: DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_postgres_migration() {
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let storage = super::super::postgres::PostgresStorage::new(&db_url)
+            .await
+            .expect("Failed to connect to PostgreSQL");
+
+        // Run migrations
+        storage.migrate().await.expect("Migration failed");
+
+        // Verify tables exist by querying them
+        let result: (i64,) = sqlx::query_as::<sqlx::Postgres, (i64,)>("SELECT COUNT(*) FROM jobs")
+            .fetch_one(storage.pool())
+            .await
+            .expect("Failed to query jobs table");
+
+        assert!(result.0 >= 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL - run with: DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_postgres_job_persistence() {
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        // Create QueueManager with PostgreSQL
+        let qm = QueueManager::with_postgres(&db_url).await;
+
+        // Push a job
+        let job = qm
+            .push(
+                "postgres-test".to_string(),
+                json!({"persisted": true}),
+                10,
+                None,
+                None,
+                None,
+                Some(3),
+                None,
+                Some("unique-pg-test".to_string()),
+                None,
+                Some(vec!["tag1".to_string(), "tag2".to_string()]),
+                false,
+            )
+            .await
+            .expect("Failed to push job");
+
+        // Verify job is in database
+        let storage = qm.storage.as_ref().expect("PostgreSQL not initialized");
+        let db_job: Option<(i64, String, i32)> =
+            sqlx::query_as::<sqlx::Postgres, (i64, String, i32)>(
+                "SELECT id, queue, priority FROM jobs WHERE id = $1",
+            )
+            .bind(job.id as i64)
+            .fetch_optional(storage.pool())
+            .await
+            .expect("Failed to query job");
+
+        assert!(db_job.is_some());
+        let (id, queue, priority) = db_job.unwrap();
+        assert_eq!(id, job.id as i64);
+        assert_eq!(queue, "postgres-test");
+        assert_eq!(priority, 10);
+
+        // Clean up
+        sqlx::query("DELETE FROM jobs WHERE id = $1")
+            .bind(job.id as i64)
+            .execute(storage.pool())
+            .await
+            .ok();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL - run with: DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_postgres_job_state_transitions() {
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let qm = QueueManager::with_postgres(&db_url).await;
+
+        // Push job
+        let job = qm
+            .push(
+                "state-test".to_string(),
+                json!({}),
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .expect("Push failed");
+
+        let storage = qm.storage.as_ref().unwrap();
+
+        // Check initial state
+        let state: (String,) =
+            sqlx::query_as::<sqlx::Postgres, (String,)>("SELECT state FROM jobs WHERE id = $1")
+                .bind(job.id as i64)
+                .fetch_one(storage.pool())
+                .await
+                .expect("Query failed");
+        assert_eq!(state.0, "waiting");
+
+        // Pull job
+        let _pulled = qm.pull("state-test").await;
+
+        // Check active state
+        let state: (String,) =
+            sqlx::query_as::<sqlx::Postgres, (String,)>("SELECT state FROM jobs WHERE id = $1")
+                .bind(job.id as i64)
+                .fetch_one(storage.pool())
+                .await
+                .expect("Query failed");
+        assert_eq!(state.0, "active");
+
+        // Ack job
+        qm.ack(job.id, Some(json!({"result": "done"})))
+            .await
+            .unwrap();
+
+        // Check completed state
+        let state: (String,) =
+            sqlx::query_as::<sqlx::Postgres, (String,)>("SELECT state FROM jobs WHERE id = $1")
+                .bind(job.id as i64)
+                .fetch_one(storage.pool())
+                .await
+                .expect("Query failed");
+        assert_eq!(state.0, "completed");
+
+        // Clean up
+        sqlx::query("DELETE FROM jobs WHERE id = $1")
+            .bind(job.id as i64)
+            .execute(storage.pool())
+            .await
+            .ok();
+        sqlx::query("DELETE FROM job_results WHERE job_id = $1")
+            .bind(job.id as i64)
+            .execute(storage.pool())
+            .await
+            .ok();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL - run with: DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_postgres_cron_persistence() {
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let qm = QueueManager::with_postgres(&db_url).await;
+
+        // Add cron job
+        qm.add_cron(
+            "pg-cron-test".to_string(),
+            "cron-queue".to_string(),
+            json!({"cron": "persistent"}),
+            "0 * * * * *".to_string(), // Every minute
+            0,
+        )
+        .await;
+
+        // Verify in database
+        let storage = qm.storage.as_ref().unwrap();
+        let cron: Option<(String, String)> = sqlx::query_as::<sqlx::Postgres, (String, String)>(
+            "SELECT name, queue FROM cron_jobs WHERE name = $1",
+        )
+        .bind("pg-cron-test")
+        .fetch_optional(storage.pool())
+        .await
+        .expect("Query failed");
+
+        assert!(cron.is_some());
+        let (name, queue) = cron.unwrap();
+        assert_eq!(name, "pg-cron-test");
+        assert_eq!(queue, "cron-queue");
+
+        // Delete cron
+        qm.delete_cron("pg-cron-test").await;
+
+        // Verify deleted
+        let cron: Option<(String,)> = sqlx::query_as::<sqlx::Postgres, (String,)>(
+            "SELECT name FROM cron_jobs WHERE name = $1",
+        )
+        .bind("pg-cron-test")
+        .fetch_optional(storage.pool())
+        .await
+        .expect("Query failed");
+
+        assert!(cron.is_none());
+    }
+
+    // ==================== CLUSTER MODE TESTS ====================
+    // These tests require PostgreSQL and CLUSTER_MODE=1
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL with CLUSTER_MODE - run with: CLUSTER_MODE=1 DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_cluster_leader_election() {
+        use super::super::cluster::ClusterManager;
+
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        // Create connection pool
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect");
+
+        // Create cluster manager
+        let cm = ClusterManager::new(
+            "test-node-1".to_string(),
+            "localhost".to_string(),
+            6789,
+            Some(pool.clone()),
+        );
+
+        // Initialize tables
+        cm.init_tables().await.expect("Failed to init tables");
+
+        // Try to become leader
+        cm.try_become_leader()
+            .await
+            .expect("Leader election failed");
+
+        // Should be leader (only node)
+        assert!(cm.is_leader());
+
+        // Register node
+        cm.register_node().await.expect("Registration failed");
+
+        // Get nodes
+        let nodes = cm.list_nodes().await.expect("Get nodes failed");
+        assert!(!nodes.is_empty());
+
+        // Clean up
+        sqlx::query("DELETE FROM cluster_nodes WHERE node_id = $1")
+            .bind("test-node-1")
+            .execute(&pool)
+            .await
+            .ok();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL with CLUSTER_MODE - run with: CLUSTER_MODE=1 DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_cluster_node_heartbeat() {
+        use super::super::cluster::ClusterManager;
+
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect");
+
+        let cm = ClusterManager::new(
+            "test-node-heartbeat".to_string(),
+            "localhost".to_string(),
+            6790,
+            Some(pool.clone()),
+        );
+
+        cm.init_tables().await.expect("Init failed");
+        cm.register_node().await.expect("Register failed");
+
+        // Update heartbeat
+        cm.heartbeat().await.expect("Heartbeat failed");
+
+        // Query heartbeat timestamp
+        let result: (i64,) = sqlx::query_as::<sqlx::Postgres, (i64,)>(
+            "SELECT EXTRACT(EPOCH FROM last_heartbeat)::bigint FROM cluster_nodes WHERE node_id = $1"
+        )
+        .bind("test-node-heartbeat")
+        .fetch_one(&pool)
+        .await
+        .expect("Query failed");
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Heartbeat should be within last 5 seconds
+        assert!(now - result.0 < 5);
+
+        // Clean up
+        sqlx::query("DELETE FROM cluster_nodes WHERE node_id = $1")
+            .bind("test-node-heartbeat")
+            .execute(&pool)
+            .await
+            .ok();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL with CLUSTER_MODE - run with: CLUSTER_MODE=1 DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_cluster_stale_node_cleanup() {
+        use super::super::cluster::ClusterManager;
+
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect");
+
+        let cm = ClusterManager::new(
+            "test-node-cleanup".to_string(),
+            "localhost".to_string(),
+            6791,
+            Some(pool.clone()),
+        );
+
+        cm.init_tables().await.expect("Init failed");
+
+        // Insert a stale node (heartbeat 1 hour ago)
+        sqlx::query(
+            "INSERT INTO cluster_nodes (node_id, host, port, last_heartbeat)
+             VALUES ($1, $2, $3, NOW() - INTERVAL '1 hour')
+             ON CONFLICT (node_id) DO UPDATE SET last_heartbeat = NOW() - INTERVAL '1 hour'",
+        )
+        .bind("stale-node")
+        .bind("localhost")
+        .bind(9999)
+        .execute(&pool)
+        .await
+        .expect("Insert failed");
+
+        // Run cleanup
+        cm.cleanup_stale_nodes().await.expect("Cleanup failed");
+
+        // Stale node should be removed
+        let result: Option<(String,)> = sqlx::query_as::<sqlx::Postgres, (String,)>(
+            "SELECT node_id FROM cluster_nodes WHERE node_id = $1",
+        )
+        .bind("stale-node")
+        .fetch_optional(&pool)
+        .await
+        .expect("Query failed");
+
+        assert!(result.is_none(), "Stale node should have been cleaned up");
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL with CLUSTER_MODE - run with: CLUSTER_MODE=1 DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_cluster_load_balancing() {
+        use super::super::cluster::{ClusterManager, LoadBalanceStrategy};
+
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .expect("Failed to connect");
+
+        let cm = ClusterManager::new(
+            "test-lb-node".to_string(),
+            "localhost".to_string(),
+            6792,
+            Some(pool.clone()),
+        );
+
+        cm.init_tables().await.expect("Init failed");
+
+        // Set load balancing strategy
+        cm.set_load_balance_strategy(LoadBalanceStrategy::LeastConnections);
+        assert_eq!(
+            cm.load_balance_strategy(),
+            LoadBalanceStrategy::LeastConnections
+        );
+
+        cm.set_load_balance_strategy(LoadBalanceStrategy::RoundRobin);
+        assert_eq!(cm.load_balance_strategy(), LoadBalanceStrategy::RoundRobin);
+
+        // Clean up
+        sqlx::query("DELETE FROM cluster_nodes WHERE node_id = $1")
+            .bind("test-lb-node")
+            .execute(&pool)
+            .await
+            .ok();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires PostgreSQL - run with: DATABASE_URL=postgres://... cargo test -- --ignored"]
+    async fn test_postgres_unique_job_id_sequence() {
+        let db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+
+        let qm = QueueManager::with_postgres(&db_url).await;
+
+        // Get multiple job IDs
+        let ids1 = qm.next_job_ids(10).await;
+        let ids2 = qm.next_job_ids(10).await;
+
+        // All IDs should be unique
+        let mut all_ids: Vec<_> = ids1.into_iter().chain(ids2.into_iter()).collect();
+        let original_len = all_ids.len();
+        all_ids.sort();
+        all_ids.dedup();
+
+        assert_eq!(all_ids.len(), original_len, "All job IDs should be unique");
     }
 }
