@@ -198,6 +198,8 @@ pub fn create_router(state: AppState) -> Router {
         // WebSocket Events
         .route("/ws", get(ws_handler))
         .route("/ws/{queue}", get(ws_queue_handler))
+        // Dashboard WebSocket (real-time stats/metrics)
+        .route("/ws/dashboard", get(ws_dashboard_handler))
         // Workers
         .route("/workers", get(list_workers))
         .route("/workers/{id}/heartbeat", post(worker_heartbeat))
@@ -208,6 +210,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/webhooks/incoming/{queue}", post(incoming_webhook))
         // Server management
         .route("/settings", get(get_settings))
+        .route("/settings/test-db", post(test_db_connection))
+        .route("/settings/database", post(save_db_settings))
+        .route("/settings/auth", post(save_auth_settings))
+        .route("/settings/queue-defaults", post(save_queue_defaults))
+        .route("/settings/cleanup", post(save_cleanup_settings))
+        .route("/settings/cleanup/run", post(run_cleanup_now))
         .route("/server/shutdown", post(shutdown_server))
         .route("/server/restart", post(restart_server))
         .route("/server/reset", post(reset_server))
@@ -215,6 +223,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/server/clear-dlq", post(clear_all_dlq))
         .route("/server/clear-completed", post(clear_completed_jobs))
         .route("/server/reset-metrics", post(reset_metrics))
+        // System metrics
+        .route("/system/metrics", get(get_system_metrics))
         // Health & Cluster
         .route("/health", get(health_check))
         .route("/cluster/nodes", get(cluster_nodes))
@@ -846,6 +856,78 @@ async fn handle_websocket(
     }
 }
 
+// === Dashboard WebSocket (Real-time) ===
+
+#[derive(Serialize)]
+struct DashboardUpdate {
+    stats: StatsResponse,
+    metrics: MetricsData,
+    queues: Vec<QueueInfo>,
+    workers: Vec<crate::protocol::WorkerInfo>,
+    metrics_history: Vec<MetricsHistoryPoint>,
+    timestamp: u64,
+}
+
+async fn ws_dashboard_handler(
+    State(qm): State<AppState>,
+    Query(params): Query<WsQuery>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let token = params.token.as_deref().unwrap_or("");
+    if !qm.verify_token(token) {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+
+    ws.on_upgrade(move |socket| handle_dashboard_websocket(socket, qm))
+}
+
+async fn handle_dashboard_websocket(mut socket: WebSocket, qm: Arc<QueueManager>) {
+    // Send updates every second
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                // Collect all dashboard data
+                let (queued, processing, delayed, dlq) = qm.stats().await;
+                let metrics = qm.get_metrics().await;
+                let queues = qm.list_queues().await;
+                let workers = qm.list_workers().await;
+                let metrics_history = qm.get_metrics_history();
+
+                let update = DashboardUpdate {
+                    stats: StatsResponse { queued, processing, delayed, dlq },
+                    metrics,
+                    queues,
+                    workers,
+                    metrics_history,
+                    timestamp: crate::queue::QueueManager::now_ms(),
+                };
+
+                if let Ok(json) = serde_json::to_string(&update) {
+                    if socket.send(Message::Text(json.into())).await.is_err() {
+                        break; // Client disconnected
+                    }
+                }
+            }
+
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Ping(data))) => {
+                        if socket.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Pong(_))) => {}
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Text(_))) | Some(Ok(Message::Binary(_))) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
+}
+
 // === Workers ===
 
 #[derive(Deserialize)]
@@ -1022,6 +1104,182 @@ async fn clear_completed_jobs(State(qm): State<AppState>) -> Json<ApiResponse<u6
 async fn reset_metrics(State(qm): State<AppState>) -> Json<ApiResponse<&'static str>> {
     qm.reset_metrics().await;
     ApiResponse::success("Metrics reset")
+}
+
+// === Settings Endpoints ===
+
+#[derive(Deserialize)]
+pub struct TestDbRequest {
+    pub url: String,
+}
+
+async fn test_db_connection(Json(req): Json<TestDbRequest>) -> Json<ApiResponse<&'static str>> {
+    // Try to connect to the database
+    match sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(&req.url)
+        .await
+    {
+        Ok(_) => ApiResponse::success("Connection successful"),
+        Err(e) => ApiResponse::error(format!("Connection failed: {}", e)),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SaveDbRequest {
+    pub url: String,
+}
+
+async fn save_db_settings(Json(_req): Json<SaveDbRequest>) -> Json<ApiResponse<&'static str>> {
+    // Note: Cannot change DATABASE_URL at runtime safely
+    // This would require reconnecting all pool connections
+    ApiResponse::error("Cannot change database URL at runtime. Set DATABASE_URL environment variable and restart the server.")
+}
+
+#[derive(Deserialize)]
+pub struct SaveAuthRequest {
+    pub tokens: String,
+}
+
+async fn save_auth_settings(
+    State(qm): State<AppState>,
+    Json(req): Json<SaveAuthRequest>,
+) -> Json<ApiResponse<&'static str>> {
+    let tokens: Vec<String> = req
+        .tokens
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    qm.set_auth_tokens(tokens);
+    ApiResponse::success("Auth tokens updated")
+}
+
+#[derive(Deserialize)]
+pub struct QueueDefaultsRequest {
+    pub default_timeout: Option<u64>,
+    pub default_max_attempts: Option<u32>,
+    pub default_backoff: Option<u64>,
+    pub default_ttl: Option<u64>,
+}
+
+async fn save_queue_defaults(
+    State(qm): State<AppState>,
+    Json(req): Json<QueueDefaultsRequest>,
+) -> Json<ApiResponse<&'static str>> {
+    qm.set_queue_defaults(
+        req.default_timeout,
+        req.default_max_attempts,
+        req.default_backoff,
+        req.default_ttl,
+    );
+    ApiResponse::success("Queue defaults updated")
+}
+
+#[derive(Deserialize)]
+pub struct CleanupSettingsRequest {
+    pub max_completed_jobs: Option<usize>,
+    pub max_job_results: Option<usize>,
+    pub cleanup_interval_secs: Option<u64>,
+    pub metrics_history_size: Option<usize>,
+}
+
+async fn save_cleanup_settings(
+    State(qm): State<AppState>,
+    Json(req): Json<CleanupSettingsRequest>,
+) -> Json<ApiResponse<&'static str>> {
+    qm.set_cleanup_settings(
+        req.max_completed_jobs,
+        req.max_job_results,
+        req.cleanup_interval_secs,
+        req.metrics_history_size,
+    );
+    ApiResponse::success("Cleanup settings updated")
+}
+
+async fn run_cleanup_now(State(qm): State<AppState>) -> Json<ApiResponse<&'static str>> {
+    qm.run_cleanup();
+    ApiResponse::success("Cleanup triggered")
+}
+
+// === System Metrics ===
+
+#[derive(Serialize)]
+pub struct SystemMetrics {
+    pub memory_used_mb: f64,
+    pub memory_total_mb: f64,
+    pub memory_percent: f64,
+    pub cpu_percent: f64,
+    pub tcp_connections: usize,
+    pub uptime_seconds: u64,
+    pub process_id: u32,
+}
+
+async fn get_system_metrics(State(qm): State<AppState>) -> Json<ApiResponse<SystemMetrics>> {
+    let start = START_TIME.get_or_init(std::time::Instant::now);
+    let uptime = start.elapsed().as_secs();
+
+    // Get memory info using sysinfo-like approach
+    // For now, use process memory from /proc or fallback values
+    let (memory_used, memory_total) = get_memory_info();
+    let tcp_connections = qm.connection_count();
+
+    let metrics = SystemMetrics {
+        memory_used_mb: memory_used,
+        memory_total_mb: memory_total,
+        memory_percent: if memory_total > 0.0 {
+            (memory_used / memory_total) * 100.0
+        } else {
+            0.0
+        },
+        cpu_percent: 0.0, // CPU tracking requires background monitoring
+        tcp_connections,
+        uptime_seconds: uptime,
+        process_id: std::process::id(),
+    };
+    ApiResponse::success(metrics)
+}
+
+fn get_memory_info() -> (f64, f64) {
+    // Try to read from /proc/self/statm on Linux
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+            let parts: Vec<&str> = statm.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let page_size = 4096.0; // Typically 4KB pages
+                let resident: f64 = parts[1].parse().unwrap_or(0.0) * page_size / 1024.0 / 1024.0;
+                // Get total memory from /proc/meminfo
+                if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
+                    for line in meminfo.lines() {
+                        if line.starts_with("MemTotal:") {
+                            let total_kb: f64 = line
+                                .split_whitespace()
+                                .nth(1)
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(0.0);
+                            return (resident, total_kb / 1024.0);
+                        }
+                    }
+                }
+                return (resident, 0.0);
+            }
+        }
+    }
+
+    // macOS: use mach APIs or fallback
+    #[cfg(target_os = "macos")]
+    {
+        // Simple fallback - return approximate values
+        // In production, you'd use mach_task_basic_info
+        (0.0, 0.0)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        (0.0, 0.0)
+    }
 }
 
 // === Health & Cluster ===

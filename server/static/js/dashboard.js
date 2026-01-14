@@ -22,7 +22,6 @@
         jobs: [],
         crons: [],
         workers: [],
-        activityEvents: [],
         metricsHistory: [],
         connected: false,
         selectedJobs: new Set(),
@@ -35,13 +34,78 @@
         clusterNodes: []
     };
 
-    let eventSource = null;
+    let dashboardSocket = null;
+    let reconnectTimeout = null;
 
     // ========================================================================
-    // Data Fetching
+    // WebSocket Real-time Connection
+    // ========================================================================
+
+    function connectWebSocket() {
+        if (dashboardSocket && dashboardSocket.readyState === WebSocket.OPEN) return;
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
+
+        dashboardSocket = new WebSocket(wsUrl);
+
+        dashboardSocket.onopen = () => {
+            state.connected = true;
+            updateConnectionUI();
+            console.log('Dashboard WebSocket connected');
+        };
+
+        dashboardSocket.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                // Update all state from WebSocket
+                if (data.stats) {
+                    state.stats = data.stats;
+                    updateStatsUI();
+                }
+                if (data.metrics) {
+                    state.metrics = data.metrics;
+                    updateMetricsUI();
+                }
+                if (data.queues) {
+                    state.queues = data.queues;
+                    updateQueuesUI();
+                    updateQueueFilterOptions();
+                }
+                if (data.workers) {
+                    state.workers = data.workers;
+                    updateWorkersUI();
+                }
+                if (data.metrics_history) {
+                    state.metricsHistory = data.metrics_history;
+                    Charts.updateCharts(state.metricsHistory, state.chartRange);
+                }
+                // Update timestamp
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+            } catch (err) {
+                console.error('WebSocket message error:', err);
+            }
+        };
+
+        dashboardSocket.onclose = () => {
+            state.connected = false;
+            updateConnectionUI();
+            // Reconnect after 2 seconds
+            reconnectTimeout = setTimeout(connectWebSocket, 2000);
+        };
+
+        dashboardSocket.onerror = () => {
+            state.connected = false;
+            updateConnectionUI();
+        };
+    }
+
+    // ========================================================================
+    // Data Fetching (for on-demand data like jobs, crons)
     // ========================================================================
 
     async function fetchStats() {
+        // Stats now come from WebSocket, but keep for manual refresh
         const data = await API.fetchStats();
         if (data) {
             state.stats = data;
@@ -277,48 +341,6 @@
         }).join('') || '<tr><td colspan="6" class="px-6 py-12 text-center text-slate-500">No workers registered</td></tr>';
     }
 
-    function updateActivityUI() {
-        const feed = document.getElementById('activity-feed');
-        if (!feed) return;
-
-        const getEventBadge = (type) => {
-            const map = { pushed: 'waiting', completed: 'completed', failed: 'failed', progress: 'delayed', timeout: 'failed' };
-            return map[type] || 'waiting';
-        };
-
-        feed.innerHTML = state.activityEvents.map(event => `
-            <div class="event-item glass-light rounded-lg p-4 event-${event.event_type}">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="badge ${getBadgeClass(getEventBadge(event.event_type))}">${(event.event_type || '').toUpperCase()}</span>
-                    <span class="text-xs text-slate-500">${formatTime(event.timestamp)}</span>
-                </div>
-                <div class="flex flex-wrap gap-4 text-sm">
-                    <div><span class="text-slate-500">Queue:</span> <span class="text-slate-300 font-medium">${escapeHtml(event.queue)}</span></div>
-                    <div><span class="text-slate-500">Job ID:</span> <span class="text-slate-300 font-mono">${escapeHtml(event.job_id)}</span></div>
-                    ${event.error ? `<div><span class="text-slate-500">Error:</span> <span class="text-rose-400">${escapeHtml(event.error)}</span></div>` : ''}
-                    ${event.progress !== undefined ? `<div><span class="text-slate-500">Progress:</span> <span class="text-amber-400">${event.progress}%</span></div>` : ''}
-                </div>
-            </div>
-        `).join('') || '<div class="text-center text-slate-500 py-12">No activity events yet</div>';
-
-        const autoScroll = document.getElementById('auto-scroll');
-        if (autoScroll?.checked) feed.scrollTop = 0;
-    }
-
-    function updateActivityBadge() {
-        const badge = document.getElementById('activity-badge');
-        const eventCount = document.getElementById('event-count');
-        if (badge) {
-            if (state.activityEvents.length > 0) {
-                badge.textContent = state.activityEvents.length;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
-        }
-        if (eventCount) eventCount.textContent = `${state.activityEvents.length} events`;
-    }
-
     function updateConnectionUI() {
         const status = document.getElementById('connection-status');
         const text = document.getElementById('connection-text');
@@ -416,34 +438,6 @@
         select.value = currentValue;
     }
 
-    // ========================================================================
-    // SSE Connection
-    // ========================================================================
-
-    function connectSSE() {
-        if (eventSource) return;
-        eventSource = new EventSource(`${API.API}/events`);
-
-        eventSource.onopen = () => { state.connected = true; updateConnectionUI(); };
-
-        eventSource.onmessage = (e) => {
-            try {
-                const event = JSON.parse(e.data);
-                state.activityEvents.unshift(event);
-                if (state.activityEvents.length > 500) state.activityEvents = state.activityEvents.slice(0, 500);
-                updateActivityUI();
-                updateActivityBadge();
-            } catch (err) {}
-        };
-
-        eventSource.onerror = () => {
-            state.connected = false;
-            updateConnectionUI();
-            eventSource.close();
-            eventSource = null;
-            setTimeout(connectSSE, 3000);
-        };
-    }
 
     // ========================================================================
     // Navigation
@@ -462,7 +456,6 @@
             jobs: ['Jobs Browser', 'Search and manage jobs'],
             crons: ['Cron Jobs', 'Schedule recurring tasks'],
             workers: ['Workers', 'Monitor connected workers'],
-            activity: ['Live Activity', 'Real-time event stream'],
             analytics: ['Analytics', 'Performance metrics and charts'],
             settings: ['Settings', 'Server configuration and preferences']
         };
@@ -629,7 +622,6 @@
     function prevJobPage() { if (state.jobPage > 0) { state.jobPage--; fetchJobs(); } }
     function nextJobPage() { state.jobPage++; fetchJobs(); }
     function filterQueues() { updateQueuesUI(); }
-    function clearActivityFeed() { state.activityEvents = []; updateActivityUI(); updateActivityBadge(); }
 
     function setChartRange(range) {
         state.chartRange = range;
@@ -650,18 +642,22 @@
     // ========================================================================
 
     function init() {
-        connectSSE();
-        fetchStats(); fetchMetrics(); fetchQueues(); fetchMetricsHistory(); fetchClusterStatus();
+        // Connect WebSocket for real-time updates
+        connectWebSocket();
+
+        // Initial data fetch
+        fetchMetricsHistory();
+        fetchClusterStatus();
+
+        // Initialize charts
         Charts.init();
 
+        // Fetch analytics data every 5 seconds (charts need history)
         setInterval(() => {
-            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
-            const section = state.currentSection;
-            if (section === 'overview') { fetchStats(); fetchMetrics(); fetchQueues(); fetchMetricsHistory(); fetchClusterStatus(); }
-            else if (section === 'queues') fetchQueues();
-            else if (section === 'workers') fetchWorkers();
-            else if (section === 'analytics') fetchMetricsHistory();
-        }, 2000);
+            if (state.currentSection === 'analytics') {
+                fetchMetricsHistory();
+            }
+        }, 5000);
 
         document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
     }
@@ -706,7 +702,6 @@
     window.toggleSelectAll = toggleSelectAll;
     window.clearSelection = clearSelection;
     window.setChartRange = setChartRange;
-    window.clearActivityFeed = clearActivityFeed;
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();

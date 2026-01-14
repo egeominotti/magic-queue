@@ -237,22 +237,22 @@ window.DashboardAPI = (function() {
         },
 
         async clearAllQueues() {
-            const res = await fetch(`${API}/settings/clear-queues`, { method: 'POST' });
+            const res = await fetch(`${API}/server/clear-queues`, { method: 'POST' });
             return res.json();
         },
 
         async clearAllDlq() {
-            const res = await fetch(`${API}/settings/clear-dlq`, { method: 'POST' });
+            const res = await fetch(`${API}/server/clear-dlq`, { method: 'POST' });
             return res.json();
         },
 
         async clearCompletedJobs() {
-            const res = await fetch(`${API}/settings/clear-completed`, { method: 'POST' });
+            const res = await fetch(`${API}/server/clear-completed`, { method: 'POST' });
             return res.json();
         },
 
         async resetMetrics() {
-            const res = await fetch(`${API}/settings/reset-metrics`, { method: 'POST' });
+            const res = await fetch(`${API}/server/reset-metrics`, { method: 'POST' });
             return res.json();
         },
 

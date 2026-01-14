@@ -48,7 +48,7 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
     this.options = {
       id: options.id ?? `worker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       concurrency: options.concurrency ?? 1,
-      heartbeatInterval: options.heartbeatInterval ?? 5000, // 5 seconds default
+      heartbeatInterval: options.heartbeatInterval ?? 1000, // 1 second default
       autoAck: options.autoAck ?? true,
     };
 
