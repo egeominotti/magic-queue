@@ -473,8 +473,10 @@ sdk/typescript/
 |--------|-------------|
 | `connect()` | Connect to server |
 | `close()` | Close connection |
+| `auth(token)` | Late authentication |
 | `push(queue, data, options?)` | Push a job (supports `jobId` for idempotency) |
 | `pushBatch(queue, jobs)` | Push multiple jobs |
+| `pushFlow(queue, flow)` | Push workflow with dependencies |
 | `pull(queue)` | Pull a job (blocking) |
 | `pullBatch(queue, count)` | Pull multiple jobs |
 | `ack(jobId, result?)` | Acknowledge job |
@@ -504,6 +506,10 @@ sdk/typescript/
 | `moveToDelayed(jobId, delay)` | Move to delayed |
 | `promote(jobId)` | Move delayed to waiting |
 | `discard(jobId)` | Move to DLQ |
+| `heartbeat(jobId)` | Send heartbeat for long-running jobs |
+| `log(jobId, message, level?)` | Add log entry to job |
+| `getLogs(jobId)` | Get job log entries |
+| `getChildren(jobId)` | Get child jobs (for flows) |
 
 #### Queue Management
 | Method | Description |
