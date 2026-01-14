@@ -138,8 +138,10 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
         if (!this.running) break;
 
         try {
-          // Each worker has its own client, so blocking pull is OK
-          const job = await client.pull<T>(queue);
+          // Pull with short server-side timeout for graceful shutdown
+          const job = await client.pull<T>(queue, 2000);
+
+          // No job available (server timeout) - continue polling
           if (!job) continue;
 
           this.processing++;
@@ -165,7 +167,7 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
             this.processing--;
           }
         } catch (error) {
-          // Connection error, wait before retry
+          // Connection error - wait before retry
           if (this.running) {
             this.emit('error', error);
             await this.sleep(1000);

@@ -514,18 +514,23 @@ export class FlashQ extends EventEmitter {
   }
 
   /**
-   * Pull a job from a queue (blocking)
+   * Pull a job from a queue (blocking with server-side timeout)
+   * @param queue Queue name
+   * @param timeout Server-side timeout in ms (default 60s). Returns null if no job available within timeout.
    */
-  async pull<T = unknown>(queue: string, timeout?: number): Promise<Job & { data: T }> {
-    // Pull is blocking - use long timeout (default 60s)
-    const response = await this.send<{ ok: boolean; job: Job }>(
+  async pull<T = unknown>(queue: string, timeout?: number): Promise<(Job & { data: T }) | null> {
+    const serverTimeout = timeout ?? 60000;
+    // Server-side timeout + small buffer for network latency
+    const clientTimeout = serverTimeout + 5000;
+    const response = await this.send<{ ok: boolean; job: Job | null }>(
       {
         cmd: 'PULL',
         queue,
+        timeout: serverTimeout, // Pass timeout to server
       },
-      timeout ?? 60000
+      clientTimeout
     );
-    return response.job as Job & { data: T };
+    return response.job as (Job & { data: T }) | null;
   }
 
   /**

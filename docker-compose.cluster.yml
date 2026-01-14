@@ -1,0 +1,101 @@
+version: "3.8"
+
+# flashQ High Availability Cluster
+# 3 nodes with automatic leader election + Caddy load balancer
+#
+# Usage:
+#   docker-compose -f docker-compose.cluster.yml up -d
+#
+# Endpoints:
+#   - Load Balancer: http://localhost:8080
+#   - Node 1: http://localhost:6790 (TCP: 6789)
+#   - Node 2: http://localhost:6792 (TCP: 6791)
+#   - Node 3: http://localhost:6794 (TCP: 6793)
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: flashq-postgres
+    environment:
+      POSTGRES_USER: flashq
+      POSTGRES_PASSWORD: flashq
+      POSTGRES_DB: flashq
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flashq-node1:
+    build: .
+    container_name: flashq-node1
+    environment:
+      - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
+      - CLUSTER_MODE=1
+      - NODE_ID=node-1
+      - HTTP=1
+      - HTTP_PORT=6790
+      - PORT=6789
+      - RUST_LOG=info
+    ports:
+      - "6789:6789"   # TCP
+      - "6790:6790"   # HTTP
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  flashq-node2:
+    build: .
+    container_name: flashq-node2
+    environment:
+      - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
+      - CLUSTER_MODE=1
+      - NODE_ID=node-2
+      - HTTP=1
+      - HTTP_PORT=6790
+      - PORT=6789
+      - RUST_LOG=info
+    ports:
+      - "6791:6789"   # TCP
+      - "6792:6790"   # HTTP
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  flashq-node3:
+    build: .
+    container_name: flashq-node3
+    environment:
+      - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
+      - CLUSTER_MODE=1
+      - NODE_ID=node-3
+      - HTTP=1
+      - HTTP_PORT=6790
+      - PORT=6789
+      - RUST_LOG=info
+    ports:
+      - "6793:6789"   # TCP
+      - "6794:6790"   # HTTP
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Load balancer (Caddy)
+  caddy:
+    image: caddy:2-alpine
+    container_name: flashq-lb
+    ports:
+      - "8080:8080"   # HTTP load balanced
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - flashq-node1
+      - flashq-node2
+      - flashq-node3
+
+volumes:
+  postgres_data:

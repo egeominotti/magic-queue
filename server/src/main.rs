@@ -279,38 +279,53 @@ async fn process_command(
             let ids = queue_manager.push_batch(queue, jobs).await;
             Response::batch(ids)
         }
-        Command::Pull { queue } => {
+        Command::Pull { queue, timeout } => {
+            let timeout_ms = timeout.unwrap_or(60_000); // Default 60s
             // Use distributed pull in cluster mode for consistency
             if queue_manager.is_distributed_pull() {
-                match queue_manager.pull_distributed(&queue, 30_000).await {
+                match queue_manager.pull_distributed(&queue, timeout_ms).await {
                     Some(job) => Response::job(job),
                     None => {
-                        // Fallback to blocking pull if distributed returns nothing
-                        let job = queue_manager.pull(&queue).await;
-                        Response::job(job)
+                        // Distributed pull timed out - return null
+                        Response::null_job()
                     }
                 }
             } else {
-                let job = queue_manager.pull(&queue).await;
-                Response::job(job)
+                // Use tokio timeout wrapper for non-distributed pull
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_millis(timeout_ms),
+                    queue_manager.pull(&queue),
+                )
+                .await
+                {
+                    Ok(job) => Response::job(job),
+                    Err(_) => Response::null_job(), // Timeout - return null
+                }
             }
         }
-        Command::Pullb { queue, count } => {
+        Command::Pullb { queue, count, timeout } => {
+            let timeout_ms = timeout.unwrap_or(60_000); // Default 60s
             // Use distributed pull in cluster mode for consistency
             if queue_manager.is_distributed_pull() {
                 let jobs = queue_manager
-                    .pull_distributed_batch(&queue, count, 30_000)
+                    .pull_distributed_batch(&queue, count, timeout_ms)
                     .await;
                 if jobs.is_empty() {
-                    // Fallback to blocking pull if distributed returns nothing
-                    let jobs = queue_manager.pull_batch(&queue, count).await;
-                    Response::jobs(jobs)
+                    Response::null_job() // Timeout or no jobs
                 } else {
                     Response::jobs(jobs)
                 }
             } else {
-                let jobs = queue_manager.pull_batch(&queue, count).await;
-                Response::jobs(jobs)
+                // Use tokio timeout wrapper for non-distributed pull
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_millis(timeout_ms),
+                    queue_manager.pull_batch(&queue, count),
+                )
+                .await
+                {
+                    Ok(jobs) => Response::jobs(jobs),
+                    Err(_) => Response::null_job(), // Timeout - return empty
+                }
             }
         }
         Command::Ack { id, result } => match queue_manager.ack(id, result).await {

@@ -142,10 +142,14 @@ pub enum Command {
     },
     Pull {
         queue: String,
+        #[serde(default)]
+        timeout: Option<u64>, // Optional timeout in ms (server-side)
     },
     Pullb {
         queue: String,
         count: usize,
+        #[serde(default)]
+        timeout: Option<u64>, // Optional timeout in ms (server-side)
     },
     Ack {
         id: u64,
@@ -611,6 +615,11 @@ pub enum Response {
         ok: bool,
         jobs: Vec<Job>,
     },
+    /// Response for pull when no job is available (timeout)
+    NullJob {
+        ok: bool,
+        job: Option<Job>, // Always None, but serializes as { ok: true, job: null }
+    },
     Stats {
         ok: bool,
         queued: usize,
@@ -782,6 +791,11 @@ impl Response {
     #[inline(always)]
     pub fn jobs(jobs: Vec<Job>) -> Self {
         Response::Jobs { ok: true, jobs }
+    }
+
+    #[inline(always)]
+    pub fn null_job() -> Self {
+        Response::NullJob { ok: true, job: None }
     }
 
     #[inline(always)]
