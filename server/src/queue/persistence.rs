@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use serde_json::Value;
+use tracing::error;
 
 use super::manager::QueueManager;
 use crate::protocol::{CronJob, Job, WebhookConfig};
@@ -31,7 +32,7 @@ impl QueueManager {
             tokio::spawn(async move {
                 // First persist to PostgreSQL
                 if let Err(e) = storage.insert_job(&job, &state).await {
-                    eprintln!("Failed to persist job {}: {}", job.id, e);
+                    error!(job_id = job.id, error = %e, "Failed to persist job");
                     return;
                 }
                 // Then notify cluster (only after INSERT succeeds)
@@ -71,7 +72,7 @@ impl QueueManager {
             tokio::spawn(async move {
                 // First persist to PostgreSQL
                 if let Err(e) = storage.insert_jobs_batch(&jobs, &state).await {
-                    eprintln!("Failed to persist batch: {}", e);
+                    error!(error = %e, "Failed to persist batch");
                     return;
                 }
                 // Then notify cluster (only after INSERT succeeds)
@@ -101,7 +102,7 @@ impl QueueManager {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {
                 if let Err(e) = storage.ack_job(job_id, result).await {
-                    eprintln!("Failed to persist ack {}: {}", job_id, e);
+                    error!(job_id = job_id, error = %e, "Failed to persist ack");
                 }
             });
         }
@@ -126,7 +127,7 @@ impl QueueManager {
             let ids = ids.to_vec();
             tokio::spawn(async move {
                 if let Err(e) = storage.ack_jobs_batch(&ids).await {
-                    eprintln!("Failed to persist ack batch: {}", e);
+                    error!(error = %e, "Failed to persist ack batch");
                 }
             });
         }
@@ -145,7 +146,7 @@ impl QueueManager {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {
                 if let Err(e) = storage.fail_job(job_id, _new_run_at, _attempts).await {
-                    eprintln!("Failed to persist fail {}: {}", job_id, e);
+                    error!(job_id = job_id, error = %e, "Failed to persist fail");
                 }
             });
         }
@@ -166,7 +167,7 @@ impl QueueManager {
             let error = error.map(|s| s.to_string());
             tokio::spawn(async move {
                 if let Err(e) = storage.move_to_dlq(&job, error.as_deref()).await {
-                    eprintln!("Failed to persist DLQ {}: {}", job.id, e);
+                    error!(job_id = job.id, error = %e, "Failed to persist DLQ");
                 }
             });
         }
@@ -185,7 +186,7 @@ impl QueueManager {
             let storage = Arc::clone(storage);
             tokio::spawn(async move {
                 if let Err(e) = storage.cancel_job(job_id).await {
-                    eprintln!("Failed to persist cancel {}: {}", job_id, e);
+                    error!(job_id = job_id, error = %e, "Failed to persist cancel");
                 }
             });
         }
@@ -199,7 +200,7 @@ impl QueueManager {
             let cron = cron.clone();
             tokio::spawn(async move {
                 if let Err(e) = storage.save_cron(&cron).await {
-                    eprintln!("Failed to persist cron {}: {}", cron.name, e);
+                    error!(cron_name = %cron.name, error = %e, "Failed to persist cron");
                 }
             });
         }
@@ -213,7 +214,7 @@ impl QueueManager {
             let name = name.to_string();
             tokio::spawn(async move {
                 if let Err(e) = storage.delete_cron(&name).await {
-                    eprintln!("Failed to persist cron delete {}: {}", name, e);
+                    error!(cron_name = %name, error = %e, "Failed to persist cron delete");
                 }
             });
         }
@@ -227,7 +228,7 @@ impl QueueManager {
             let name = name.to_string();
             tokio::spawn(async move {
                 if let Err(e) = storage.update_cron_next_run(&name, next_run).await {
-                    eprintln!("Failed to update cron next_run {}: {}", name, e);
+                    error!(cron_name = %name, error = %e, "Failed to update cron next_run");
                 }
             });
         }
@@ -242,7 +243,7 @@ impl QueueManager {
             let webhook = webhook.clone();
             tokio::spawn(async move {
                 if let Err(e) = storage.save_webhook(&webhook).await {
-                    eprintln!("Failed to persist webhook {}: {}", webhook.id, e);
+                    error!(webhook_id = %webhook.id, error = %e, "Failed to persist webhook");
                 }
             });
         }
@@ -257,7 +258,7 @@ impl QueueManager {
             let id = id.to_string();
             tokio::spawn(async move {
                 if let Err(e) = storage.delete_webhook(&id).await {
-                    eprintln!("Failed to persist webhook delete {}: {}", id, e);
+                    error!(webhook_id = %id, error = %e, "Failed to persist webhook delete");
                 }
             });
         }

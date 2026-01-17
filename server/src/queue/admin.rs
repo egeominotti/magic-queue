@@ -2,11 +2,14 @@
 //!
 //! Server management, webhooks, workers, metrics, and runtime settings.
 
+use std::sync::Arc;
+
 use serde_json::Value;
 use tokio::sync::broadcast;
+use tracing::{error, warn};
 
 use super::manager::{CleanupSettings, QueueDefaults, QueueManager};
-use super::types::{now_ms, Webhook, Worker};
+use super::types::{now_ms, CircuitState, Webhook, Worker};
 use crate::protocol::{
     JobBrowserItem, JobEvent, JobState, MetricsHistoryPoint, WebhookConfig, WorkerInfo,
 };
@@ -408,6 +411,7 @@ impl QueueManager {
     }
 
     /// Fire webhooks for an event.
+    /// Uses circuit breaker to prevent cascading failures.
     pub(crate) fn fire_webhooks(
         &self,
         event_type: &str,
@@ -417,6 +421,9 @@ impl QueueManager {
         error: Option<&str>,
     ) {
         let webhooks = self.webhooks.read();
+        let now = now_ms();
+        let config = &self.circuit_breaker_config;
+
         for webhook in webhooks.values() {
             // Check event type matches
             if !webhook.events.iter().any(|e| e == event_type || e == "*") {
@@ -430,12 +437,32 @@ impl QueueManager {
             }
 
             let url = webhook.url.clone();
+
+            // Check circuit breaker before sending
+            {
+                let mut circuits = self.webhook_circuits.write();
+                let circuit = circuits.entry(url.clone()).or_default();
+
+                // Try to transition from open to half-open if recovery timeout passed
+                circuit.try_half_open(now, config.recovery_timeout_ms);
+
+                if !circuit.should_allow(now, config.recovery_timeout_ms) {
+                    warn!(
+                        url = %url,
+                        state = ?circuit.state,
+                        failures = circuit.failures,
+                        "Webhook circuit open, skipping request"
+                    );
+                    continue;
+                }
+            }
+
             let secret = webhook.secret.clone();
             let payload = serde_json::json!({
                 "event": event_type,
                 "queue": queue,
                 "job_id": job_id,
-                "timestamp": now_ms(),
+                "timestamp": now,
                 "data": data,
                 "error": error,
             });
@@ -443,6 +470,9 @@ impl QueueManager {
             // Fire webhook in background using shared client (non-blocking)
             let client = self.http_client.clone();
             let webhook_url = url.clone();
+            let failure_threshold = config.failure_threshold;
+            let circuits = Arc::clone(&self.webhook_circuits);
+
             tokio::spawn(async move {
                 let mut req = client.post(&url).json(&payload);
 
@@ -453,18 +483,40 @@ impl QueueManager {
                     req = req.header("X-FlashQ-Signature", signature);
                 }
 
-                match req.send().await {
+                let success = match req.send().await {
                     Ok(response) => {
-                        if !response.status().is_success() {
-                            eprintln!(
-                                "Webhook failed: {} returned status {}",
-                                webhook_url,
-                                response.status()
+                        if response.status().is_success() {
+                            true
+                        } else {
+                            warn!(
+                                url = %webhook_url,
+                                status = %response.status(),
+                                "Webhook request failed"
                             );
+                            false
                         }
                     }
                     Err(e) => {
-                        eprintln!("Webhook error: {} - {}", webhook_url, e);
+                        error!(url = %webhook_url, error = %e, "Webhook request error");
+                        false
+                    }
+                };
+
+                // Update circuit breaker state
+                let now = now_ms();
+                let mut circuits = circuits.write();
+                if let Some(circuit) = circuits.get_mut(&webhook_url) {
+                    if success {
+                        circuit.record_success();
+                    } else {
+                        circuit.record_failure(now, failure_threshold);
+                        if circuit.state == CircuitState::Open {
+                            warn!(
+                                url = %webhook_url,
+                                failures = circuit.failures,
+                                "Webhook circuit opened after consecutive failures"
+                            );
+                        }
                     }
                 }
             });

@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use croner::Cron;
 use sqlx::postgres::PgListener;
 use tokio::time::{interval, Duration};
+use tracing::{error, info, warn};
 
 use super::manager::QueueManager;
 use super::postgres::CLUSTER_SYNC_CHANNEL;
@@ -149,21 +150,23 @@ impl QueueManager {
 
         // Snapshot jobs
         if let Err(e) = storage.snapshot_jobs(&jobs_to_persist).await {
-            eprintln!("Snapshot failed: {}", e);
+            error!(error = %e, "Snapshot failed");
             return;
         }
 
         // Snapshot DLQ if there are any
         if !dlq_to_persist.is_empty() {
             if let Err(e) = storage.snapshot_dlq(&dlq_to_persist).await {
-                eprintln!("DLQ snapshot failed: {}", e);
+                error!(error = %e, "DLQ snapshot failed");
             }
         }
 
         let elapsed = now_ms() - start;
-        println!(
-            "Snapshot completed: {} jobs, {} DLQ in {}ms",
-            job_count, dlq_count, elapsed
+        info!(
+            jobs = job_count,
+            dlq = dlq_count,
+            elapsed_ms = elapsed,
+            "Snapshot completed"
         );
 
         // Reset counters
@@ -179,12 +182,12 @@ impl QueueManager {
             match PgListener::connect(database_url).await {
                 Ok(mut listener) => {
                     if let Err(e) = listener.listen(CLUSTER_SYNC_CHANNEL).await {
-                        eprintln!("Failed to listen on cluster sync channel: {}", e);
+                        error!(error = %e, "Failed to listen on cluster sync channel");
                         tokio::time::sleep(Duration::from_secs(5)).await;
                         continue;
                     }
 
-                    println!("Cluster sync listener started for node {}", node_id);
+                    info!(node_id = %node_id, "Cluster sync listener started");
 
                     loop {
                         match listener.recv().await {
@@ -193,14 +196,14 @@ impl QueueManager {
                                 self.handle_cluster_sync(payload, &node_id).await;
                             }
                             Err(e) => {
-                                eprintln!("Cluster sync listener error: {}", e);
+                                error!(error = %e, "Cluster sync listener error");
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to connect cluster sync listener: {}", e);
+                    error!(error = %e, "Failed to connect cluster sync listener");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             }
@@ -286,18 +289,18 @@ impl QueueManager {
         if let Some(cluster) = &self.cluster {
             // Send heartbeat
             if let Err(e) = cluster.heartbeat().await {
-                eprintln!("Cluster heartbeat failed: {}", e);
+                warn!(error = %e, "Cluster heartbeat failed");
             }
 
             // Try to become leader if not already
             if let Err(e) = cluster.try_become_leader().await {
-                eprintln!("Leader election check failed: {}", e);
+                warn!(error = %e, "Leader election check failed");
             }
 
             // Leader cleans up stale nodes
             if cluster.is_leader() {
                 if let Err(e) = cluster.cleanup_stale_nodes().await {
-                    eprintln!("Stale node cleanup failed: {}", e);
+                    warn!(error = %e, "Stale node cleanup failed");
                 }
             }
         }

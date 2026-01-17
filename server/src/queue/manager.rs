@@ -17,8 +17,8 @@ use serde_json::Value;
 use super::cluster::ClusterManager;
 use super::postgres::PostgresStorage;
 use super::types::{
-    init_coarse_time, intern, now_ms, GlobalMetrics, GxHashMap, GxHashSet, JobLocation, Shard,
-    SnapshotConfig, Subscriber, Webhook, Worker,
+    init_coarse_time, intern, now_ms, CircuitBreakerConfig, CircuitBreakerEntry, GlobalMetrics,
+    GxHashMap, GxHashSet, JobLocation, Shard, SnapshotConfig, Subscriber, Webhook, Worker,
 };
 
 /// Type alias for DashMap with GxHash for lock-free job index
@@ -28,6 +28,7 @@ pub type JobIndexMap = DashMap<u64, JobLocation, BuildHasherDefault<GxHasher>>;
 pub type ProcessingShard = RwLock<GxHashMap<u64, Job>>;
 use crate::protocol::{set_id_counter, CronJob, Job, JobEvent, JobLogEntry, MetricsHistoryPoint};
 use tokio::sync::broadcast;
+use tracing::{error, info};
 
 pub const NUM_SHARDS: usize = 32;
 
@@ -49,6 +50,9 @@ pub struct QueueManager {
     pub(crate) workers: RwLock<GxHashMap<String, Worker>>,
     // Webhooks
     pub(crate) webhooks: RwLock<GxHashMap<String, Webhook>>,
+    // Circuit breaker for webhooks (URL -> circuit state) - Arc for async tasks
+    pub(crate) webhook_circuits: Arc<RwLock<GxHashMap<String, CircuitBreakerEntry>>>,
+    pub(crate) circuit_breaker_config: CircuitBreakerConfig,
     // Event broadcast for SSE/WebSocket
     pub(crate) event_tx: broadcast::Sender<JobEvent>,
     // Metrics history for charts (last 60 points = 5 minutes at 5s intervals)
@@ -130,7 +134,7 @@ impl QueueManager {
             Ok(storage) => {
                 // Run migrations
                 if let Err(e) = storage.migrate().await {
-                    eprintln!("Failed to run migrations: {}", e);
+                    error!(error = %e, "Failed to run migrations");
                 }
 
                 let storage = Arc::new(storage);
@@ -142,9 +146,9 @@ impl QueueManager {
                 manager
             }
             Err(e) => {
-                eprintln!(
-                    "Failed to connect to PostgreSQL: {}, running without persistence",
-                    e
+                error!(
+                    error = %e,
+                    "Failed to connect to PostgreSQL, running without persistence"
                 );
                 Self::create(None, None)
             }
@@ -162,7 +166,7 @@ impl QueueManager {
             Ok(storage) => {
                 // Run migrations
                 if let Err(e) = storage.migrate().await {
-                    eprintln!("Failed to run migrations: {}", e);
+                    error!(error = %e, "Failed to run migrations");
                 }
 
                 let storage = Arc::new(storage);
@@ -177,17 +181,17 @@ impl QueueManager {
 
                 // Initialize cluster tables
                 if let Err(e) = cluster.init_tables().await {
-                    eprintln!("Failed to init cluster tables: {}", e);
+                    error!(error = %e, "Failed to init cluster tables");
                 }
 
                 // Register this node
                 if let Err(e) = cluster.register_node().await {
-                    eprintln!("Failed to register node: {}", e);
+                    error!(error = %e, "Failed to register node");
                 }
 
                 // Try to become leader
                 if let Err(e) = cluster.try_become_leader().await {
-                    eprintln!("Failed to try leadership: {}", e);
+                    error!(error = %e, "Failed to try leadership");
                 }
 
                 let manager = Self::create(Some(storage.clone()), Some(cluster));
@@ -205,9 +209,9 @@ impl QueueManager {
                 manager
             }
             Err(e) => {
-                eprintln!(
-                    "Failed to connect to PostgreSQL: {}, running without persistence or cluster",
-                    e
+                error!(
+                    error = %e,
+                    "Failed to connect to PostgreSQL, running without persistence or cluster"
                 );
                 Self::create(None, None)
             }
@@ -270,6 +274,8 @@ impl QueueManager {
             job_index: DashMap::with_capacity_and_hasher(65536, Default::default()),
             workers: RwLock::new(GxHashMap::default()),
             webhooks: RwLock::new(GxHashMap::default()),
+            webhook_circuits: Arc::new(RwLock::new(GxHashMap::default())),
+            circuit_breaker_config: CircuitBreakerConfig::default(),
             event_tx,
             metrics_history: RwLock::new(VecDeque::with_capacity(60)),
             cluster,
@@ -302,16 +308,16 @@ impl QueueManager {
 
         if has_storage {
             if snapshot_enabled {
-                println!("PostgreSQL persistence enabled (SNAPSHOT MODE)");
+                info!("PostgreSQL persistence enabled (SNAPSHOT MODE)");
             } else {
-                println!("PostgreSQL persistence enabled (SYNC MODE)");
+                info!("PostgreSQL persistence enabled (SYNC MODE)");
             }
         }
         if cluster_enabled {
-            println!("Cluster mode enabled");
+            info!("Cluster mode enabled");
         }
         if distributed_pull {
-            println!("Distributed pull enabled (SELECT FOR UPDATE SKIP LOCKED)");
+            info!("Distributed pull enabled (SELECT FOR UPDATE SKIP LOCKED)");
         }
 
         manager
@@ -337,9 +343,9 @@ impl QueueManager {
             }
         }
         if !manager.auth_tokens.read().is_empty() {
-            println!(
-                "Authentication enabled with {} token(s)",
-                manager.auth_tokens.read().len()
+            info!(
+                token_count = manager.auth_tokens.read().len(),
+                "Authentication enabled"
             );
         }
         manager
@@ -490,6 +496,12 @@ impl QueueManager {
         self.processing_shards.iter().map(|s| s.read().len()).sum()
     }
 
+    /// Get the count of jobs currently being processed (public API for graceful shutdown).
+    #[inline]
+    pub fn processing_count(&self) -> usize {
+        self.processing_len()
+    }
+
     /// Iterate over all processing jobs (for stats, etc.).
     pub(crate) fn processing_iter<F>(&self, mut f: F)
     where
@@ -527,16 +539,16 @@ impl QueueManager {
                 if max_id > 0 {
                     // Set PostgreSQL sequence to max_id so next call returns max_id + 1
                     if let Err(e) = storage.set_sequence_value(max_id).await {
-                        eprintln!("Failed to set sequence value: {}", e);
+                        error!(error = %e, "Failed to set sequence value");
                     } else {
-                        println!("Synced job ID sequence: next ID will be {}", max_id + 1);
+                        info!(next_id = max_id + 1, "Synced job ID sequence");
                     }
                     // Also set local counter as fallback
                     set_id_counter(max_id + 1);
                 }
             }
             Err(e) => {
-                eprintln!("Failed to recover max job ID: {}", e);
+                error!(error = %e, "Failed to recover max job ID");
             }
         }
 
@@ -596,7 +608,7 @@ impl QueueManager {
                 cron_jobs.insert(cron.name.clone(), cron);
             }
             if !cron_jobs.is_empty() {
-                println!("Recovered {} cron jobs from PostgreSQL", cron_jobs.len());
+                info!(count = cron_jobs.len(), "Recovered cron jobs from PostgreSQL");
             }
         }
 
@@ -614,12 +626,12 @@ impl QueueManager {
                 wh.insert(webhook.id, w);
             }
             if !wh.is_empty() {
-                println!("Recovered {} webhooks from PostgreSQL", wh.len());
+                info!(count = wh.len(), "Recovered webhooks from PostgreSQL");
             }
         }
 
         if job_count > 0 {
-            println!("Recovered {} jobs from PostgreSQL", job_count);
+            info!(count = job_count, "Recovered jobs from PostgreSQL");
         }
     }
 }

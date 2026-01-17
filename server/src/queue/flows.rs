@@ -149,7 +149,11 @@ impl QueueManager {
                 // Check if all children completed
                 if parent.children_completed >= parent.children_ids.len() as u32 {
                     // Move parent to queue (ready to process)
-                    let parent_job = shard_w.waiting_children.remove(&parent_id).unwrap();
+                    // Safe: get_mut returned Some above
+                    let parent_job = shard_w
+                        .waiting_children
+                        .remove(&parent_id)
+                        .expect("parent exists after get_mut");
                     let queue_arc = intern(&parent_job.queue);
                     shard_w
                         .queues

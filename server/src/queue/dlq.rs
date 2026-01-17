@@ -2,6 +2,8 @@
 //!
 //! Handles jobs that have exceeded max_attempts and need manual intervention.
 
+use tracing::error;
+
 use super::manager::QueueManager;
 use super::types::{intern, now_ms, JobLocation};
 use crate::protocol::Job;
@@ -29,7 +31,8 @@ impl QueueManager {
         if let Some(dlq) = shard.dlq.get_mut(&queue_arc) {
             if let Some(id) = job_id {
                 if let Some(pos) = dlq.iter().position(|j| j.id == id) {
-                    let mut job = dlq.remove(pos).unwrap();
+                    // Safe: position() just found this index
+                    let mut job = dlq.remove(pos).expect("position valid after iter().position()");
                     job.attempts = 0;
                     job.run_at = now;
                     jobs_to_retry.push(job);
@@ -80,7 +83,7 @@ impl QueueManager {
                 let queue = queue_name.to_string();
                 tokio::spawn(async move {
                     if let Err(e) = storage.purge_dlq(&queue).await {
-                        eprintln!("Failed to persist purge_dlq for {}: {}", queue, e);
+                        error!(queue = %queue, error = %e, "Failed to persist purge_dlq");
                     }
                 });
             }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::time::Duration;
+use tracing::warn;
 
 use super::manager::QueueManager;
 use super::types::{intern, now_ms, JobLocation};
@@ -420,7 +421,8 @@ impl QueueManager {
                                 continue;
                             }
                             if job.is_ready(now) {
-                                let mut job = heap.pop().unwrap();
+                                // Safe: peek() returned Some above
+                                let mut job = heap.pop().expect("heap non-empty after peek");
                                 job.started_at = now;
                                 job.last_heartbeat = now; // Initialize heartbeat for stall detection
                                 result = Some(job);
@@ -513,7 +515,8 @@ impl QueueManager {
                                         heap.pop();
                                     }
                                     Some(job) if job.is_ready(now) => {
-                                        let mut job = heap.pop().unwrap();
+                                        // Safe: peek() returned Some above
+                                        let mut job = heap.pop().expect("heap non-empty after peek");
                                         job.started_at = now;
                                         job.last_heartbeat = now; // Initialize heartbeat for stall detection
                                         jobs.push(job);
@@ -835,7 +838,7 @@ impl QueueManager {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
                 Err(e) => {
-                    eprintln!("Distributed pull error: {}", e);
+                    warn!(queue = %queue_name, error = %e, "Distributed pull error");
                     if now >= deadline {
                         return None;
                     }
@@ -910,7 +913,7 @@ impl QueueManager {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
                 Err(e) => {
-                    eprintln!("Distributed batch pull error: {}", e);
+                    warn!(queue = %queue_name, error = %e, "Distributed batch pull error");
                     if now >= deadline {
                         return Vec::new();
                     }

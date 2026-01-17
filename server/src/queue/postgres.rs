@@ -1,6 +1,7 @@
 use serde_json::Value;
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use tokio::sync::mpsc;
+use tracing::warn;
 
 use crate::protocol::{CronJob, Job, WebhookConfig};
 
@@ -660,7 +661,7 @@ impl PostgresStorage {
             .execute(&self.pool)
             .await
         {
-            eprintln!("Failed to send cluster sync notification: {}", e);
+            warn!(error = %e, "Failed to send cluster sync notification");
         }
     }
 
@@ -684,7 +685,7 @@ impl PostgresStorage {
             .execute(&self.pool)
             .await
         {
-            eprintln!("Failed to send batch cluster sync notification: {}", e);
+            warn!(error = %e, "Failed to send batch cluster sync notification");
         }
     }
 

@@ -67,7 +67,11 @@ impl QueueManager {
         let next_run = if let Some(interval) = repeat_every {
             now + interval
         } else {
-            Self::parse_next_cron_run(schedule.as_ref().unwrap(), now)
+            // Safe: we checked above that at least one of schedule/repeat_every is Some
+            Self::parse_next_cron_run(
+                schedule.as_ref().expect("schedule must exist if repeat_every is None"),
+                now,
+            )
         };
 
         let cron = CronJob {

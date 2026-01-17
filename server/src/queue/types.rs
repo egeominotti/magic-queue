@@ -571,6 +571,130 @@ impl SnapshotConfig {
     }
 }
 
+// ============== Circuit Breaker ==============
+
+/// Circuit breaker states
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircuitState {
+    /// Normal operation - requests allowed
+    Closed,
+    /// Too many failures - requests blocked
+    Open,
+    /// Testing if service recovered - limited requests allowed
+    HalfOpen,
+}
+
+/// Circuit breaker entry for a single endpoint
+#[derive(Debug)]
+pub struct CircuitBreakerEntry {
+    pub state: CircuitState,
+    pub failures: u32,
+    pub successes: u32,
+    pub last_failure_at: u64,
+    pub opened_at: u64,
+}
+
+impl Default for CircuitBreakerEntry {
+    fn default() -> Self {
+        Self {
+            state: CircuitState::Closed,
+            failures: 0,
+            successes: 0,
+            last_failure_at: 0,
+            opened_at: 0,
+        }
+    }
+}
+
+impl CircuitBreakerEntry {
+    /// Check if requests should be allowed through
+    pub fn should_allow(&self, now: u64, recovery_timeout_ms: u64) -> bool {
+        match self.state {
+            CircuitState::Closed => true,
+            CircuitState::HalfOpen => true, // Allow one test request
+            CircuitState::Open => {
+                // Check if recovery timeout has passed
+                now >= self.opened_at + recovery_timeout_ms
+            }
+        }
+    }
+
+    /// Record a successful request
+    pub fn record_success(&mut self) {
+        match self.state {
+            CircuitState::Closed => {
+                // Reset failures on success
+                self.failures = 0;
+            }
+            CircuitState::HalfOpen => {
+                self.successes += 1;
+                // After N successes in half-open, close the circuit
+                if self.successes >= 2 {
+                    self.state = CircuitState::Closed;
+                    self.failures = 0;
+                    self.successes = 0;
+                }
+            }
+            CircuitState::Open => {
+                // Shouldn't happen - we block requests when open
+            }
+        }
+    }
+
+    /// Record a failed request
+    pub fn record_failure(&mut self, now: u64, failure_threshold: u32) {
+        self.failures += 1;
+        self.last_failure_at = now;
+
+        match self.state {
+            CircuitState::Closed => {
+                if self.failures >= failure_threshold {
+                    self.state = CircuitState::Open;
+                    self.opened_at = now;
+                }
+            }
+            CircuitState::HalfOpen => {
+                // Any failure in half-open goes back to open
+                self.state = CircuitState::Open;
+                self.opened_at = now;
+                self.successes = 0;
+            }
+            CircuitState::Open => {
+                // Already open, update opened_at
+                self.opened_at = now;
+            }
+        }
+    }
+
+    /// Transition from open to half-open for testing
+    pub fn try_half_open(&mut self, now: u64, recovery_timeout_ms: u64) -> bool {
+        if self.state == CircuitState::Open && now >= self.opened_at + recovery_timeout_ms {
+            self.state = CircuitState::HalfOpen;
+            self.successes = 0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Circuit breaker configuration
+pub struct CircuitBreakerConfig {
+    /// Number of failures before opening the circuit
+    pub failure_threshold: u32,
+    /// Time in ms before trying to close (half-open state)
+    pub recovery_timeout_ms: u64,
+}
+
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self {
+            failure_threshold: 5,
+            recovery_timeout_ms: 30_000, // 30 seconds
+        }
+    }
+}
+
 // ============== Webhook ==============
 
 pub struct Webhook {

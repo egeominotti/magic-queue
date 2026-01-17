@@ -3,17 +3,23 @@ mod grpc;
 mod http;
 mod protocol;
 mod queue;
+mod telemetry;
 
 use mimalloc::MiMalloc;
+use tracing::{error, info};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, UnixListener};
+use tokio::signal;
+use tokio::sync::broadcast;
+use tracing::warn;
 
 use protocol::{
     create_binary_frame, deserialize_msgpack, serialize_msgpack, Command, JobState, Request,
@@ -25,13 +31,63 @@ const DEFAULT_TCP_PORT: u16 = 6789;
 const DEFAULT_HTTP_PORT: u16 = 6790;
 const DEFAULT_GRPC_PORT: u16 = 6791;
 const UNIX_SOCKET_PATH: &str = "/tmp/flashq.sock";
+const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 
 struct ConnectionState {
     authenticated: bool,
 }
 
+/// Global shutdown flag for graceful shutdown
+static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
+
+/// Check if shutdown has been requested
+fn is_shutting_down() -> bool {
+    SHUTDOWN_FLAG.load(Ordering::Relaxed)
+}
+
+/// Create a shutdown signal handler
+async fn shutdown_signal(shutdown_tx: broadcast::Sender<()>) {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("Shutdown signal received, starting graceful shutdown...");
+    SHUTDOWN_FLAG.store(true, Ordering::Relaxed);
+    let _ = shutdown_tx.send(());
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize telemetry (structured logging)
+    telemetry::init();
+
+    // Create shutdown channel for graceful shutdown
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    let shutdown_tx_signal = shutdown_tx.clone();
+
+    // Spawn shutdown signal handler
+    tokio::spawn(async move {
+        shutdown_signal(shutdown_tx_signal).await;
+    });
+
     let use_unix = std::env::var("UNIX_SOCKET").is_ok();
     let database_url = std::env::var("DATABASE_URL").ok();
     let enable_http = std::env::var("HTTP").is_ok();
@@ -58,10 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(url) = &database_url {
             let node_id = generate_node_id();
             let host = std::env::var("NODE_HOST").unwrap_or_else(|_| "localhost".to_string());
-            println!("Starting node {} in cluster mode", node_id);
+            info!(node_id = %node_id, "Starting node in cluster mode");
             QueueManager::with_cluster(url, node_id, host, http_port).await
         } else {
-            eprintln!("CLUSTER_MODE requires DATABASE_URL to be set");
+            error!("CLUSTER_MODE requires DATABASE_URL to be set");
             std::process::exit(1);
         }
     } else {
@@ -70,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             (Some(url), false) => QueueManager::with_postgres_and_auth(url, auth_tokens).await,
             (None, true) => QueueManager::new(false),
             (None, false) => {
-                println!("Authentication enabled with {} token(s)", auth_tokens.len());
+                info!(token_count = auth_tokens.len(), "Authentication enabled");
                 QueueManager::with_auth_tokens(false, auth_tokens)
             }
         }
@@ -84,14 +140,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(DEFAULT_HTTP_PORT);
 
         let qm_http = Arc::clone(&queue_manager);
+        let mut shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
             let router = http::create_router(qm_http);
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
                 .await
                 .expect("Failed to bind HTTP listener");
-            println!("HTTP API listening on port {}", http_port);
-            println!("Dashboard available at http://localhost:{}", http_port);
+            info!(port = http_port, "HTTP API listening");
+            info!(url = %format!("http://localhost:{}", http_port), "Dashboard available");
             axum::serve(listener, router)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown_rx.recv().await;
+                })
                 .await
                 .expect("HTTP server error");
         });
@@ -106,25 +166,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let qm_grpc = Arc::clone(&queue_manager);
         tokio::spawn(async move {
-            let addr = format!("0.0.0.0:{}", grpc_port).parse().unwrap();
+            let addr = format!("0.0.0.0:{}", grpc_port)
+                .parse()
+                .expect("valid socket address format");
+            info!(port = grpc_port, "gRPC server listening");
             if let Err(e) = grpc::run_grpc_server(addr, qm_grpc).await {
-                eprintln!("gRPC server error: {}", e);
+                error!(error = %e, "gRPC server error");
             }
         });
     }
 
+    let mut shutdown_rx = shutdown_tx.subscribe();
+
     if use_unix {
         let _ = std::fs::remove_file(UNIX_SOCKET_PATH);
         let listener = UnixListener::bind(UNIX_SOCKET_PATH)?;
-        println!("flashQ TCP server listening on {}", UNIX_SOCKET_PATH);
+        info!(socket = UNIX_SOCKET_PATH, "flashQ TCP server listening (Unix socket)");
 
         loop {
-            let (socket, _) = listener.accept().await?;
-            let qm = Arc::clone(&queue_manager);
-            tokio::spawn(async move {
-                let (reader, writer) = socket.into_split();
-                let _ = handle_connection(reader, writer, qm).await;
-            });
+            tokio::select! {
+                result = listener.accept() => {
+                    match result {
+                        Ok((socket, _)) => {
+                            if is_shutting_down() {
+                                break;
+                            }
+                            let qm = Arc::clone(&queue_manager);
+                            tokio::spawn(async move {
+                                let (reader, writer) = socket.into_split();
+                                let _ = handle_connection(reader, writer, qm).await;
+                            });
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Failed to accept connection");
+                        }
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    break;
+                }
+            }
         }
     } else {
         let port = std::env::var("PORT")
@@ -133,18 +214,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(DEFAULT_TCP_PORT);
 
         let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-        println!("flashQ TCP server listening on port {}", port);
+        info!(port = port, "flashQ TCP server listening");
 
         loop {
-            let (socket, _) = listener.accept().await?;
-            socket.set_nodelay(true)?;
-            let qm = Arc::clone(&queue_manager);
-            tokio::spawn(async move {
-                let (reader, writer) = socket.into_split();
-                let _ = handle_connection(reader, writer, qm).await;
-            });
+            tokio::select! {
+                result = listener.accept() => {
+                    match result {
+                        Ok((socket, _)) => {
+                            if is_shutting_down() {
+                                break;
+                            }
+                            socket.set_nodelay(true)?;
+                            let qm = Arc::clone(&queue_manager);
+                            tokio::spawn(async move {
+                                let (reader, writer) = socket.into_split();
+                                let _ = handle_connection(reader, writer, qm).await;
+                            });
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Failed to accept connection");
+                        }
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    break;
+                }
+            }
         }
     }
+
+    // Graceful shutdown: wait for active jobs to complete
+    info!("Stopping new connections, waiting for active jobs to complete...");
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+
+    loop {
+        let processing = queue_manager.processing_count();
+        if processing == 0 {
+            info!("All active jobs completed");
+            break;
+        }
+
+        if start.elapsed() >= timeout {
+            warn!(
+                remaining_jobs = processing,
+                timeout_secs = SHUTDOWN_TIMEOUT_SECS,
+                "Shutdown timeout reached, forcing exit"
+            );
+            break;
+        }
+
+        info!(
+            processing_jobs = processing,
+            elapsed_secs = start.elapsed().as_secs(),
+            "Waiting for active jobs to complete..."
+        );
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+
+    info!("Shutdown complete");
+    Ok(())
 }
 
 async fn handle_connection<R, W>(
