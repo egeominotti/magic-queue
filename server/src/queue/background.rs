@@ -332,16 +332,16 @@ impl QueueManager {
                 if job.should_go_to_dlq() {
                     self.notify_subscribers("timeout", &job.queue, &job);
                     self.index_job(job_id, super::types::JobLocation::Dlq { shard_idx: idx });
+                    // Persist first (needs reference)
+                    self.persist_dlq(&job, Some("Job timed out"));
+                    self.metrics.record_timeout();
+                    // Then move (no clone)
                     self.shards[idx]
                         .write()
                         .dlq
                         .entry(queue_arc)
                         .or_default()
-                        .push_back(job.clone());
-                    self.metrics.record_timeout();
-
-                    // Persist to PostgreSQL
-                    self.persist_dlq(&job, Some("Job timed out"));
+                        .push_back(job);
                 } else {
                     let backoff = job.next_backoff();
                     let new_run_at = if backoff > 0 {
@@ -354,15 +354,15 @@ impl QueueManager {
                     job.progress_msg = Some("Job timed out".to_string());
 
                     self.index_job(job_id, super::types::JobLocation::Queue { shard_idx: idx });
+                    // Persist first (uses primitives)
+                    self.persist_fail(job_id, new_run_at, job.attempts);
+                    // Then move (no clone)
                     self.shards[idx]
                         .write()
                         .queues
                         .entry(queue_arc)
                         .or_default()
-                        .push(job.clone());
-
-                    // Persist to PostgreSQL
-                    self.persist_fail(job_id, new_run_at, job.attempts);
+                        .push(job);
 
                     self.notify_shard(idx);
                 }
@@ -371,32 +371,38 @@ impl QueueManager {
     }
 
     pub(crate) async fn check_dependencies(&self) {
-        let completed = self.completed_jobs.read().clone();
-        if completed.is_empty() {
+        // Check if there are any completed jobs without cloning
+        if self.completed_jobs.read().is_empty() {
             return;
         }
 
         for (idx, shard) in self.shards.iter().enumerate() {
             let mut shard_w = shard.write();
-            let mut ready_jobs = Vec::new();
 
-            shard_w.waiting_deps.retain(|_, job| {
-                if job.depends_on.iter().all(|dep| completed.contains(dep)) {
-                    ready_jobs.push(job.clone());
-                    false
-                } else {
-                    true
-                }
-            });
+            // First pass: identify ready job IDs (with completed lock held briefly)
+            let ready_ids: Vec<u64> = {
+                let completed = self.completed_jobs.read();
+                shard_w
+                    .waiting_deps
+                    .iter()
+                    .filter(|(_, job)| job.depends_on.iter().all(|dep| completed.contains(dep)))
+                    .map(|(&id, _)| id)
+                    .collect()
+            };
 
-            if !ready_jobs.is_empty() {
-                for job in ready_jobs {
+            if ready_ids.is_empty() {
+                continue;
+            }
+
+            // Second pass: remove and move jobs (no clone needed)
+            for job_id in ready_ids {
+                if let Some(job) = shard_w.waiting_deps.remove(&job_id) {
                     let queue_arc = intern(&job.queue);
                     shard_w.queues.entry(queue_arc).or_default().push(job);
                 }
-                drop(shard_w);
-                self.notify_shard(idx);
             }
+            drop(shard_w);
+            self.notify_shard(idx);
         }
     }
 

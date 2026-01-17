@@ -6,7 +6,7 @@ use tokio::time::Duration;
 
 use super::manager::QueueManager;
 use super::types::{intern, now_ms, JobLocation};
-use crate::protocol::{Job, JobEvent, JobInput};
+use crate::protocol::{Job, JobBuilder, JobEvent, JobInput};
 
 /// Maximum job data size in bytes (1MB) to prevent DoS attacks
 const MAX_JOB_DATA_SIZE: usize = 1_048_576;
@@ -55,6 +55,8 @@ fn validate_job_data(data: &Value) -> Result<(), String> {
 }
 
 impl QueueManager {
+    /// Create a job using the builder pattern.
+    /// This is a convenience method that wraps JobBuilder for backwards compatibility.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn create_job_with_id(
@@ -79,41 +81,24 @@ impl QueueManager {
         keep_completed_age: Option<u64>,
         keep_completed_count: Option<usize>,
     ) -> Job {
-        let now = now_ms();
-        Job {
-            id,
-            queue,
-            data,
-            priority,
-            created_at: now,
-            run_at: delay.map_or(now, |d| now + d),
-            started_at: 0,
-            attempts: 0,
-            max_attempts: max_attempts.unwrap_or(0),
-            backoff: backoff.unwrap_or(0),
-            ttl: ttl.unwrap_or(0),
-            timeout: timeout.unwrap_or(0),
-            unique_key,
-            depends_on: depends_on.unwrap_or_default(),
-            progress: 0,
-            progress_msg: None,
-            tags: tags.unwrap_or_default(),
-            lifo,
-            // New BullMQ-like fields
-            remove_on_complete,
-            remove_on_fail,
-            last_heartbeat: 0,
-            stall_timeout: stall_timeout.unwrap_or(0),
-            stall_count: 0,
-            parent_id: None,
-            children_ids: Vec::new(),
-            children_completed: 0,
-            // Custom ID and retention
-            custom_id,
-            keep_completed_age: keep_completed_age.unwrap_or(0),
-            keep_completed_count: keep_completed_count.unwrap_or(0),
-            completed_at: 0,
-        }
+        JobBuilder::new(queue, data)
+            .priority(priority)
+            .delay_opt(delay)
+            .ttl_opt(ttl)
+            .timeout_opt(timeout)
+            .max_attempts_opt(max_attempts)
+            .backoff_opt(backoff)
+            .unique_key_opt(unique_key)
+            .depends_on_opt(depends_on)
+            .tags_opt(tags)
+            .lifo(lifo)
+            .remove_on_complete(remove_on_complete)
+            .remove_on_fail(remove_on_fail)
+            .stall_timeout_opt(stall_timeout)
+            .custom_id_opt(custom_id)
+            .keep_completed_age_opt(keep_completed_age)
+            .keep_completed_count_opt(keep_completed_count)
+            .build(id, now_ms())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -311,63 +296,68 @@ impl QueueManager {
 
         let idx = Self::shard_index(&queue);
         let queue_name = intern(&queue);
-        let completed = self.completed_jobs.read().clone();
 
-        for (input, job_id) in valid_jobs.into_iter().zip(job_ids.into_iter()) {
-            // Track debounce updates
-            if let Some(ref id) = input.debounce_id {
-                let debounce_key = format!("{}:{}", queue, id);
-                let ttl = input.debounce_ttl.unwrap_or(5000);
-                debounce_updates.push((debounce_key, now + ttl));
-            }
-            let job = self.create_job_with_id(
-                job_id,
-                queue.clone(),
-                input.data,
-                input.priority,
-                input.delay,
-                input.ttl,
-                input.timeout,
-                input.max_attempts,
-                input.backoff,
-                input.unique_key,
-                input.depends_on,
-                input.tags,
-                input.lifo,
-                input.remove_on_complete,
-                input.remove_on_fail,
-                input.stall_timeout,
-                input.job_id,
-                input.keep_completed_age,
-                input.keep_completed_count,
-            );
-            ids.push(job.id);
+        // Check dependencies without cloning the entire completed set
+        {
+            let completed = self.completed_jobs.read();
+            for (input, job_id) in valid_jobs.into_iter().zip(job_ids.into_iter()) {
+                // Track debounce updates
+                if let Some(ref id) = input.debounce_id {
+                    let debounce_key = format!("{}:{}", queue, id);
+                    let ttl = input.debounce_ttl.unwrap_or(5000);
+                    debounce_updates.push((debounce_key, now + ttl));
+                }
+                let job = self.create_job_with_id(
+                    job_id,
+                    queue.clone(),
+                    input.data,
+                    input.priority,
+                    input.delay,
+                    input.ttl,
+                    input.timeout,
+                    input.max_attempts,
+                    input.backoff,
+                    input.unique_key,
+                    input.depends_on,
+                    input.tags,
+                    input.lifo,
+                    input.remove_on_complete,
+                    input.remove_on_fail,
+                    input.stall_timeout,
+                    input.job_id,
+                    input.keep_completed_age,
+                    input.keep_completed_count,
+                );
+                ids.push(job.id);
 
-            if !job.depends_on.is_empty()
-                && !job.depends_on.iter().all(|dep| completed.contains(dep))
-            {
-                waiting_jobs.push(job);
-                continue;
+                if !job.depends_on.is_empty()
+                    && !job.depends_on.iter().all(|dep| completed.contains(dep))
+                {
+                    waiting_jobs.push(job);
+                    continue;
+                }
+                created_jobs.push(job);
             }
-            created_jobs.push(job);
-        }
+        } // Release completed_jobs read lock here
+
+        // Persist first (needs references), then insert (consumes jobs)
+        self.persist_push_batch(&created_jobs, "waiting");
+        self.persist_push_batch(&waiting_jobs, "waiting_children");
 
         {
             let mut shard = self.shards[idx].write();
             let heap = shard.queues.entry(queue_name).or_default();
-            for job in &created_jobs {
+            // Use into_iter to move jobs instead of cloning
+            for job in created_jobs {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
-                heap.push(job.clone());
+                heap.push(job);
             }
-            for job in &waiting_jobs {
-                self.index_job(job.id, JobLocation::WaitingDeps { shard_idx: idx });
-                shard.waiting_deps.insert(job.id, job.clone());
+            for job in waiting_jobs {
+                let job_id = job.id;
+                self.index_job(job_id, JobLocation::WaitingDeps { shard_idx: idx });
+                shard.waiting_deps.insert(job_id, job);
             }
         }
-
-        // Persist to PostgreSQL (includes cluster notification)
-        self.persist_push_batch(&created_jobs, "waiting");
-        self.persist_push_batch(&waiting_jobs, "waiting_children");
 
         // Update debounce cache
         if !debounce_updates.is_empty() {
@@ -714,27 +704,43 @@ impl QueueManager {
                     self.stalled_count.write().remove(&job_id);
                 } else {
                     self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
+                    // Persist first (needs reference)
+                    self.persist_dlq(&job, error.as_deref());
+                    // Extract data for broadcast before moving
+                    let queue_name = job.queue.clone();
+                    // Then move into DLQ (no clone)
                     self.shards[idx]
                         .write()
                         .dlq
-                        .entry(queue_arc.clone())
+                        .entry(queue_arc)
                         .or_default()
-                        .push_back(job.clone());
+                        .push_back(job);
+
+                    self.metrics.record_fail();
+
+                    // Broadcast failed event
+                    self.broadcast_event(JobEvent {
+                        event_type: "failed".to_string(),
+                        queue: queue_name,
+                        job_id,
+                        timestamp: now_ms(),
+                        data: None,
+                        error,
+                        progress: None,
+                    });
+                    return Ok(());
                 }
 
                 self.metrics.record_fail();
 
-                // Persist to PostgreSQL
-                self.persist_dlq(&job, error.as_deref());
-
-                // Broadcast failed event
+                // Broadcast failed event for remove_on_fail case
                 self.broadcast_event(JobEvent {
                     event_type: "failed".to_string(),
                     queue: job.queue.clone(),
                     job_id: job.id,
                     timestamp: now_ms(),
                     data: None,
-                    error: error.clone(),
+                    error,
                     progress: None,
                 });
 
@@ -755,15 +761,15 @@ impl QueueManager {
             }
 
             self.index_job(job_id, JobLocation::Queue { shard_idx: idx });
+            // Persist first (uses primitive values, no job reference needed)
+            self.persist_fail(job_id, new_run_at, job.attempts);
+            // Then move job into queue (no clone)
             self.shards[idx]
                 .write()
                 .queues
                 .entry(queue_arc)
                 .or_default()
-                .push(job.clone());
-
-            // Persist to PostgreSQL
-            self.persist_fail(job_id, new_run_at, job.attempts);
+                .push(job);
 
             self.notify_shard(idx);
             return Ok(());

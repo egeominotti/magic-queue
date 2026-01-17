@@ -1,3 +1,10 @@
+//! Core QueueManager struct and constructors.
+//!
+//! The actual operations are implemented in separate modules:
+//! - persistence.rs - PostgreSQL persistence (persist_*)
+//! - query.rs - Job query operations (get_job, get_state, wait_for_job)
+//! - admin.rs - Admin operations (workers, webhooks, settings, reset)
+
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::sync::Arc;
 
@@ -18,10 +25,7 @@ pub type JobIndexMap = DashMap<u64, JobLocation, BuildHasherDefault<GxHasher>>;
 
 /// Type alias for sharded processing maps
 pub type ProcessingShard = RwLock<GxHashMap<u64, Job>>;
-use crate::protocol::{
-    set_id_counter, CronJob, Job, JobBrowserItem, JobEvent, JobLogEntry, JobState,
-    MetricsHistoryPoint, WebhookConfig, WorkerInfo,
-};
+use crate::protocol::{set_id_counter, CronJob, Job, JobEvent, JobLogEntry, MetricsHistoryPoint};
 use tokio::sync::broadcast;
 
 pub const NUM_SHARDS: usize = 32;
@@ -344,20 +348,20 @@ impl QueueManager {
         self.storage.is_some()
     }
 
-    /// Check if snapshot mode is enabled
+    /// Check if snapshot mode is enabled.
     #[inline]
     pub fn is_snapshot_mode(&self) -> bool {
         self.snapshot_config.is_some()
     }
 
-    /// Increment snapshot change counter
+    /// Increment snapshot change counter.
     #[inline]
     pub(crate) fn record_change(&self) {
         self.snapshot_changes
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Get current change count
+    /// Get current change count.
     #[allow(dead_code)]
     #[inline]
     pub fn snapshot_change_count(&self) -> u64 {
@@ -365,8 +369,8 @@ impl QueueManager {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Get next job ID from PostgreSQL sequence (cluster-wide unique)
-    /// Falls back to local atomic counter if database unavailable
+    /// Get next job ID from PostgreSQL sequence (cluster-wide unique).
+    /// Falls back to local atomic counter if database unavailable.
     pub async fn next_job_id(&self) -> u64 {
         if let Some(ref storage) = self.storage {
             if let Ok(id) = storage.next_sequence_id().await {
@@ -377,7 +381,7 @@ impl QueueManager {
         crate::protocol::next_id()
     }
 
-    /// Get next N job IDs from PostgreSQL sequence (cluster-wide unique)
+    /// Get next N job IDs from PostgreSQL sequence (cluster-wide unique).
     pub async fn next_job_ids(&self, count: usize) -> Vec<u64> {
         if let Some(ref storage) = self.storage {
             if let Ok(ids) = storage.next_sequence_ids(count as i64).await {
@@ -393,13 +397,13 @@ impl QueueManager {
         self.auth_tokens.read().len()
     }
 
-    /// Check if this node is the cluster leader (or if clustering is disabled)
+    /// Check if this node is the cluster leader (or if clustering is disabled).
     #[inline]
     pub fn is_leader(&self) -> bool {
         self.cluster.as_ref().map(|c| c.is_leader()).unwrap_or(true)
     }
 
-    /// Check if cluster mode is enabled
+    /// Check if cluster mode is enabled.
     #[inline]
     pub fn is_cluster_enabled(&self) -> bool {
         self.cluster
@@ -408,25 +412,26 @@ impl QueueManager {
             .unwrap_or(false)
     }
 
-    /// Check if distributed pull mode is enabled
-    /// When enabled, uses SELECT FOR UPDATE SKIP LOCKED for consistent job claiming
+    /// Check if distributed pull mode is enabled.
+    /// When enabled, uses SELECT FOR UPDATE SKIP LOCKED for consistent job claiming.
     #[inline]
     pub fn is_distributed_pull(&self) -> bool {
         self.distributed_pull
     }
 
-    /// Get the node ID
+    /// Get the node ID.
     #[inline]
     pub fn node_id(&self) -> Option<String> {
         self.cluster.as_ref().map(|c| c.node_id.clone())
     }
 
-    /// Get cluster manager reference
+    /// Get cluster manager reference.
     #[inline]
     pub fn cluster(&self) -> Option<&Arc<ClusterManager>> {
         self.cluster.as_ref()
     }
 
+    /// Get shard index for a queue name.
     #[inline(always)]
     pub fn shard_index(queue: &str) -> usize {
         let mut hasher = GxHasher::default();
@@ -434,34 +439,34 @@ impl QueueManager {
         hasher.finish() as usize % NUM_SHARDS
     }
 
-    /// Get processing shard index for a job ID
+    /// Get processing shard index for a job ID.
     #[inline(always)]
     pub fn processing_shard_index(job_id: u64) -> usize {
         (job_id % NUM_SHARDS as u64) as usize
     }
 
-    /// Insert job into processing (sharded)
+    /// Insert job into processing (sharded).
     #[inline]
     pub(crate) fn processing_insert(&self, job: Job) {
         let idx = Self::processing_shard_index(job.id);
         self.processing_shards[idx].write().insert(job.id, job);
     }
 
-    /// Remove job from processing (sharded), returns the job if found
+    /// Remove job from processing (sharded), returns the job if found.
     #[inline]
     pub(crate) fn processing_remove(&self, job_id: u64) -> Option<Job> {
         let idx = Self::processing_shard_index(job_id);
         self.processing_shards[idx].write().remove(&job_id)
     }
 
-    /// Get job from processing (sharded)
+    /// Get job from processing (sharded).
     #[inline]
     pub(crate) fn processing_get(&self, job_id: u64) -> Option<Job> {
         let idx = Self::processing_shard_index(job_id);
         self.processing_shards[idx].read().get(&job_id).cloned()
     }
 
-    /// Get mutable reference to job in processing via closure
+    /// Get mutable reference to job in processing via closure.
     #[inline]
     pub(crate) fn processing_get_mut<F, R>(&self, job_id: u64, f: F) -> Option<R>
     where
@@ -471,13 +476,13 @@ impl QueueManager {
         self.processing_shards[idx].write().get_mut(&job_id).map(f)
     }
 
-    /// Count all jobs in processing (across all shards)
+    /// Count all jobs in processing (across all shards).
     #[inline]
     pub(crate) fn processing_len(&self) -> usize {
         self.processing_shards.iter().map(|s| s.read().len()).sum()
     }
 
-    /// Iterate over all processing jobs (for stats, etc.)
+    /// Iterate over all processing jobs (for stats, etc.).
     pub(crate) fn processing_iter<F>(&self, mut f: F)
     where
         F: FnMut(&Job),
@@ -490,7 +495,7 @@ impl QueueManager {
         }
     }
 
-    /// Iterate over all processing jobs for a specific queue
+    /// Iterate over all processing jobs for a specific queue.
     pub(crate) fn processing_count_by_queue(&self, queue: &str) -> usize {
         let mut count = 0;
         for shard in &self.processing_shards {
@@ -500,6 +505,7 @@ impl QueueManager {
         count
     }
 
+    /// Get current timestamp in milliseconds.
     #[inline(always)]
     pub fn now_ms() -> u64 {
         now_ms()
@@ -608,1063 +614,4 @@ impl QueueManager {
             println!("Recovered {} jobs from PostgreSQL", job_count);
         }
     }
-
-    // ============== Persistence Methods (PostgreSQL) ==============
-
-    /// Persist a pushed job to PostgreSQL and notify cluster.
-    /// In snapshot mode, only records the change (actual persistence happens in background snapshot).
-    #[inline]
-    pub(crate) fn persist_push(&self, job: &Job, state: &str) {
-        // In snapshot mode, just record the change
-        if self.is_snapshot_mode() {
-            self.record_change();
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let job = job.clone();
-            let state = state.to_string();
-            let node_id = self.node_id();
-            let is_cluster = self.is_cluster_enabled();
-            tokio::spawn(async move {
-                // First persist to PostgreSQL
-                if let Err(e) = storage.insert_job(&job, &state).await {
-                    eprintln!("Failed to persist job {}: {}", job.id, e);
-                    return;
-                }
-                // Then notify cluster (only after INSERT succeeds)
-                if is_cluster {
-                    storage
-                        .notify_job_pushed(job.id, &job.queue, &node_id.unwrap_or_default())
-                        .await;
-                }
-            });
-        }
-    }
-
-    /// Persist a batch of jobs to PostgreSQL and notify cluster.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_push_batch(&self, jobs: &[Job], state: &str) {
-        if jobs.is_empty() {
-            return;
-        }
-
-        // In snapshot mode, just record the changes
-        if self.is_snapshot_mode() {
-            self.snapshot_changes
-                .fetch_add(jobs.len() as u64, std::sync::atomic::Ordering::Relaxed);
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let jobs = jobs.to_vec();
-            let state = state.to_string();
-            let node_id = self.node_id();
-            let is_cluster = self.is_cluster_enabled();
-            // Capture queue name before moving jobs
-            let queue = jobs.first().map(|j| j.queue.clone()).unwrap_or_default();
-            let job_ids: Vec<u64> = jobs.iter().map(|j| j.id).collect();
-            tokio::spawn(async move {
-                // First persist to PostgreSQL
-                if let Err(e) = storage.insert_jobs_batch(&jobs, &state).await {
-                    eprintln!("Failed to persist batch: {}", e);
-                    return;
-                }
-                // Then notify cluster (only after INSERT succeeds)
-                if is_cluster {
-                    storage
-                        .notify_jobs_pushed(&job_ids, &queue, &node_id.unwrap_or_default())
-                        .await;
-                }
-            });
-        }
-    }
-
-    /// Persist job acknowledgment to PostgreSQL.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_ack(&self, job_id: u64, result: Option<Value>) {
-        if self.is_snapshot_mode() {
-            self.record_change();
-            // Still store results in memory (they'll be available until cleanup)
-            if let Some(res) = result {
-                self.job_results.write().insert(job_id, res);
-            }
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            tokio::spawn(async move {
-                if let Err(e) = storage.ack_job(job_id, result).await {
-                    eprintln!("Failed to persist ack {}: {}", job_id, e);
-                }
-            });
-        }
-    }
-
-    /// Persist batch acknowledgments to PostgreSQL.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_ack_batch(&self, ids: &[u64]) {
-        if ids.is_empty() {
-            return;
-        }
-
-        if self.is_snapshot_mode() {
-            self.snapshot_changes
-                .fetch_add(ids.len() as u64, std::sync::atomic::Ordering::Relaxed);
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let ids = ids.to_vec();
-            tokio::spawn(async move {
-                if let Err(e) = storage.ack_jobs_batch(&ids).await {
-                    eprintln!("Failed to persist ack batch: {}", e);
-                }
-            });
-        }
-    }
-
-    /// Persist job failure (retry) to PostgreSQL.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_fail(&self, job_id: u64, _new_run_at: u64, _attempts: u32) {
-        if self.is_snapshot_mode() {
-            self.record_change();
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            tokio::spawn(async move {
-                if let Err(e) = storage.fail_job(job_id, _new_run_at, _attempts).await {
-                    eprintln!("Failed to persist fail {}: {}", job_id, e);
-                }
-            });
-        }
-    }
-
-    /// Persist job moved to DLQ.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_dlq(&self, job: &Job, error: Option<&str>) {
-        if self.is_snapshot_mode() {
-            self.record_change();
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let job = job.clone();
-            let error = error.map(|s| s.to_string());
-            tokio::spawn(async move {
-                if let Err(e) = storage.move_to_dlq(&job, error.as_deref()).await {
-                    eprintln!("Failed to persist DLQ {}: {}", job.id, e);
-                }
-            });
-        }
-    }
-
-    /// Persist job cancellation.
-    /// In snapshot mode, only records the change.
-    #[inline]
-    pub(crate) fn persist_cancel(&self, job_id: u64) {
-        if self.is_snapshot_mode() {
-            self.record_change();
-            return;
-        }
-
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            tokio::spawn(async move {
-                if let Err(e) = storage.cancel_job(job_id).await {
-                    eprintln!("Failed to persist cancel {}: {}", job_id, e);
-                }
-            });
-        }
-    }
-
-    /// Persist cron job.
-    #[inline]
-    pub(crate) fn persist_cron(&self, cron: &CronJob) {
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let cron = cron.clone();
-            tokio::spawn(async move {
-                if let Err(e) = storage.save_cron(&cron).await {
-                    eprintln!("Failed to persist cron {}: {}", cron.name, e);
-                }
-            });
-        }
-    }
-
-    /// Persist cron job deletion.
-    #[inline]
-    pub(crate) fn persist_cron_delete(&self, name: &str) {
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let name = name.to_string();
-            tokio::spawn(async move {
-                if let Err(e) = storage.delete_cron(&name).await {
-                    eprintln!("Failed to persist cron delete {}: {}", name, e);
-                }
-            });
-        }
-    }
-
-    /// Persist cron next_run update.
-    #[inline]
-    pub(crate) fn persist_cron_next_run(&self, name: &str, next_run: u64) {
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let name = name.to_string();
-            tokio::spawn(async move {
-                if let Err(e) = storage.update_cron_next_run(&name, next_run).await {
-                    eprintln!("Failed to update cron next_run {}: {}", name, e);
-                }
-            });
-        }
-    }
-
-    /// Persist webhook.
-    #[allow(dead_code)]
-    #[inline]
-    pub(crate) fn persist_webhook(&self, webhook: &WebhookConfig) {
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let webhook = webhook.clone();
-            tokio::spawn(async move {
-                if let Err(e) = storage.save_webhook(&webhook).await {
-                    eprintln!("Failed to persist webhook {}: {}", webhook.id, e);
-                }
-            });
-        }
-    }
-
-    /// Persist webhook deletion.
-    #[allow(dead_code)]
-    #[inline]
-    pub(crate) fn persist_webhook_delete(&self, id: &str) {
-        if let Some(ref storage) = self.storage {
-            let storage = Arc::clone(storage);
-            let id = id.to_string();
-            tokio::spawn(async move {
-                if let Err(e) = storage.delete_webhook(&id).await {
-                    eprintln!("Failed to persist webhook delete {}: {}", id, e);
-                }
-            });
-        }
-    }
-
-    pub(crate) fn notify_subscribers(&self, event: &str, queue: &str, job: &Job) {
-        let subs = self.subscribers.read();
-        for sub in subs.iter() {
-            if sub.queue.as_str() == queue && sub.events.contains(&event.to_string()) {
-                let msg = serde_json::json!({
-                    "event": event,
-                    "queue": queue,
-                    "job": job
-                })
-                .to_string();
-                let _ = sub.tx.send(msg);
-            }
-        }
-    }
-
-    /// Notify shard's waiting workers
-    #[inline]
-    pub(crate) fn notify_shard(&self, idx: usize) {
-        self.shards[idx].read().notify.notify_waiters();
-    }
-
-    /// Notify all shards - wakes up workers that may have missed push notifications
-    #[inline]
-    pub(crate) fn notify_all(&self) {
-        for shard in &self.shards {
-            shard.read().notify.notify_waiters();
-        }
-    }
-
-    /// Get job by ID with its current state - O(1) lookup via job_index (lock-free)
-    pub fn get_job(&self, id: u64) -> (Option<Job>, JobState) {
-        let now = now_ms();
-
-        // O(1) lock-free lookup in DashMap
-        let location = match self.job_index.get(&id) {
-            Some(loc) => *loc,
-            None => return (None, JobState::Unknown),
-        };
-
-        match location {
-            JobLocation::Processing => {
-                let job = self.processing_get(id);
-                let state = job
-                    .as_ref()
-                    .map(|j| location.to_state(j.run_at, now))
-                    .unwrap_or(JobState::Active);
-                (job, state)
-            }
-            JobLocation::Queue { shard_idx } => {
-                let shard = self.shards[shard_idx].read();
-                for heap in shard.queues.values() {
-                    if let Some(job) = heap.iter().find(|j| j.id == id) {
-                        return (Some(job.clone()), location.to_state(job.run_at, now));
-                    }
-                }
-                (None, JobState::Unknown)
-            }
-            JobLocation::Dlq { shard_idx } => {
-                let shard = self.shards[shard_idx].read();
-                for dlq in shard.dlq.values() {
-                    if let Some(job) = dlq.iter().find(|j| j.id == id) {
-                        return (Some(job.clone()), JobState::Failed);
-                    }
-                }
-                (None, JobState::Unknown)
-            }
-            JobLocation::WaitingDeps { shard_idx } => {
-                let shard = self.shards[shard_idx].read();
-                let job = shard.waiting_deps.get(&id).cloned();
-                (job, JobState::WaitingChildren)
-            }
-            JobLocation::WaitingChildren { shard_idx } => {
-                let shard = self.shards[shard_idx].read();
-                let job = shard.waiting_children.get(&id).cloned();
-                (job, JobState::WaitingParent)
-            }
-            JobLocation::Completed => {
-                // Job completed, no data stored (only result if any)
-                (None, JobState::Completed)
-            }
-        }
-    }
-
-    /// Get only the state of a job by ID - O(1) lock-free lookup
-    #[inline]
-    pub fn get_state(&self, id: u64) -> JobState {
-        let now = now_ms();
-
-        match self.job_index.get(&id) {
-            Some(location) => {
-                let location = *location;
-                // For Queue state, we need run_at to determine Waiting vs Delayed
-                if let JobLocation::Queue { shard_idx } = location {
-                    let shard = self.shards[shard_idx].read();
-                    for heap in shard.queues.values() {
-                        if let Some(job) = heap.iter().find(|j| j.id == id) {
-                            return location.to_state(job.run_at, now);
-                        }
-                    }
-                    JobState::Unknown
-                } else {
-                    location.to_state(0, now)
-                }
-            }
-            None => JobState::Unknown,
-        }
-    }
-
-    /// Get job by internal ID - returns just the Job (for idempotency check)
-    pub fn get_job_by_internal_id(&self, id: u64) -> Option<Job> {
-        self.get_job(id).0
-    }
-
-    /// Get job by custom ID
-    pub fn get_job_by_custom_id(&self, custom_id: &str) -> Option<(Job, JobState)> {
-        let internal_id = self.custom_id_map.read().get(custom_id).copied()?;
-        let (job, state) = self.get_job(internal_id);
-        job.map(|j| (j, state))
-    }
-
-    /// Get multiple jobs by IDs in a single call (batch status)
-    pub async fn get_jobs_batch(&self, ids: &[u64]) -> Vec<crate::protocol::JobBrowserItem> {
-        ids.iter()
-            .filter_map(|&id| {
-                let (job, state) = self.get_job(id);
-                job.map(|j| crate::protocol::JobBrowserItem { job: j, state })
-            })
-            .collect()
-    }
-
-    /// Wait for job to complete and return result (finished() promise)
-    pub async fn wait_for_job(
-        &self,
-        id: u64,
-        timeout_ms: Option<u64>,
-    ) -> Result<Option<Value>, String> {
-        let timeout = timeout_ms.unwrap_or(30000);
-
-        // First check if job is already completed
-        let state = self.get_state(id);
-        if state == JobState::Completed {
-            return Ok(self.job_results.read().get(&id).cloned());
-        }
-        if state == JobState::Failed {
-            return Err("Job failed".to_string());
-        }
-        if state == JobState::Unknown {
-            return Err("Job not found".to_string());
-        }
-
-        // Create a oneshot channel to wait for completion
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        // Register the waiter
-        self.job_waiters.write().entry(id).or_default().push(tx);
-
-        // Wait with timeout
-        match tokio::time::timeout(std::time::Duration::from_millis(timeout), rx).await {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(_)) => Err("Waiter channel closed".to_string()),
-            Err(_) => Err(format!(
-                "Timeout waiting for job {} after {}ms",
-                id, timeout
-            )),
-        }
-    }
-
-    /// Notify all waiters when a job completes
-    pub fn notify_job_waiters(&self, job_id: u64, result: Option<Value>) {
-        let waiters = self.job_waiters.write().remove(&job_id);
-        if let Some(waiters) = waiters {
-            for tx in waiters {
-                let _ = tx.send(result.clone());
-            }
-        }
-    }
-
-    /// Track job location in index (lock-free DashMap)
-    #[inline]
-    pub(crate) fn index_job(&self, id: u64, location: JobLocation) {
-        self.job_index.insert(id, location);
-    }
-
-    /// Remove job from index (lock-free DashMap)
-    #[inline]
-    pub(crate) fn unindex_job(&self, id: u64) {
-        self.job_index.remove(&id);
-    }
-
-    /// Remove job from index - alias for compatibility
-    #[inline]
-    pub(crate) fn remove_job_index(&self, id: u64) {
-        self.job_index.remove(&id);
-    }
-
-    // ============== Job Browser ==============
-
-    /// List all jobs with filtering options
-    /// Returns jobs sorted by created_at descending (newest first)
-    pub fn list_jobs(
-        &self,
-        queue_filter: Option<&str>,
-        state_filter: Option<JobState>,
-        limit: usize,
-        offset: usize,
-    ) -> Vec<JobBrowserItem> {
-        let now = now_ms();
-        let mut jobs: Vec<JobBrowserItem> = Vec::new();
-
-        // Collect jobs from all shards
-        for shard in &self.shards {
-            let shard = shard.read();
-
-            // Jobs in queues (waiting/delayed)
-            for (queue_name, heap) in &shard.queues {
-                if let Some(filter) = queue_filter {
-                    if &**queue_name != filter {
-                        continue;
-                    }
-                }
-                for job in heap.iter() {
-                    let state = if job.run_at > now {
-                        JobState::Delayed
-                    } else {
-                        JobState::Waiting
-                    };
-                    if let Some(sf) = state_filter {
-                        if sf != state {
-                            continue;
-                        }
-                    }
-                    jobs.push(JobBrowserItem {
-                        job: job.clone(),
-                        state,
-                    });
-                }
-            }
-
-            // Jobs in DLQ (failed)
-            for (queue_name, dlq) in &shard.dlq {
-                if let Some(filter) = queue_filter {
-                    if &**queue_name != filter {
-                        continue;
-                    }
-                }
-                if let Some(sf) = state_filter {
-                    if sf != JobState::Failed {
-                        continue;
-                    }
-                }
-                for job in dlq.iter() {
-                    jobs.push(JobBrowserItem {
-                        job: job.clone(),
-                        state: JobState::Failed,
-                    });
-                }
-            }
-
-            // Jobs waiting for dependencies
-            for job in shard.waiting_deps.values() {
-                if let Some(filter) = queue_filter {
-                    if job.queue != filter {
-                        continue;
-                    }
-                }
-                if let Some(sf) = state_filter {
-                    if sf != JobState::WaitingChildren {
-                        continue;
-                    }
-                }
-                jobs.push(JobBrowserItem {
-                    job: job.clone(),
-                    state: JobState::WaitingChildren,
-                });
-            }
-        }
-
-        // Add jobs in processing (active) - iterate all shards
-        for shard in &self.processing_shards {
-            let processing = shard.read();
-            for job in processing.values() {
-                if let Some(filter) = queue_filter {
-                    if job.queue != filter {
-                        continue;
-                    }
-                }
-                if let Some(sf) = state_filter {
-                    if sf != JobState::Active {
-                        continue;
-                    }
-                }
-                jobs.push(JobBrowserItem {
-                    job: job.clone(),
-                    state: JobState::Active,
-                });
-            }
-        }
-
-        // Sort by created_at descending (newest first)
-        jobs.sort_by(|a, b| b.job.created_at.cmp(&a.job.created_at));
-
-        // Apply offset and limit
-        jobs.into_iter().skip(offset).take(limit).collect()
-    }
-
-    /// Get metrics history for charts
-    pub fn get_metrics_history(&self) -> Vec<MetricsHistoryPoint> {
-        self.metrics_history.read().clone()
-    }
-
-    /// Collect and store a metrics history point
-    pub(crate) fn collect_metrics_history(&self) {
-        use std::sync::atomic::Ordering;
-
-        let now = now_ms();
-        let (queued, processing, _delayed, _dlq) = self.stats_sync();
-
-        let total_completed = self.metrics.total_completed.load(Ordering::Relaxed);
-        let total_failed = self.metrics.total_failed.load(Ordering::Relaxed);
-        let latency_count = self.metrics.latency_count.load(Ordering::Relaxed);
-        let avg_latency = if latency_count > 0 {
-            self.metrics.latency_sum.load(Ordering::Relaxed) as f64 / latency_count as f64
-        } else {
-            0.0
-        };
-
-        // Calculate throughput from history
-        let throughput = {
-            let history = self.metrics_history.read();
-            if history.len() >= 2 {
-                let prev = &history[history.len() - 1];
-                let time_diff = (now - prev.timestamp) as f64 / 1000.0;
-                if time_diff > 0.0 {
-                    (total_completed - prev.completed) as f64 / time_diff
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            }
-        };
-
-        let point = MetricsHistoryPoint {
-            timestamp: now,
-            queued,
-            processing,
-            completed: total_completed,
-            failed: total_failed,
-            throughput,
-            latency_ms: avg_latency,
-        };
-
-        let mut history = self.metrics_history.write();
-        history.push(point);
-
-        // Keep only last 60 points (5 minutes at 5s intervals)
-        if history.len() > 60 {
-            history.remove(0);
-        }
-    }
-
-    /// Synchronous stats helper for internal use
-    fn stats_sync(&self) -> (usize, usize, usize, usize) {
-        let now = now_ms();
-        let mut queued = 0;
-        let mut delayed = 0;
-        let mut dlq_count = 0;
-
-        for shard in &self.shards {
-            let shard = shard.read();
-            for heap in shard.queues.values() {
-                for job in heap.iter() {
-                    if job.run_at > now {
-                        delayed += 1;
-                    } else {
-                        queued += 1;
-                    }
-                }
-            }
-            for dlq in shard.dlq.values() {
-                dlq_count += dlq.len();
-            }
-        }
-
-        let processing = self.processing_len();
-        (queued, processing, delayed, dlq_count)
-    }
-
-    // ============== Worker Registration ==============
-
-    pub async fn list_workers(&self) -> Vec<WorkerInfo> {
-        let now = now_ms();
-        let workers = self.workers.read();
-        workers
-            .values()
-            .filter(|w| now - w.last_heartbeat < 30_000) // Active in last 30s
-            .map(|w| WorkerInfo {
-                id: w.id.clone(),
-                queues: w.queues.clone(),
-                concurrency: w.concurrency,
-                last_heartbeat: w.last_heartbeat,
-                jobs_processed: w.jobs_processed,
-            })
-            .collect()
-    }
-
-    pub async fn worker_heartbeat(
-        &self,
-        id: String,
-        queues: Vec<String>,
-        concurrency: u32,
-        jobs_processed: u64,
-    ) {
-        let mut workers = self.workers.write();
-        let worker = workers
-            .entry(id.clone())
-            .or_insert_with(|| Worker::new(id, queues.clone(), concurrency));
-        worker.queues = queues;
-        worker.concurrency = concurrency;
-        worker.jobs_processed = jobs_processed;
-        worker.last_heartbeat = now_ms();
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn increment_worker_jobs(&self, worker_id: &str) {
-        if let Some(worker) = self.workers.write().get_mut(worker_id) {
-            worker.jobs_processed += 1;
-        }
-    }
-
-    // ============== Server Management ==============
-
-    /// Reset all server memory - clears all queues, jobs, DLQ, metrics, etc.
-    pub async fn reset(&self) {
-        // Clear all shards
-        for shard in self.shards.iter() {
-            let mut shard = shard.write();
-            shard.queues.clear();
-            shard.dlq.clear();
-            shard.unique_keys.clear();
-            shard.waiting_deps.clear();
-            shard.waiting_children.clear();
-            shard.queue_state.clear();
-        }
-
-        // Clear global structures (sharded processing)
-        for shard in &self.processing_shards {
-            shard.write().clear();
-        }
-        self.cron_jobs.write().clear();
-        self.completed_jobs.write().clear();
-        self.job_results.write().clear();
-
-        // Clear job index (DashMap)
-        self.job_index.clear();
-
-        // Clear workers
-        self.workers.write().clear();
-
-        // Clear metrics history
-        self.metrics_history.write().clear();
-
-        // Clear job logs
-        self.job_logs.write().clear();
-
-        // Clear stalled count
-        self.stalled_count.write().clear();
-
-        // Clear debounce cache
-        self.debounce_cache.write().clear();
-
-        // Clear custom ID map
-        self.custom_id_map.write().clear();
-
-        // Clear job waiters
-        self.job_waiters.write().clear();
-
-        // Clear completed retention
-        self.completed_retention.write().clear();
-
-        // Reset metrics counters
-        self.metrics
-            .total_pushed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_completed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_failed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_timed_out
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Clear all queues (waiting jobs only)
-    pub async fn clear_all_queues(&self) -> u64 {
-        let mut total = 0u64;
-        for shard in self.shards.iter() {
-            let mut shard = shard.write();
-            for queue in shard.queues.values_mut() {
-                total += queue.len() as u64;
-                queue.clear();
-            }
-        }
-        self.job_index.clear();
-        total
-    }
-
-    /// Clear all DLQ
-    pub async fn clear_all_dlq(&self) -> u64 {
-        let mut total = 0u64;
-        for shard in self.shards.iter() {
-            let mut shard = shard.write();
-            for dlq in shard.dlq.values_mut() {
-                total += dlq.len() as u64;
-                dlq.clear();
-            }
-        }
-        total
-    }
-
-    /// Clear completed jobs
-    pub async fn clear_completed_jobs(&self) -> u64 {
-        let total = self.completed_jobs.read().len() as u64;
-        self.completed_jobs.write().clear();
-        self.job_results.write().clear();
-        self.completed_retention.write().clear();
-        total
-    }
-
-    /// Reset metrics
-    pub async fn reset_metrics(&self) {
-        self.metrics
-            .total_pushed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_completed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_failed
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics
-            .total_timed_out
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.metrics_history.write().clear();
-    }
-
-    // ============== Webhooks ==============
-
-    pub async fn list_webhooks(&self) -> Vec<WebhookConfig> {
-        let webhooks = self.webhooks.read();
-        webhooks
-            .values()
-            .map(|w| WebhookConfig {
-                id: w.id.clone(),
-                url: w.url.clone(),
-                events: w.events.clone(),
-                queue: w.queue.clone(),
-                secret: w.secret.clone(),
-                created_at: w.created_at,
-            })
-            .collect()
-    }
-
-    pub async fn add_webhook(
-        &self,
-        url: String,
-        events: Vec<String>,
-        queue: Option<String>,
-        secret: Option<String>,
-    ) -> String {
-        let id = format!("wh_{}", crate::protocol::next_id());
-        let webhook = Webhook::new(id.clone(), url, events, queue, secret);
-        self.webhooks.write().insert(id.clone(), webhook);
-        id
-    }
-
-    pub async fn delete_webhook(&self, id: &str) -> bool {
-        self.webhooks.write().remove(id).is_some()
-    }
-
-    /// Fire webhooks for an event
-    pub(crate) fn fire_webhooks(
-        &self,
-        event_type: &str,
-        queue: &str,
-        job_id: u64,
-        data: Option<Value>,
-        error: Option<String>,
-    ) {
-        let webhooks = self.webhooks.read();
-        for webhook in webhooks.values() {
-            // Check event type matches
-            if !webhook.events.iter().any(|e| e == event_type || e == "*") {
-                continue;
-            }
-            // Check queue filter
-            if let Some(ref wq) = webhook.queue {
-                if wq != queue {
-                    continue;
-                }
-            }
-
-            let url = webhook.url.clone();
-            let secret = webhook.secret.clone();
-            let payload = serde_json::json!({
-                "event": event_type,
-                "queue": queue,
-                "job_id": job_id,
-                "timestamp": now_ms(),
-                "data": data,
-                "error": error,
-            });
-
-            // Fire webhook in background (non-blocking)
-            let webhook_url = url.clone();
-            tokio::spawn(async move {
-                let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(10))
-                    .build()
-                    .unwrap_or_else(|_| reqwest::Client::new());
-
-                let mut req = client.post(&url).json(&payload);
-
-                if let Some(secret) = secret {
-                    // Add HMAC signature header
-                    let body = serde_json::to_string(&payload).unwrap_or_default();
-                    let signature = hmac_sha256(&secret, &body);
-                    req = req.header("X-FlashQ-Signature", signature);
-                }
-
-                match req.send().await {
-                    Ok(response) => {
-                        if !response.status().is_success() {
-                            eprintln!(
-                                "Webhook failed: {} returned status {}",
-                                webhook_url,
-                                response.status()
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Webhook error: {} - {}", webhook_url, e);
-                    }
-                }
-            });
-        }
-    }
-
-    // ============== Event Broadcasting (SSE/WebSocket) ==============
-
-    pub fn subscribe_events(&self, _queue: Option<String>) -> broadcast::Receiver<JobEvent> {
-        self.event_tx.subscribe()
-    }
-
-    pub(crate) fn broadcast_event(&self, event: JobEvent) {
-        let _ = self.event_tx.send(event.clone());
-
-        // Also fire webhooks
-        self.fire_webhooks(
-            &event.event_type,
-            &event.queue,
-            event.job_id,
-            event.data.clone(),
-            event.error.clone(),
-        );
-    }
-
-    // ============== Runtime Settings ==============
-
-    /// Set auth tokens at runtime
-    pub fn set_auth_tokens(&self, tokens: Vec<String>) {
-        let mut auth = self.auth_tokens.write();
-        auth.clear();
-        for token in tokens {
-            if !token.is_empty() {
-                auth.insert(token);
-            }
-        }
-    }
-
-    /// Set queue defaults at runtime
-    pub fn set_queue_defaults(
-        &self,
-        timeout: Option<u64>,
-        max_attempts: Option<u32>,
-        backoff: Option<u64>,
-        ttl: Option<u64>,
-    ) {
-        let mut defaults = self.queue_defaults.write();
-        defaults.timeout = timeout;
-        defaults.max_attempts = max_attempts;
-        defaults.backoff = backoff;
-        defaults.ttl = ttl;
-    }
-
-    /// Get queue defaults
-    pub fn get_queue_defaults(&self) -> QueueDefaults {
-        self.queue_defaults.read().clone()
-    }
-
-    /// Set cleanup settings at runtime
-    pub fn set_cleanup_settings(
-        &self,
-        max_completed_jobs: Option<usize>,
-        max_job_results: Option<usize>,
-        cleanup_interval_secs: Option<u64>,
-        metrics_history_size: Option<usize>,
-    ) {
-        let mut settings = self.cleanup_settings.write();
-        if let Some(v) = max_completed_jobs {
-            settings.max_completed_jobs = v;
-        }
-        if let Some(v) = max_job_results {
-            settings.max_job_results = v;
-        }
-        if let Some(v) = cleanup_interval_secs {
-            settings.cleanup_interval_secs = v;
-        }
-        if let Some(v) = metrics_history_size {
-            settings.metrics_history_size = v;
-        }
-    }
-
-    /// Get cleanup settings
-    pub fn get_cleanup_settings(&self) -> CleanupSettings {
-        self.cleanup_settings.read().clone()
-    }
-
-    /// Run cleanup immediately
-    pub fn run_cleanup(&self) {
-        let settings = self.cleanup_settings.read().clone();
-
-        // Cleanup completed jobs
-        let mut completed = self.completed_jobs.write();
-        if completed.len() > settings.max_completed_jobs {
-            let to_remove = completed.len() - settings.max_completed_jobs / 2;
-            let ids: Vec<_> = completed.iter().take(to_remove).copied().collect();
-            for id in ids {
-                completed.remove(&id);
-            }
-        }
-
-        // Cleanup job results
-        let mut results = self.job_results.write();
-        if results.len() > settings.max_job_results {
-            let to_remove = results.len() - settings.max_job_results / 2;
-            let ids: Vec<_> = results.keys().take(to_remove).copied().collect();
-            for id in ids {
-                results.remove(&id);
-            }
-        }
-
-        // Cleanup job index (DashMap - iterate and remove)
-        let index_len = self.job_index.len();
-        if index_len > 100000 {
-            let to_remove = index_len - 50000;
-            let ids: Vec<_> = self
-                .job_index
-                .iter()
-                .take(to_remove)
-                .map(|r| *r.key())
-                .collect();
-            for id in ids {
-                self.job_index.remove(&id);
-            }
-        }
-    }
-
-    /// Get TCP connection count
-    pub fn connection_count(&self) -> usize {
-        self.tcp_connection_count
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Increment TCP connection count
-    pub fn increment_connections(&self) {
-        self.tcp_connection_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Decrement TCP connection count
-    pub fn decrement_connections(&self) {
-        self.tcp_connection_count
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-/// HMAC-SHA256 for webhook signatures using proper crypto libraries
-fn hmac_sha256(key: &str, message: &str) -> String {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-
-    type HmacSha256 = Hmac<Sha256>;
-
-    let mut mac =
-        HmacSha256::new_from_slice(key.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(message.as_bytes());
-
-    let result = mac.finalize();
-    let bytes = result.into_bytes();
-
-    // Convert to hex string
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

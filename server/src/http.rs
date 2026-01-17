@@ -1143,6 +1143,7 @@ async fn test_db_connection(Json(req): Json<TestDbRequest>) -> Json<ApiResponse<
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct SaveDbRequest {
     pub url: String,
 }

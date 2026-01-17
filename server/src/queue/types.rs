@@ -62,6 +62,7 @@ impl IndexedPriorityQueue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             heap: BinaryHeap::with_capacity(capacity),
@@ -121,6 +122,7 @@ impl IndexedPriorityQueue {
 
     /// Get a job by ID - O(1)
     #[inline]
+    #[allow(dead_code)]
     pub fn get(&self, job_id: u64) -> Option<&Job> {
         self.index.get(&job_id).map(|(job, _)| job)
     }
@@ -140,6 +142,7 @@ impl IndexedPriorityQueue {
     /// Update a job (e.g., change priority) - O(log n)
     /// Returns old job if found
     #[inline]
+    #[allow(dead_code)]
     pub fn update(&mut self, job: Job) -> Option<Job> {
         let id = job.id;
         let old = self.remove(id);
@@ -155,6 +158,7 @@ impl IndexedPriorityQueue {
 
     /// Check if empty
     #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.index.is_empty()
     }
@@ -167,6 +171,7 @@ impl IndexedPriorityQueue {
 
     /// Drain all jobs (not in priority order)
     #[inline]
+    #[allow(dead_code)]
     pub fn drain(&mut self) -> impl Iterator<Item = Job> + '_ {
         self.heap.clear();
         self.index.drain().map(|(_, (job, _))| job)
@@ -211,6 +216,7 @@ pub type GxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<GxHasher>>;
 pub type GxHashSet<T> = HashSet<T, BuildHasherDefault<GxHasher>>;
 
 // Re-export CompactString for use in other modules (use the crate import)
+#[allow(dead_code)]
 pub type QueueName = CompactString;
 
 // ============== Coarse Timestamp ==============
@@ -259,6 +265,7 @@ pub fn now_ms() -> u64 {
 
 /// Create a CompactString from a queue name (zero allocation for names <= 24 chars)
 #[inline(always)]
+#[allow(dead_code)]
 pub fn queue_name(s: &str) -> CompactString {
     CompactString::from(s)
 }
