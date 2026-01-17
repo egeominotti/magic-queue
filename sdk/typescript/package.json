@@ -12,6 +12,11 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:client": "bun test tests/client.test.ts",
+    "test:worker": "bun test tests/worker.test.ts",
+    "test:queue": "bun test tests/queue.test.ts",
+    "test:integration": "bun test tests/integration.test.ts",
     "example": "bun run examples/01-basic-usage.ts"
   },
   "keywords": [
