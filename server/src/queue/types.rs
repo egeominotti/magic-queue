@@ -4,18 +4,210 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use compact_str::CompactString;
 use gxhash::GxHasher;
-use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use tokio::sync::Notify;
 
 use crate::protocol::{Job, JobState};
+
+// ============== Indexed Priority Queue ==============
+// O(log n) for push, pop, find, update, remove by job_id
+// Combines HashMap (O(1) lookup) with BinaryHeap (O(log n) priority ops)
+
+/// Wrapper that tracks position for heap operations
+#[derive(Debug, Clone)]
+struct HeapEntry {
+    job: Job,
+    /// Generation counter to handle stale entries after updates
+    generation: u64,
+}
+
+impl Eq for HeapEntry {}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.job.id == other.job.id
+    }
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Delegate to Job's Ord implementation
+        self.job.cmp(&other.job)
+    }
+}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Indexed Priority Queue with O(log n) operations for find/update/remove
+pub struct IndexedPriorityQueue {
+    /// The actual heap for priority ordering
+    heap: BinaryHeap<HeapEntry>,
+    /// Map from job_id to (job, generation) for O(1) lookup
+    index: GxHashMap<u64, (Job, u64)>,
+    /// Current generation counter (incremented on updates)
+    generation: u64,
+}
+
+impl IndexedPriorityQueue {
+    pub fn new() -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+            index: GxHashMap::with_capacity_and_hasher(256, Default::default()),
+            generation: 0,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            heap: BinaryHeap::with_capacity(capacity),
+            index: GxHashMap::with_capacity_and_hasher(capacity, Default::default()),
+            generation: 0,
+        }
+    }
+
+    /// Push a job - O(log n)
+    #[inline]
+    pub fn push(&mut self, job: Job) {
+        let id = job.id;
+        let gen = self.generation;
+        self.generation += 1;
+
+        self.index.insert(id, (job.clone(), gen));
+        self.heap.push(HeapEntry { job, generation: gen });
+    }
+
+    /// Pop highest priority job - O(log n) amortized
+    /// Skips stale entries (jobs that were updated/removed)
+    #[inline]
+    pub fn pop(&mut self) -> Option<Job> {
+        while let Some(entry) = self.heap.pop() {
+            // Check if this entry is still valid (not stale)
+            if let Some((_, stored_gen)) = self.index.get(&entry.job.id) {
+                if *stored_gen == entry.generation {
+                    // Valid entry - remove from index and return
+                    self.index.remove(&entry.job.id);
+                    return Some(entry.job);
+                }
+            }
+            // Stale entry - skip it
+        }
+        None
+    }
+
+    /// Peek at highest priority job - O(log n) amortized (skips stale entries)
+    #[inline]
+    pub fn peek(&mut self) -> Option<&Job> {
+        // Clean up stale entries from the top
+        while let Some(entry) = self.heap.peek() {
+            if let Some((_, stored_gen)) = self.index.get(&entry.job.id) {
+                if *stored_gen == entry.generation {
+                    // Valid entry
+                    return self.index.get(&entry.job.id).map(|(job, _)| job);
+                }
+            }
+            // Stale entry - remove it
+            self.heap.pop();
+        }
+        None
+    }
+
+    /// Get a job by ID - O(1)
+    #[inline]
+    pub fn get(&self, job_id: u64) -> Option<&Job> {
+        self.index.get(&job_id).map(|(job, _)| job)
+    }
+
+    /// Check if job exists - O(1)
+    #[inline]
+    pub fn contains(&self, job_id: u64) -> bool {
+        self.index.contains_key(&job_id)
+    }
+
+    /// Remove a job by ID - O(1) (lazy removal, cleaned on pop/peek)
+    #[inline]
+    pub fn remove(&mut self, job_id: u64) -> Option<Job> {
+        self.index.remove(&job_id).map(|(job, _)| job)
+    }
+
+    /// Update a job (e.g., change priority) - O(log n)
+    /// Returns old job if found
+    #[inline]
+    pub fn update(&mut self, job: Job) -> Option<Job> {
+        let id = job.id;
+        let old = self.remove(id);
+        self.push(job);
+        old
+    }
+
+    /// Number of jobs (actual, not including stale heap entries)
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.index.len()
+    }
+
+    /// Check if empty
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
+    /// Iterate over all jobs (not in priority order)
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &Job> {
+        self.index.values().map(|(job, _)| job)
+    }
+
+    /// Drain all jobs (not in priority order)
+    #[inline]
+    pub fn drain(&mut self) -> impl Iterator<Item = Job> + '_ {
+        self.heap.clear();
+        self.index.drain().map(|(_, (job, _))| job)
+    }
+
+    /// Clear all jobs
+    #[inline]
+    pub fn clear(&mut self) {
+        self.heap.clear();
+        self.index.clear();
+    }
+
+    /// Retain jobs matching predicate
+    #[inline]
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&Job) -> bool,
+    {
+        let removed: Vec<u64> = self.index
+            .iter()
+            .filter(|(_, (job, _))| !f(job))
+            .map(|(id, _)| *id)
+            .collect();
+
+        for id in removed {
+            self.index.remove(&id);
+        }
+    }
+}
+
+impl Default for IndexedPriorityQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ============== GxHash Type Aliases ==============
 // GxHash is 20-30% faster than FxHash (uses AES-NI instructions)
 
 pub type GxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<GxHasher>>;
 pub type GxHashSet<T> = HashSet<T, BuildHasherDefault<GxHasher>>;
+
+// Re-export CompactString for use in other modules (use the crate import)
+pub type QueueName = CompactString;
 
 // ============== Coarse Timestamp ==============
 // Cached timestamp updated every 1ms - avoids syscall per operation
@@ -57,52 +249,26 @@ pub fn now_ms() -> u64 {
     }
 }
 
-// ============== String Interning ==============
-// Avoid repeated allocations for queue names
+// ============== Queue Name Helper ==============
+// CompactString: inline up to 24 chars (zero heap allocation for typical queue names)
+// No interning needed - CompactString is stack-allocated and cheap to clone
 
-static INTERNED_STRINGS: Lazy<RwLock<GxHashSet<Arc<str>>>> =
-    Lazy::new(|| RwLock::new(GxHashSet::default()));
-
-/// Maximum number of interned strings to prevent DOS attacks
-const MAX_INTERNED_STRINGS: usize = 10_000;
-
-/// Intern a string - returns Arc<str> that can be cheaply cloned
-#[inline]
-pub fn intern(s: &str) -> Arc<str> {
-    // Fast path: check if already interned
-    {
-        let set = INTERNED_STRINGS.read();
-        if let Some(arc) = set.get(s) {
-            return Arc::clone(arc);
-        }
-    }
-
-    // Slow path: insert new string
-    let mut set = INTERNED_STRINGS.write();
-    // Double-check after acquiring write lock
-    if let Some(arc) = set.get(s) {
-        return Arc::clone(arc);
-    }
-
-    // Prevent unbounded growth - if at limit, don't intern (return non-interned Arc)
-    if set.len() >= MAX_INTERNED_STRINGS {
-        return s.into();
-    }
-
-    let arc: Arc<str> = s.into();
-    set.insert(Arc::clone(&arc));
-    arc
+/// Create a CompactString from a queue name (zero allocation for names <= 24 chars)
+#[inline(always)]
+pub fn queue_name(s: &str) -> CompactString {
+    CompactString::from(s)
 }
 
-/// Cleanup unused interned strings (strong_count == 1 means only in the set)
+/// Legacy alias for compatibility - now just creates a CompactString
+#[inline(always)]
+pub fn intern(s: &str) -> CompactString {
+    CompactString::from(s)
+}
+
+/// No-op for compatibility - CompactString doesn't need cleanup
+#[inline(always)]
 pub fn cleanup_interned_strings() {
-    let mut set = INTERNED_STRINGS.write();
-    let before = set.len();
-    set.retain(|arc| Arc::strong_count(arc) > 1);
-    let removed = before - set.len();
-    if removed > 0 {
-        println!("Cleaned up {} unused interned strings", removed);
-    }
+    // CompactString is stack-allocated, no cleanup needed
 }
 
 // ============== Job Location Index ==============
@@ -234,14 +400,16 @@ impl Default for QueueState {
 
 // ============== Shard ==============
 // Each shard contains queues and their state
+// Uses CompactString for queue names (inline up to 24 chars, zero heap alloc)
+// Uses IndexedPriorityQueue for O(log n) find/update/remove by job_id
 
 pub struct Shard {
-    pub queues: GxHashMap<Arc<str>, BinaryHeap<Job>>,
-    pub dlq: GxHashMap<Arc<str>, VecDeque<Job>>,
-    pub unique_keys: GxHashMap<Arc<str>, GxHashSet<String>>,
+    pub queues: GxHashMap<CompactString, IndexedPriorityQueue>,
+    pub dlq: GxHashMap<CompactString, VecDeque<Job>>,
+    pub unique_keys: GxHashMap<CompactString, GxHashSet<String>>,
     pub waiting_deps: GxHashMap<u64, Job>,
     pub waiting_children: GxHashMap<u64, Job>, // Parent jobs waiting for children (Flows)
-    pub queue_state: GxHashMap<Arc<str>, QueueState>,
+    pub queue_state: GxHashMap<CompactString, QueueState>,
     pub notify: Arc<Notify>, // Per-shard notify for targeted wakeups
 }
 
@@ -261,8 +429,8 @@ impl Shard {
 
     /// Get or create queue state
     #[inline]
-    pub fn get_state(&mut self, queue: &Arc<str>) -> &mut QueueState {
-        self.queue_state.entry(Arc::clone(queue)).or_default()
+    pub fn get_state(&mut self, queue: &CompactString) -> &mut QueueState {
+        self.queue_state.entry(queue.clone()).or_default()
     }
 }
 
@@ -328,7 +496,7 @@ impl Default for GlobalMetrics {
 
 #[derive(Clone)]
 pub struct Subscriber {
-    pub queue: Arc<str>,
+    pub queue: CompactString,
     pub events: Vec<String>,
     pub tx: tokio::sync::mpsc::UnboundedSender<String>,
 }

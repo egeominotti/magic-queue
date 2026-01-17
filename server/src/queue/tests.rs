@@ -2950,6 +2950,7 @@ mod tests {
             "worker-1".to_string(),
             vec!["queue-a".to_string(), "queue-b".to_string()],
             4,
+            0,
         )
         .await;
 
@@ -2965,7 +2966,7 @@ mod tests {
         let qm = setup();
 
         // First heartbeat
-        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2)
+        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2, 0)
             .await;
 
         // Second heartbeat with different settings
@@ -2973,6 +2974,7 @@ mod tests {
             "worker-1".to_string(),
             vec!["queue-a".to_string(), "queue-b".to_string()],
             4,
+            0,
         )
         .await;
 
@@ -2986,14 +2988,15 @@ mod tests {
     async fn test_multiple_workers() {
         let qm = setup();
 
-        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2)
+        qm.worker_heartbeat("worker-1".to_string(), vec!["queue-a".to_string()], 2, 0)
             .await;
-        qm.worker_heartbeat("worker-2".to_string(), vec!["queue-b".to_string()], 4)
+        qm.worker_heartbeat("worker-2".to_string(), vec!["queue-b".to_string()], 4, 0)
             .await;
         qm.worker_heartbeat(
             "worker-3".to_string(),
             vec!["queue-a".to_string(), "queue-b".to_string()],
             8,
+            0,
         )
         .await;
 
@@ -3390,7 +3393,7 @@ mod tests {
         assert_eq!(completed_count, 100);
 
         // Verify job_index has entries for completed jobs
-        let index_count = qm.job_index.read().len();
+        let index_count = qm.job_index.len();
         assert!(index_count >= 100);
     }
 
@@ -3596,21 +3599,21 @@ mod tests {
             .unwrap();
 
         // Check index shows Queue location
-        let loc = qm.job_index.read().get(&job.id).copied();
+        let loc = qm.job_index.get(&job.id).map(|r| *r);
         assert!(matches!(loc, Some(JobLocation::Queue { .. })));
 
         // Pull job
         let _pulled = qm.pull("test").await;
 
         // Check index shows Processing location
-        let loc = qm.job_index.read().get(&job.id).copied();
+        let loc = qm.job_index.get(&job.id).map(|r| *r);
         assert!(matches!(loc, Some(JobLocation::Processing)));
 
         // Ack job
         qm.ack(job.id, None).await.unwrap();
 
         // Check index shows Completed location
-        let loc = qm.job_index.read().get(&job.id).copied();
+        let loc = qm.job_index.get(&job.id).map(|r| *r);
         assert!(matches!(loc, Some(JobLocation::Completed)));
     }
 
@@ -3650,7 +3653,7 @@ mod tests {
         qm.fail(job.id, None).await.unwrap();
 
         // Check index shows DLQ location
-        let loc = qm.job_index.read().get(&job.id).copied();
+        let loc = qm.job_index.get(&job.id).map(|r| *r);
         assert!(matches!(loc, Some(JobLocation::Dlq { .. })));
     }
 

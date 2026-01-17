@@ -2,6 +2,39 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// ============== Binary Protocol (MessagePack) ==============
+// Protocol detection: First 4 bytes are length prefix (big-endian u32)
+// If first byte is '{' (0x7B), it's JSON (text mode)
+// Otherwise, it's binary mode with length-prefixed MessagePack
+
+/// Serialize Request to MessagePack bytes (with named fields for interoperability)
+#[inline]
+pub fn serialize_msgpack<T: Serialize>(value: &T) -> Result<Vec<u8>, String> {
+    rmp_serde::to_vec_named(value).map_err(|e| format!("MessagePack serialize error: {}", e))
+}
+
+/// Deserialize Request from MessagePack bytes
+#[inline]
+pub fn deserialize_msgpack<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, String> {
+    rmp_serde::from_slice(bytes).map_err(|e| format!("MessagePack deserialize error: {}", e))
+}
+
+/// Create a length-prefixed binary frame
+#[inline]
+pub fn create_binary_frame(data: &[u8]) -> Vec<u8> {
+    let len = data.len() as u32;
+    let mut frame = Vec::with_capacity(4 + data.len());
+    frame.extend_from_slice(&len.to_be_bytes());
+    frame.extend_from_slice(data);
+    frame
+}
+
+/// Check if the first byte indicates binary protocol (not '{')
+#[inline]
+pub fn is_binary_protocol(first_byte: u8) -> bool {
+    first_byte != b'{'
+}
+
 /// Request wrapper with optional request ID for multiplexing
 #[derive(Debug, Deserialize)]
 pub struct Request {
@@ -204,6 +237,14 @@ pub enum Command {
         queue: String,
         #[serde(default)]
         id: Option<u64>, // Retry specific job or all
+    },
+    /// Purge all jobs from dead letter queue
+    PurgeDlq {
+        queue: String,
+    },
+    /// Get multiple jobs by IDs in a single call (batch status)
+    GetJobsBatch {
+        ids: Vec<u64>,
     },
     Subscribe {
         queue: String,
@@ -700,6 +741,11 @@ pub enum Response {
         completed: usize,
         failed: usize,
     },
+    /// Response for GetJobsBatch (batch status)
+    JobsBatch {
+        ok: bool,
+        jobs: Vec<JobBrowserItem>,
+    },
     /// Response for WaitJob (finished() promise)
     JobResult {
         ok: bool,
@@ -795,7 +841,10 @@ impl Response {
 
     #[inline(always)]
     pub fn null_job() -> Self {
-        Response::NullJob { ok: true, job: None }
+        Response::NullJob {
+            ok: true,
+            job: None,
+        }
     }
 
     #[inline(always)]
@@ -931,5 +980,10 @@ impl Response {
             completed,
             failed,
         }
+    }
+
+    #[inline(always)]
+    pub fn jobs_batch(jobs: Vec<JobBrowserItem>) -> Self {
+        Response::JobsBatch { ok: true, jobs }
     }
 }

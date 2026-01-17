@@ -10,4 +10,4 @@ mod types;
 mod tests;
 
 pub use cluster::{generate_node_id, ClusterMetrics, LoadBalanceStrategy, NodeInfo, NodeMetrics};
-pub use manager::{CleanupSettings, QueueDefaults, QueueManager};
+pub use manager::QueueManager;

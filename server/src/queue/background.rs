@@ -139,13 +139,10 @@ impl QueueManager {
             }
         }
 
-        // Jobs in processing (active)
-        {
-            let processing = self.processing.read();
-            for job in processing.values() {
-                jobs_to_persist.push((job.clone(), "active".to_string()));
-            }
-        }
+        // Jobs in processing (active) - iterate all shards
+        self.processing_iter(|job| {
+            jobs_to_persist.push((job.clone(), "active".to_string()));
+        });
 
         let job_count = jobs_to_persist.len();
         let dlq_count = dlq_to_persist.len();
@@ -261,8 +258,8 @@ impl QueueManager {
         let idx = Self::shard_index(&job.queue);
         let queue_name = intern(&job.queue);
 
-        // Check if we already have this job
-        if self.job_index.read().contains_key(&job_id) {
+        // Check if we already have this job (lock-free DashMap)
+        if self.job_index.contains_key(&job_id) {
             return;
         }
 
@@ -310,17 +307,15 @@ impl QueueManager {
         let now = Self::now_ms();
         let mut timed_out = Vec::new();
 
-        {
-            let proc = self.processing.read();
-            for (id, job) in proc.iter() {
-                if job.is_timed_out(now) {
-                    timed_out.push(*id);
-                }
+        // Iterate all processing shards to find timed out jobs
+        self.processing_iter(|job| {
+            if job.is_timed_out(now) {
+                timed_out.push(job.id);
             }
-        }
+        });
 
         for job_id in timed_out {
-            if let Some(mut job) = self.processing.write().remove(&job_id) {
+            if let Some(mut job) = self.processing_remove(job_id) {
                 // Release concurrency
                 let idx = Self::shard_index(&job.queue);
                 let queue_arc = intern(&job.queue);
@@ -415,12 +410,9 @@ impl QueueManager {
         if completed.len() > MAX_COMPLETED {
             let to_remove: Vec<_> = completed.iter().take(CLEANUP_BATCH).copied().collect();
 
-            // Also clean up job_index for these completed jobs
-            {
-                let mut index = self.job_index.write();
-                for &id in &to_remove {
-                    index.remove(&id);
-                }
+            // Also clean up job_index for these completed jobs (lock-free DashMap)
+            for &id in &to_remove {
+                self.job_index.remove(&id);
             }
 
             for id in to_remove {
@@ -450,7 +442,7 @@ impl QueueManager {
 
         const MAX_INDEX_SIZE: usize = 100_000;
 
-        let index_len = self.job_index.read().len();
+        let index_len = self.job_index.len();
         if index_len <= MAX_INDEX_SIZE {
             return;
         }
@@ -460,20 +452,18 @@ impl QueueManager {
         let completed_jobs = self.completed_jobs.read();
         let mut to_remove = Vec::new();
 
-        {
-            let index = self.job_index.read();
-            for (&id, location) in index.iter() {
-                if matches!(location, JobLocation::Completed) && !completed_jobs.contains(&id) {
-                    to_remove.push(id);
-                }
+        // Iterate lock-free DashMap
+        for entry in self.job_index.iter() {
+            let id = *entry.key();
+            let location = *entry.value();
+            if matches!(location, JobLocation::Completed) && !completed_jobs.contains(&id) {
+                to_remove.push(id);
             }
         }
 
-        if !to_remove.is_empty() {
-            let mut index = self.job_index.write();
-            for id in to_remove {
-                index.remove(&id);
-            }
+        // Remove stale entries (lock-free)
+        for id in to_remove {
+            self.job_index.remove(&id);
         }
     }
 

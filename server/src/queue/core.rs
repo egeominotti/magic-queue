@@ -203,10 +203,7 @@ impl QueueManager {
 
             // Check unique key
             if let Some(ref key) = unique_key {
-                let keys = shard
-                    .unique_keys
-                    .entry(Arc::clone(&queue_name))
-                    .or_default();
+                let keys = shard.unique_keys.entry(queue_name.clone()).or_default();
                 if keys.contains(key) {
                     return Err(format!("Duplicate job with key: {}", key));
                 }
@@ -426,6 +423,7 @@ impl QueueManager {
                     // Try to get a job (with lazy TTL deletion)
                     let mut result = None;
                     if let Some(heap) = shard.queues.get_mut(&queue_arc) {
+                        // IPQ.peek() cleans stale entries and returns valid job
                         while let Some(job) = heap.peek() {
                             if job.is_expired(now) {
                                 heap.pop();
@@ -458,7 +456,7 @@ impl QueueManager {
             match pull_result {
                 PullResult::Job(job) => {
                     self.index_job(job.id, JobLocation::Processing);
-                    self.processing.write().insert(job.id, (*job).clone());
+                    self.processing_insert((*job).clone());
                     return *job;
                 }
                 PullResult::SleepPaused => {
@@ -556,10 +554,9 @@ impl QueueManager {
 
             match batch_result {
                 BatchResult::Jobs(jobs) => {
-                    let mut proc = self.processing.write();
                     for job in jobs {
                         self.index_job(job.id, JobLocation::Processing);
-                        proc.insert(job.id, job.clone());
+                        self.processing_insert(job.clone());
                         result.push(job);
                     }
                     return result;
@@ -579,7 +576,7 @@ impl QueueManager {
     }
 
     pub async fn ack(&self, job_id: u64, result: Option<Value>) -> Result<(), String> {
-        let job = self.processing.write().remove(&job_id);
+        let job = self.processing_remove(job_id);
         if let Some(job) = job {
             // Release concurrency
             let idx = Self::shard_index(&job.queue);
@@ -653,10 +650,9 @@ impl QueueManager {
 
     pub async fn ack_batch(&self, ids: &[u64]) -> usize {
         let mut acked = 0;
-        let mut proc = self.processing.write();
 
         for &id in ids {
-            if let Some(job) = proc.remove(&id) {
+            if let Some(job) = self.processing_remove(id) {
                 // Release concurrency
                 let idx = Self::shard_index(&job.queue);
                 let queue_arc = intern(&job.queue);
@@ -678,7 +674,6 @@ impl QueueManager {
                 acked += 1;
             }
         }
-        drop(proc);
 
         // Persist to PostgreSQL
         if acked > 0 {
@@ -692,7 +687,7 @@ impl QueueManager {
     }
 
     pub async fn fail(&self, job_id: u64, error: Option<String>) -> Result<(), String> {
-        let job = self.processing.write().remove(&job_id);
+        let job = self.processing_remove(job_id);
         if let Some(mut job) = job {
             let idx = Self::shard_index(&job.queue);
             let queue_arc = intern(&job.queue);
@@ -812,7 +807,7 @@ impl QueueManager {
             match storage.pull_job_distributed(queue_name, now as i64).await {
                 Ok(Some(job)) => {
                     // Update local state for consistency
-                    self.processing.write().insert(job.id, job.clone());
+                    self.processing_insert(job.clone());
                     self.index_job(job.id, JobLocation::Processing);
 
                     // Remove from local queue if present (sync)
@@ -883,13 +878,11 @@ impl QueueManager {
                 .await
             {
                 Ok(jobs) if !jobs.is_empty() => {
-                    // Update local state
-                    let mut proc = self.processing.write();
+                    // Update local state (sharded processing)
                     for job in &jobs {
-                        proc.insert(job.id, job.clone());
+                        self.processing_insert(job.clone());
                         self.index_job(job.id, JobLocation::Processing);
                     }
-                    drop(proc);
 
                     // Remove from local queue if present
                     {

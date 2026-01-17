@@ -1,5 +1,6 @@
 import * as net from 'net';
 import { EventEmitter } from 'events';
+import { encode, decode } from '@msgpack/msgpack';
 import type {
   ClientOptions,
   Job,
@@ -76,6 +77,8 @@ export class FlashQ extends EventEmitter {
     reject: (error: Error) => void;
   }> = [];
   private buffer = '';
+  // Binary protocol buffers
+  private binaryBuffer: Buffer = Buffer.alloc(0);
   private reconnecting = false;
 
   constructor(options: ClientOptions = {}) {
@@ -88,6 +91,7 @@ export class FlashQ extends EventEmitter {
       token: options.token ?? '',
       timeout: options.timeout ?? 5000,
       useHttp: options.useHttp ?? false,
+      useBinary: options.useBinary ?? false,
     };
   }
 
@@ -147,8 +151,13 @@ export class FlashQ extends EventEmitter {
     if (!this.socket) return;
 
     this.socket.on('data', (data) => {
-      this.buffer += data.toString();
-      this.processBuffer();
+      if (this.options.useBinary) {
+        this.binaryBuffer = Buffer.concat([this.binaryBuffer, data]);
+        this.processBinaryBuffer();
+      } else {
+        this.buffer += data.toString();
+        this.processBuffer();
+      }
     });
 
     this.socket.on('close', () => {
@@ -169,32 +178,60 @@ export class FlashQ extends EventEmitter {
       if (!line.trim()) continue;
       try {
         const response = JSON.parse(line);
-
-        // Check for request ID (multiplexing)
-        if (response.reqId) {
-          const pending = this.pendingRequests.get(response.reqId);
-          if (pending) {
-            this.pendingRequests.delete(response.reqId);
-            clearTimeout(pending.timer);
-            if (response.ok === false && response.error) {
-              pending.reject(new Error(response.error));
-            } else {
-              pending.resolve(response);
-            }
-          }
-        } else {
-          // Fallback: FIFO queue for servers without reqId support
-          const pending = this.responseQueue.shift();
-          if (pending) {
-            if (response.ok === false && response.error) {
-              pending.reject(new Error(response.error));
-            } else {
-              pending.resolve(response);
-            }
-          }
-        }
+        this.handleResponse(response);
       } catch {
         // Ignore parse errors
+      }
+    }
+  }
+
+  /** Process binary protocol buffer (length-prefixed MessagePack frames) */
+  private processBinaryBuffer(): void {
+    while (this.binaryBuffer.length >= 4) {
+      // Read 4-byte length prefix (big-endian)
+      const len = this.binaryBuffer.readUInt32BE(0);
+
+      // Check if we have the complete frame
+      if (this.binaryBuffer.length < 4 + len) {
+        break; // Wait for more data
+      }
+
+      // Extract and decode the frame
+      const frameData = this.binaryBuffer.subarray(4, 4 + len);
+      this.binaryBuffer = this.binaryBuffer.subarray(4 + len);
+
+      try {
+        const response = decode(frameData) as Record<string, unknown>;
+        this.handleResponse(response);
+      } catch {
+        // Ignore decode errors
+      }
+    }
+  }
+
+  /** Handle a parsed response (shared by text and binary protocols) */
+  private handleResponse(response: Record<string, unknown>): void {
+    // Check for request ID (multiplexing)
+    if (response.reqId) {
+      const pending = this.pendingRequests.get(response.reqId as string);
+      if (pending) {
+        this.pendingRequests.delete(response.reqId as string);
+        clearTimeout(pending.timer);
+        if (response.ok === false && response.error) {
+          pending.reject(new Error(response.error as string));
+        } else {
+          pending.resolve(response);
+        }
+      }
+    } else {
+      // Fallback: FIFO queue for servers without reqId support
+      const pending = this.responseQueue.shift();
+      if (pending) {
+        if (response.ok === false && response.error) {
+          pending.reject(new Error(response.error as string));
+        } else {
+          pending.resolve(response);
+        }
       }
     }
   }
@@ -268,8 +305,18 @@ export class FlashQ extends EventEmitter {
         timer,
       });
 
-      // Send command with reqId for response matching
-      this.socket!.write(JSON.stringify({ ...command, reqId }) + '\n');
+      if (this.options.useBinary) {
+        // Binary protocol: length-prefixed MessagePack
+        const payload = { ...command, reqId };
+        const encoded = encode(payload);
+        const frame = Buffer.alloc(4 + encoded.length);
+        frame.writeUInt32BE(encoded.length, 0);
+        frame.set(encoded, 4);
+        this.socket!.write(frame);
+      } else {
+        // Text protocol: JSON + newline
+        this.socket!.write(JSON.stringify({ ...command, reqId }) + '\n');
+      }
     });
   }
 
@@ -770,6 +817,53 @@ export class FlashQ extends EventEmitter {
       id: jobId,
     });
     return response.ids?.[0] ?? 0;
+  }
+
+  /**
+   * Purge all jobs from the dead letter queue.
+   * This permanently removes all failed jobs from the DLQ.
+   *
+   * @param queue - Queue name
+   * @returns Number of jobs purged
+   *
+   * @example
+   * ```typescript
+   * const purged = await client.purgeDlq('emails');
+   * console.log(`Purged ${purged} failed jobs`);
+   * ```
+   */
+  async purgeDlq(queue: string): Promise<number> {
+    const response = await this.send<{ ok: boolean; count: number }>({
+      cmd: 'PURGEDLQ',
+      queue,
+    });
+    return response.count;
+  }
+
+  /**
+   * Get multiple jobs by their IDs in a single call (batch status).
+   * More efficient than calling getJob() multiple times.
+   *
+   * @param jobIds - Array of job IDs to retrieve
+   * @returns Array of jobs with their states (only found jobs are returned)
+   *
+   * @example
+   * ```typescript
+   * const jobs = await client.getJobsBatch([1, 2, 3, 4, 5]);
+   * for (const { job, state } of jobs) {
+   *   console.log(`Job ${job.id}: ${state}`);
+   * }
+   * ```
+   */
+  async getJobsBatch(jobIds: number[]): Promise<JobWithState[]> {
+    const response = await this.send<{
+      ok: boolean;
+      jobs: Array<{ job: Job; state: JobState }>;
+    }>({
+      cmd: 'GETJOBSBATCH',
+      ids: jobIds,
+    });
+    return response.jobs.map((j) => ({ job: j.job, state: j.state }));
   }
 
   // ============== Queue Control ==============
@@ -1362,6 +1456,77 @@ export class FlashQ extends EventEmitter {
       completed: response.completed,
       failed: response.failed,
     };
+  }
+
+  // ============== Event Subscriptions ==============
+
+  /**
+   * Subscribe to real-time events via SSE.
+   * Returns an EventSubscriber that can be used to listen for events.
+   *
+   * @param queue - Optional queue to filter events
+   * @returns EventSubscriber instance
+   *
+   * @example
+   * ```typescript
+   * const events = client.subscribe();
+   *
+   * events.on('completed', (e) => {
+   *   console.log(`Job ${e.jobId} completed`);
+   * });
+   *
+   * events.on('failed', (e) => {
+   *   console.log(`Job ${e.jobId} failed: ${e.error}`);
+   * });
+   *
+   * await events.connect();
+   *
+   * // Later...
+   * events.close();
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Subscribe to specific queue
+   * const events = client.subscribe('emails');
+   * events.on('completed', handler);
+   * await events.connect();
+   * ```
+   */
+  subscribe(queue?: string): import('./events').EventSubscriber {
+    const { EventSubscriber } = require('./events');
+    return new EventSubscriber({
+      host: this.options.host,
+      httpPort: this.options.httpPort,
+      token: this.options.token,
+      queue,
+      type: 'sse',
+    });
+  }
+
+  /**
+   * Subscribe to real-time events via WebSocket.
+   * Lower latency than SSE, supports bidirectional communication.
+   *
+   * @param queue - Optional queue to filter events
+   * @returns EventSubscriber instance
+   *
+   * @example
+   * ```typescript
+   * const events = client.subscribeWs();
+   * events.on('completed', (e) => console.log(e));
+   * await events.connect();
+   * ```
+   */
+  subscribeWs(queue?: string): import('./events').EventSubscriber {
+    const { EventSubscriber } = require('./events');
+    return new EventSubscriber({
+      host: this.options.host,
+      httpPort: this.options.httpPort,
+      token: this.options.token,
+      queue,
+      type: 'websocket',
+    });
   }
 }
 

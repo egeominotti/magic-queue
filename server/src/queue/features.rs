@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use compact_str::CompactString;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
 
@@ -10,12 +9,12 @@ use crate::protocol::{CronJob, FlowChild, Job, JobLogEntry, MetricsData, QueueIn
 
 impl QueueManager {
     pub async fn cancel(&self, job_id: u64) -> Result<(), String> {
-        // Use job_index for O(1) lookup of location
-        let location = self.job_index.read().get(&job_id).copied();
+        // Use job_index for O(1) lock-free lookup of location
+        let location = self.job_index.get(&job_id).map(|r| *r);
 
         match location {
             Some(JobLocation::Processing) => {
-                if let Some(job) = self.processing.write().remove(&job_id) {
+                if let Some(job) = self.processing_remove(job_id) {
                     let idx = Self::shard_index(&job.queue);
                     let queue_arc = intern(&job.queue);
                     {
@@ -49,41 +48,24 @@ impl QueueManager {
             }
             Some(JobLocation::Queue { shard_idx }) => {
                 let mut shard = self.shards[shard_idx].write();
-                let mut found_key: Option<(Arc<str>, Option<String>)> = None;
+                let mut found_key: Option<(CompactString, Option<String>)> = None;
 
-                // First pass: find the job and its queue without modifying the heap
-                let mut target_queue: Option<Arc<str>> = None;
+                // O(1) lookup: find which queue contains this job using IPQ's index
+                let mut target_queue: Option<CompactString> = None;
                 for (queue_name, heap) in shard.queues.iter() {
-                    if heap.iter().any(|j| j.id == job_id) {
-                        target_queue = Some(Arc::clone(queue_name));
+                    if heap.contains(job_id) {
+                        target_queue = Some(queue_name.clone());
                         break;
                     }
                 }
 
-                // Second pass: only modify the heap if we found the job
+                // O(1) removal using IPQ's remove method (lazy removal)
                 if let Some(queue_name) = target_queue {
                     if let Some(heap) = shard.queues.get_mut(&queue_name) {
-                        // Collect all jobs, filter out the target, rebuild heap atomically
-                        let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
-                        let original_len = jobs.len();
-
-                        // Find and remove the target job
-                        if let Some(pos) = jobs.iter().position(|j| j.id == job_id) {
-                            let removed_job = jobs.swap_remove(pos);
-                            found_key = Some((Arc::clone(&queue_name), removed_job.unique_key));
-
-                            // Rebuild the heap with remaining jobs
-                            *heap = jobs.into_iter().collect();
-                        } else {
-                            // Job not found (race condition), restore all jobs
-                            *heap = jobs.into_iter().collect();
+                        // Direct O(1) removal from IndexedPriorityQueue
+                        if let Some(removed_job) = heap.remove(job_id) {
+                            found_key = Some((queue_name.clone(), removed_job.unique_key));
                         }
-
-                        // Verify we didn't lose jobs (except the cancelled one)
-                        debug_assert!(
-                            heap.len() == original_len - 1 || found_key.is_none(),
-                            "Job cancellation should only remove one job"
-                        );
                     }
                 }
 
@@ -129,19 +111,22 @@ impl QueueManager {
         progress: u8,
         message: Option<String>,
     ) -> Result<(), String> {
-        let mut proc = self.processing.write();
-        if let Some(job) = proc.get_mut(&job_id) {
+        let updated = self.processing_get_mut(job_id, |job| {
             job.progress = progress.min(100);
             job.progress_msg = message.clone();
-            self.notify_subscribers("progress", &job.queue, job);
+            job.queue.clone()
+        });
+        if let Some(queue) = updated {
+            if let Some(job) = self.processing_get(job_id) {
+                self.notify_subscribers("progress", &queue, &job);
+            }
             return Ok(());
         }
         Err(format!("Job {} not found in processing", job_id))
     }
 
     pub async fn get_progress(&self, job_id: u64) -> Result<(u8, Option<String>), String> {
-        let proc = self.processing.read();
-        if let Some(job) = proc.get(&job_id) {
+        if let Some(job) = self.processing_get(job_id) {
             return Ok((job.progress, job.progress_msg.clone()));
         }
         Err(format!("Job {} not found", job_id))
@@ -182,7 +167,7 @@ impl QueueManager {
 
         let retried = jobs_to_retry.len();
         if retried > 0 {
-            let heap = shard.queues.entry(Arc::clone(&queue_arc)).or_default();
+            let heap = shard.queues.entry(queue_arc.clone()).or_default();
             for job in jobs_to_retry {
                 self.index_job(job.id, JobLocation::Queue { shard_idx: idx });
                 heap.push(job);
@@ -191,6 +176,29 @@ impl QueueManager {
             self.notify_shard(idx);
         }
         retried
+    }
+
+    /// Purge all jobs from dead letter queue
+    pub async fn purge_dlq(&self, queue_name: &str) -> usize {
+        let idx = Self::shard_index(queue_name);
+        let queue_arc = intern(queue_name);
+        let mut shard = self.shards[idx].write();
+
+        if let Some(dlq) = shard.dlq.get_mut(&queue_arc) {
+            // Collect job IDs to remove from index
+            let job_ids: Vec<u64> = dlq.iter().map(|j| j.id).collect();
+            let count = dlq.len();
+            dlq.clear();
+            drop(shard); // Release shard lock
+
+            // Remove job index entries (lock-free DashMap)
+            for id in job_ids {
+                self.job_index.remove(&id);
+            }
+            count
+        } else {
+            0
+        }
     }
 
     // === Rate Limiting ===
@@ -249,7 +257,6 @@ impl QueueManager {
 
     pub async fn list_queues(&self) -> Vec<QueueInfo> {
         let mut queues = Vec::new();
-        let proc = self.processing.read();
 
         for shard in &self.shards {
             // Use read lock instead of write lock - this is a read-only operation
@@ -259,10 +266,7 @@ impl QueueManager {
                 queues.push(QueueInfo {
                     name: name.to_string(),
                     pending: heap.len(),
-                    processing: proc
-                        .values()
-                        .filter(|j| j.queue.as_str() == name.as_ref())
-                        .count(),
+                    processing: self.processing_count_by_queue(name.as_str()),
                     dlq: s.dlq.get(name).map_or(0, |d| d.len()),
                     paused: state.is_some_and(|s| s.paused),
                     rate_limit: state.and_then(|s| s.rate_limiter.as_ref().map(|r| r.limit)),
@@ -349,7 +353,6 @@ impl QueueManager {
         };
 
         let mut queues = Vec::new();
-        let proc = self.processing.read();
 
         for shard in &self.shards {
             let s = shard.write();
@@ -358,10 +361,7 @@ impl QueueManager {
                 queues.push(QueueMetrics {
                     name: name.to_string(),
                     pending: heap.len(),
-                    processing: proc
-                        .values()
-                        .filter(|j| j.queue.as_str() == name.as_ref())
-                        .count(),
+                    processing: self.processing_count_by_queue(name.as_str()),
                     dlq: s.dlq.get(name).map_or(0, |d| d.len()),
                     rate_limit: state.and_then(|s| s.rate_limiter.as_ref().map(|r| r.limit)),
                 });
@@ -381,7 +381,7 @@ impl QueueManager {
     pub async fn stats(&self) -> (usize, usize, usize, usize) {
         let now = Self::now_ms();
         let (mut ready, mut delayed, mut dlq) = (0, 0, 0);
-        let processing = self.processing.read().len();
+        let processing = self.processing_len();
 
         for shard in &self.shards {
             let s = shard.read();
@@ -406,7 +406,7 @@ impl QueueManager {
     /// Add a log entry to a job
     pub fn add_job_log(&self, job_id: u64, message: String, level: String) -> Result<(), String> {
         // Verify job exists (in processing or waiting)
-        let location = self.job_index.read().get(&job_id).copied();
+        let location = self.job_index.get(&job_id).map(|r| *r);
         if location.is_none() {
             return Err(format!("Job {} not found", job_id));
         }
@@ -441,13 +441,12 @@ impl QueueManager {
     /// Cleanup logs for completed/old jobs
     pub(crate) fn cleanup_job_logs(&self) {
         let completed = self.completed_jobs.read();
-        let index = self.job_index.read();
         let mut logs = self.job_logs.write();
 
         // Remove logs for jobs that are completed and no longer in index
         logs.retain(|job_id, _| {
             // Keep if job is still in index (active) or not completed
-            index.contains_key(job_id) || !completed.contains(job_id)
+            self.job_index.contains_key(job_id) || !completed.contains(job_id)
         });
 
         // Global limit: max 10K job entries
@@ -473,9 +472,10 @@ impl QueueManager {
 
     /// Send heartbeat for a job to prevent stall detection
     pub fn heartbeat(&self, job_id: u64) -> Result<(), String> {
-        let mut processing = self.processing.write();
-        if let Some(job) = processing.get_mut(&job_id) {
+        let updated = self.processing_get_mut(job_id, |job| {
             job.last_heartbeat = now_ms();
+        });
+        if updated.is_some() {
             // Reset stall count on successful heartbeat
             self.stalled_count.write().remove(&job_id);
             Ok(())
@@ -489,28 +489,25 @@ impl QueueManager {
         let now = now_ms();
         let mut stalled_jobs: Vec<(u64, Job)> = Vec::new();
 
-        // Find stalled jobs
-        {
-            let processing = self.processing.read();
-            for (id, job) in processing.iter() {
-                let stall_timeout = if job.stall_timeout > 0 {
-                    job.stall_timeout
-                } else {
-                    30_000 // Default 30 seconds
-                };
+        // Find stalled jobs (iterate all processing shards)
+        self.processing_iter(|job| {
+            let stall_timeout = if job.stall_timeout > 0 {
+                job.stall_timeout
+            } else {
+                30_000 // Default 30 seconds
+            };
 
-                // Check if job is stalled (no heartbeat within timeout)
-                let last_activity = if job.last_heartbeat > 0 {
-                    job.last_heartbeat
-                } else {
-                    job.started_at
-                };
+            // Check if job is stalled (no heartbeat within timeout)
+            let last_activity = if job.last_heartbeat > 0 {
+                job.last_heartbeat
+            } else {
+                job.started_at
+            };
 
-                if now > last_activity + stall_timeout {
-                    stalled_jobs.push((*id, job.clone()));
-                }
+            if now > last_activity + stall_timeout {
+                stalled_jobs.push((job.id, job.clone()));
             }
-        }
+        });
 
         // Handle stalled jobs
         for (job_id, job) in stalled_jobs {
@@ -521,7 +518,7 @@ impl QueueManager {
             if *count >= 3 {
                 // Too many stalls, move to DLQ
                 drop(stall_counts);
-                if let Some(job) = self.processing.write().remove(&job_id) {
+                if let Some(job) = self.processing_remove(job_id) {
                     let idx = Self::shard_index(&job.queue);
                     let queue_arc = intern(&job.queue);
                     self.shards[idx]
@@ -544,10 +541,10 @@ impl QueueManager {
             } else {
                 // Update last_heartbeat to give more time, but increment stall count
                 drop(stall_counts);
-                if let Some(job_mut) = self.processing.write().get_mut(&job_id) {
+                self.processing_get_mut(job_id, |job_mut| {
                     job_mut.last_heartbeat = now;
                     job_mut.stall_count = job.stall_count + 1;
-                }
+                });
 
                 // Log the stall warning
                 let _ = self.add_job_log(
@@ -823,7 +820,7 @@ impl QueueManager {
 
             // Queues (waiting/delayed)
             for (queue_name, heap) in &shard_r.queues {
-                if queue_filter.is_some_and(|f| f != queue_name.as_ref()) {
+                if queue_filter.is_some_and(|f| f != queue_name.as_str()) {
                     continue;
                 }
                 for job in heap.iter() {
@@ -845,7 +842,7 @@ impl QueueManager {
             // DLQ (failed)
             if state_filter.is_none() || state_filter == Some(JobState::Failed) {
                 for (queue_name, dlq) in &shard_r.dlq {
-                    if queue_filter.is_some_and(|f| f != queue_name.as_ref()) {
+                    if queue_filter.is_some_and(|f| f != queue_name.as_str()) {
                         continue;
                     }
                     for job in dlq.iter() {
@@ -884,18 +881,17 @@ impl QueueManager {
             }
         }
 
-        // 2. Processing (active)
+        // 2. Processing (active) - iterate all shards
         if state_filter.is_none() || state_filter == Some(JobState::Active) {
-            let processing = self.processing.read();
-            for job in processing.values() {
+            self.processing_iter(|job| {
                 if queue_filter.is_some_and(|f| f != job.queue.as_str()) {
-                    continue;
+                    return;
                 }
                 jobs.push(JobBrowserItem {
                     job: job.clone(),
                     state: JobState::Active,
                 });
-            }
+            });
         }
 
         // 3. Sort by ID desc (newest first)
@@ -950,28 +946,31 @@ impl QueueManager {
             }
 
             JobState::Waiting | JobState::Delayed => {
-                // Clean from queue
+                // Clean from queue using IPQ's retain method
                 let mut shard = self.shards[idx].write();
                 if let Some(heap) = shard.queues.get_mut(&queue_arc) {
-                    let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
                     let mut keys_to_remove: Vec<String> = Vec::new();
+                    let mut jobs_to_remove: Vec<u64> = Vec::new();
 
-                    jobs.retain(|job| {
+                    // First pass: collect jobs to remove
+                    for job in heap.iter() {
                         // Use <= to include jobs created at exactly the cutoff time
-                        let should_remove = job.created_at <= cutoff && removed < max_remove;
-                        if should_remove {
-                            self.unindex_job(job.id);
+                        if job.created_at <= cutoff && removed < max_remove {
+                            jobs_to_remove.push(job.id);
                             if let Some(ref key) = job.unique_key {
                                 keys_to_remove.push(key.clone());
                             }
                             removed += 1;
                         }
-                        !should_remove
-                    });
+                    }
 
-                    *heap = jobs.into_iter().collect();
+                    // Second pass: O(1) removal for each job
+                    for job_id in jobs_to_remove {
+                        heap.remove(job_id);
+                        self.unindex_job(job_id);
+                    }
 
-                    // Remove unique keys after rebuilding heap
+                    // Remove unique keys
                     if !keys_to_remove.is_empty() {
                         if let Some(keys) = shard.unique_keys.get_mut(&queue_arc) {
                             for key in keys_to_remove {
@@ -1115,17 +1114,17 @@ impl QueueManager {
             }
         }
 
-        // 2. Remove from processing (scan all processing jobs)
+        // 2. Remove from processing (scan all processing shards)
         {
-            let mut processing = self.processing.write();
-            let to_remove: Vec<u64> = processing
-                .iter()
-                .filter(|(_, job)| job.queue == queue_name)
-                .map(|(id, _)| *id)
-                .collect();
+            let mut to_remove: Vec<u64> = Vec::new();
+            self.processing_iter(|job| {
+                if job.queue == queue_name {
+                    to_remove.push(job.id);
+                }
+            });
 
             for id in to_remove {
-                processing.remove(&id);
+                self.processing_remove(id);
                 self.unindex_job(id);
                 total_removed += 1;
             }
@@ -1147,21 +1146,19 @@ impl QueueManager {
 
     /// Change priority of a job (waiting, delayed, or processing)
     pub async fn change_priority(&self, job_id: u64, new_priority: i32) -> Result<(), String> {
-        let location = self.job_index.read().get(&job_id).copied();
+        let location = self.job_index.get(&job_id).map(|r| *r);
 
         match location {
             Some(JobLocation::Processing) => {
-                // Easy case: just update in HashMap
-                {
-                    let mut processing = self.processing.write();
-                    if let Some(job) = processing.get_mut(&job_id) {
-                        job.priority = new_priority;
-                    } else {
-                        return Err(format!("Job {} not found in processing", job_id));
-                    }
+                // Easy case: just update in sharded HashMap
+                let updated = self.processing_get_mut(job_id, |job| {
+                    job.priority = new_priority;
+                });
+                if updated.is_none() {
+                    return Err(format!("Job {} not found in processing", job_id));
                 }
 
-                // Persist (lock dropped before await)
+                // Persist
                 if let Some(ref storage) = self.storage {
                     let _ = storage.change_priority(job_id, new_priority).await;
                 }
@@ -1169,29 +1166,32 @@ impl QueueManager {
             }
 
             Some(JobLocation::Queue { shard_idx }) => {
-                // Hard case: need to rebuild heap
+                // O(log n) update using IndexedPriorityQueue
                 let found = {
                     let mut shard = self.shards[shard_idx].write();
 
-                    // Find which queue contains this job
-                    let mut target_queue: Option<Arc<str>> = None;
+                    // O(1) lookup: find which queue contains this job
+                    let mut target_queue: Option<CompactString> = None;
                     for (queue_name, heap) in shard.queues.iter() {
-                        if heap.iter().any(|j| j.id == job_id) {
-                            target_queue = Some(Arc::clone(queue_name));
+                        if heap.contains(job_id) {
+                            target_queue = Some(queue_name.clone());
                             break;
                         }
                     }
 
                     if let Some(queue_name) = target_queue {
                         if let Some(heap) = shard.queues.get_mut(&queue_name) {
-                            // Extract, modify, rebuild
-                            let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
-                            if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
+                            // O(log n) update: remove + re-insert with new priority
+                            if let Some(mut job) = heap.remove(job_id) {
                                 job.priority = new_priority;
+                                heap.push(job);
+                                true
+                            } else {
+                                false
                             }
-                            *heap = jobs.into_iter().collect();
+                        } else {
+                            false
                         }
-                        true
                     } else {
                         false
                     }
@@ -1285,13 +1285,10 @@ impl QueueManager {
     pub async fn move_to_delayed(&self, job_id: u64, delay_ms: u64) -> Result<(), String> {
         let now = now_ms();
 
-        // 1. Check job is in processing and remove it
-        let job = {
-            let mut processing = self.processing.write();
-            processing
-                .remove(&job_id)
-                .ok_or_else(|| format!("Job {} not in processing", job_id))?
-        };
+        // 1. Check job is in processing and remove it (sharded)
+        let job = self
+            .processing_remove(job_id)
+            .ok_or_else(|| format!("Job {} not in processing", job_id))?;
 
         // 2. Update job
         let mut job = job;
@@ -1313,7 +1310,7 @@ impl QueueManager {
                 conc.release();
             }
 
-            let heap = shard.queues.entry(Arc::clone(&queue_arc)).or_default();
+            let heap = shard.queues.entry(queue_arc.clone()).or_default();
             heap.push(job.clone());
         }
 
@@ -1330,38 +1327,40 @@ impl QueueManager {
 
     /// Promote a delayed job to waiting (make it ready immediately)
     pub async fn promote(&self, job_id: u64) -> Result<(), String> {
-        let location = self.job_index.read().get(&job_id).copied();
+        let location = self.job_index.get(&job_id).map(|r| *r);
         let now = now_ms();
 
         match location {
             Some(JobLocation::Queue { shard_idx }) => {
+                // O(log n) update using IndexedPriorityQueue
                 let (found, was_delayed) = {
                     let mut shard = self.shards[shard_idx].write();
 
-                    // Find which queue contains this job
-                    let mut target_queue: Option<Arc<str>> = None;
+                    // O(1) lookup: find which queue contains this job
+                    let mut target_queue: Option<CompactString> = None;
                     for (queue_name, heap) in shard.queues.iter() {
-                        if heap.iter().any(|j| j.id == job_id) {
-                            target_queue = Some(Arc::clone(queue_name));
+                        if heap.contains(job_id) {
+                            target_queue = Some(queue_name.clone());
                             break;
                         }
                     }
 
                     if let Some(queue_name) = target_queue {
                         if let Some(heap) = shard.queues.get_mut(&queue_name) {
-                            let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
-                            let mut was_delayed = false;
-
-                            // Find and update the job's run_at to now
-                            if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
+                            // O(log n) update: remove, modify, re-insert
+                            if let Some(mut job) = heap.remove(job_id) {
                                 if job.run_at > now {
                                     job.run_at = now;
-                                    was_delayed = true;
+                                    heap.push(job);
+                                    (true, true)
+                                } else {
+                                    // Not delayed, put it back
+                                    heap.push(job);
+                                    (true, false)
                                 }
+                            } else {
+                                (false, false)
                             }
-
-                            *heap = jobs.into_iter().collect();
-                            (true, was_delayed)
                         } else {
                             (false, false)
                         }
@@ -1394,22 +1393,18 @@ impl QueueManager {
         job_id: u64,
         new_data: serde_json::Value,
     ) -> Result<(), String> {
-        let location = self.job_index.read().get(&job_id).copied();
+        let location = self.job_index.get(&job_id).map(|r| *r);
 
         match location {
             Some(JobLocation::Processing) => {
-                let found = {
-                    let mut processing = self.processing.write();
-                    if let Some(job) = processing.get_mut(&job_id) {
+                let found = self
+                    .processing_get_mut(job_id, |job| {
                         job.data = new_data.clone();
-                        true
-                    } else {
-                        false
-                    }
-                };
+                    })
+                    .is_some();
 
                 if found {
-                    // Persist (lock dropped)
+                    // Persist
                     if let Some(ref storage) = self.storage {
                         let _ = storage.update_job_data(job_id, &new_data).await;
                     }
@@ -1420,25 +1415,29 @@ impl QueueManager {
             }
 
             Some(JobLocation::Queue { shard_idx }) => {
+                // O(log n) update using IndexedPriorityQueue
                 let found = {
                     let mut shard = self.shards[shard_idx].write();
 
-                    let mut target_queue: Option<Arc<str>> = None;
+                    // O(1) lookup: find which queue contains this job
+                    let mut target_queue: Option<CompactString> = None;
                     for (queue_name, heap) in shard.queues.iter() {
-                        if heap.iter().any(|j| j.id == job_id) {
-                            target_queue = Some(Arc::clone(queue_name));
+                        if heap.contains(job_id) {
+                            target_queue = Some(queue_name.clone());
                             break;
                         }
                     }
 
                     if let Some(queue_name) = target_queue {
                         if let Some(heap) = shard.queues.get_mut(&queue_name) {
-                            let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
-                            if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
+                            // O(log n) update: remove, modify, re-insert
+                            if let Some(mut job) = heap.remove(job_id) {
                                 job.data = new_data.clone();
+                                heap.push(job);
+                                true
+                            } else {
+                                false
                             }
-                            *heap = jobs.into_iter().collect();
-                            true
                         } else {
                             false
                         }
@@ -1489,17 +1488,14 @@ impl QueueManager {
 
     /// Discard a job (prevent further retries, move to DLQ immediately)
     pub async fn discard(&self, job_id: u64) -> Result<(), String> {
-        let location = self.job_index.read().get(&job_id).copied();
+        let location = self.job_index.get(&job_id).map(|r| *r);
 
         match location {
             Some(JobLocation::Processing) => {
-                // Remove from processing
-                let job = {
-                    let mut processing = self.processing.write();
-                    processing
-                        .remove(&job_id)
-                        .ok_or_else(|| format!("Job {} not in processing", job_id))?
-                };
+                // Remove from processing (sharded)
+                let job = self
+                    .processing_remove(job_id)
+                    .ok_or_else(|| format!("Job {} not in processing", job_id))?;
 
                 // Move directly to DLQ
                 let idx = Self::shard_index(&job.queue);
@@ -1507,7 +1503,7 @@ impl QueueManager {
 
                 {
                     let mut shard = self.shards[idx].write();
-                    let dlq = shard.dlq.entry(Arc::clone(&queue_arc)).or_default();
+                    let dlq = shard.dlq.entry(queue_arc.clone()).or_default();
                     dlq.push_back(job);
                 }
 
@@ -1523,27 +1519,24 @@ impl QueueManager {
             }
 
             Some(JobLocation::Queue { shard_idx }) => {
-                // Remove from queue and move to DLQ
+                // O(1) removal using IndexedPriorityQueue and move to DLQ
                 let found = {
                     let mut shard = self.shards[shard_idx].write();
 
-                    let mut target_queue: Option<Arc<str>> = None;
-                    let mut found_job: Option<crate::protocol::Job> = None;
-
+                    // O(1) lookup: find which queue contains this job
+                    let mut target_queue: Option<CompactString> = None;
                     for (queue_name, heap) in shard.queues.iter() {
-                        if heap.iter().any(|j| j.id == job_id) {
-                            target_queue = Some(Arc::clone(queue_name));
+                        if heap.contains(job_id) {
+                            target_queue = Some(queue_name.clone());
                             break;
                         }
                     }
 
+                    let mut found_job: Option<crate::protocol::Job> = None;
                     if let Some(queue_name) = target_queue.clone() {
                         if let Some(heap) = shard.queues.get_mut(&queue_name) {
-                            let mut jobs: Vec<_> = std::mem::take(heap).into_vec();
-                            if let Some(pos) = jobs.iter().position(|j| j.id == job_id) {
-                                found_job = Some(jobs.remove(pos));
-                            }
-                            *heap = jobs.into_iter().collect();
+                            // O(1) removal from IndexedPriorityQueue
+                            found_job = heap.remove(job_id);
                         }
                     }
 
@@ -1631,14 +1624,8 @@ impl QueueManager {
             }
         }
 
-        // Count active (processing)
-        let active = {
-            let processing = self.processing.read();
-            processing
-                .values()
-                .filter(|j| j.queue == queue_name)
-                .count()
-        };
+        // Count active (processing) - use sharded method
+        let active = self.processing_count_by_queue(queue_name);
 
         // Count completed (we don't track per-queue completed, so return 0 or estimate)
         let completed = 0; // Note: completed_jobs doesn't track per-queue

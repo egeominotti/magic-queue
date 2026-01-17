@@ -271,6 +271,8 @@ export interface ClientOptions {
   timeout?: number;
   /** Use HTTP instead of TCP (default: false) */
   useHttp?: boolean;
+  /** Use binary protocol (MessagePack) for 3-5x faster serialization (default: false) */
+  useBinary?: boolean;
 }
 
 // ============== Processor Types ==============

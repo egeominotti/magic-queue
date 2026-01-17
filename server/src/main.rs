@@ -12,10 +12,13 @@ static GLOBAL: MiMalloc = MiMalloc;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, UnixListener};
 
-use protocol::{Command, JobState, Request, Response, ResponseWithId};
+use protocol::{
+    create_binary_frame, deserialize_msgpack, serialize_msgpack, Command, JobState, Request,
+    Response, ResponseWithId,
+};
 use queue::{generate_node_id, QueueManager};
 
 const DEFAULT_TCP_PORT: u16 = 6789;
@@ -155,10 +158,41 @@ where
 {
     let mut reader = BufReader::with_capacity(128 * 1024, reader);
     let mut writer = BufWriter::with_capacity(128 * 1024, writer);
-    let mut line = String::with_capacity(8192);
     let state = Arc::new(RwLock::new(ConnectionState {
         authenticated: false,
     }));
+
+    // Peek first byte to detect protocol
+    let first_byte = {
+        let buf = reader.fill_buf().await?;
+        if buf.is_empty() {
+            return Ok(());
+        }
+        buf[0]
+    };
+
+    // Route to appropriate handler based on protocol
+    if first_byte == b'{' || first_byte == b'\n' || first_byte == b'\r' {
+        // Text protocol (JSON, line-delimited)
+        handle_text_protocol(&mut reader, &mut writer, &queue_manager, &state).await
+    } else {
+        // Binary protocol (MessagePack, length-prefixed)
+        handle_binary_protocol(&mut reader, &mut writer, &queue_manager, &state).await
+    }
+}
+
+/// Handle text protocol (JSON, newline-delimited)
+async fn handle_text_protocol<R, W>(
+    reader: &mut BufReader<R>,
+    writer: &mut BufWriter<W>,
+    queue_manager: &Arc<QueueManager>,
+    state: &Arc<RwLock<ConnectionState>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut line = String::with_capacity(8192);
 
     loop {
         line.clear();
@@ -168,19 +202,90 @@ where
             break;
         }
 
-        let response = process_command(&mut line, &queue_manager, &state).await;
+        let response = process_command_text(&mut line, queue_manager, state).await;
         let response_json = serde_json::to_string(&response)?;
         writer.write_all(response_json.as_bytes()).await?;
         writer.write_all(b"\n").await?;
 
         // Pipelining: only flush if no more commands waiting in buffer
-        // This allows batching multiple commands without syscall overhead
         if reader.buffer().is_empty() {
             writer.flush().await?;
         }
     }
 
     Ok(())
+}
+
+/// Handle binary protocol (MessagePack, length-prefixed frames)
+/// Frame format: [4 bytes length (big-endian u32)] [N bytes MessagePack data]
+async fn handle_binary_protocol<R, W>(
+    reader: &mut BufReader<R>,
+    writer: &mut BufWriter<W>,
+    queue_manager: &Arc<QueueManager>,
+    state: &Arc<RwLock<ConnectionState>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut len_buf = [0u8; 4];
+    let mut data_buf = Vec::with_capacity(8192);
+
+    loop {
+        // Read 4-byte length prefix
+        match reader.read_exact(&mut len_buf).await {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e.into()),
+        }
+
+        let len = u32::from_be_bytes(len_buf) as usize;
+
+        // Sanity check: max 16MB per message
+        if len > 16 * 1024 * 1024 {
+            let err_response = ResponseWithId::new(Response::error("Message too large"), None);
+            let err_bytes = serialize_msgpack(&err_response)?;
+            let frame = create_binary_frame(&err_bytes);
+            writer.write_all(&frame).await?;
+            writer.flush().await?;
+            continue;
+        }
+
+        // Read message data
+        data_buf.clear();
+        data_buf.resize(len, 0);
+        reader.read_exact(&mut data_buf).await?;
+
+        // Process command
+        let response = process_command_binary(&data_buf, queue_manager, state).await;
+
+        // Serialize and send response
+        let response_bytes = serialize_msgpack(&response)?;
+        let frame = create_binary_frame(&response_bytes);
+        writer.write_all(&frame).await?;
+
+        // Pipelining: only flush if no more commands waiting in buffer
+        if reader.buffer().is_empty() {
+            writer.flush().await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Process command from binary (MessagePack) input
+#[inline(always)]
+async fn process_command_binary(
+    data: &[u8],
+    queue_manager: &Arc<QueueManager>,
+    state: &Arc<RwLock<ConnectionState>>,
+) -> ResponseWithId {
+    let request: Request = match deserialize_msgpack(data) {
+        Ok(req) => req,
+        Err(e) => return ResponseWithId::new(Response::error(e), None),
+    };
+
+    process_request(request, queue_manager, state).await
 }
 
 #[inline(always)]
@@ -193,8 +298,9 @@ fn parse_request(line: &mut String) -> Result<Request, String> {
     sonic_rs::from_str(line).map_err(|e| format!("Invalid: {}", e))
 }
 
+/// Process command from text (JSON) input
 #[inline(always)]
-async fn process_command(
+async fn process_command_text(
     line: &mut String,
     queue_manager: &Arc<QueueManager>,
     state: &Arc<RwLock<ConnectionState>>,
@@ -204,6 +310,16 @@ async fn process_command(
         Err(e) => return ResponseWithId::new(Response::error(e), None),
     };
 
+    process_request(request, queue_manager, state).await
+}
+
+/// Shared command processing logic for both text and binary protocols
+#[inline(always)]
+async fn process_request(
+    request: Request,
+    queue_manager: &Arc<QueueManager>,
+    state: &Arc<RwLock<ConnectionState>>,
+) -> ResponseWithId {
     let req_id = request.req_id;
     let command = request.command;
 
@@ -281,7 +397,7 @@ async fn process_command(
         }
         Command::Pull { queue, timeout } => {
             let timeout_ms = timeout.unwrap_or(60_000); // Default 60s
-            // Use distributed pull in cluster mode for consistency
+                                                        // Use distributed pull in cluster mode for consistency
             if queue_manager.is_distributed_pull() {
                 match queue_manager.pull_distributed(&queue, timeout_ms).await {
                     Some(job) => Response::job(job),
@@ -303,9 +419,13 @@ async fn process_command(
                 }
             }
         }
-        Command::Pullb { queue, count, timeout } => {
+        Command::Pullb {
+            queue,
+            count,
+            timeout,
+        } => {
             let timeout_ms = timeout.unwrap_or(60_000); // Default 60s
-            // Use distributed pull in cluster mode for consistency
+                                                        // Use distributed pull in cluster mode for consistency
             if queue_manager.is_distributed_pull() {
                 let jobs = queue_manager
                     .pull_distributed_batch(&queue, count, timeout_ms)
@@ -401,6 +521,14 @@ async fn process_command(
         Command::RetryDlq { queue, id } => {
             let count = queue_manager.retry_dlq(&queue, id).await;
             Response::batch(vec![count as u64])
+        }
+        Command::PurgeDlq { queue } => {
+            let count = queue_manager.purge_dlq(&queue).await;
+            Response::count(count)
+        }
+        Command::GetJobsBatch { ids } => {
+            let jobs = queue_manager.get_jobs_batch(&ids).await;
+            Response::jobs_batch(jobs)
         }
         Command::Subscribe { queue, events } => {
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
