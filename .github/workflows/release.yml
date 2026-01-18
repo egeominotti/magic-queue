@@ -56,6 +56,9 @@ jobs:
         run: |
           if [ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]; then
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            export RUSTFLAGS="-C target-feature=+aes,+neon"
+          elif [ "${{ matrix.target }}" == "aarch64-apple-darwin" ]; then
+            export RUSTFLAGS="-C target-feature=+aes,+neon"
           fi
           cargo build --release --target ${{ matrix.target }}
         shell: bash
