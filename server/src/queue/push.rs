@@ -85,16 +85,20 @@ impl QueueManager {
         validate_job_data(&data)?;
 
         // Check debounce - prevent duplicate jobs within time window
+        // OPTIMIZATION: Uses nested CompactString map to avoid String allocation
         if let Some(ref id) = debounce_id {
             let now = now_ms();
-            let debounce_key = format!("{}:{}", queue, id);
+            let queue_key = intern(&queue);
+            let id_key = intern(id);
             let debounce_cache = self.debounce_cache.read();
-            if let Some(&expiry) = debounce_cache.get(&debounce_key) {
-                if now < expiry {
-                    return Err(format!(
-                        "Debounced: job with id '{}' was pushed recently",
-                        id
-                    ));
+            if let Some(queue_map) = debounce_cache.get(&queue_key) {
+                if let Some(&expiry) = queue_map.get(&id_key) {
+                    if now < expiry {
+                        return Err(format!(
+                            "Debounced: job with id '{}' was pushed recently",
+                            id
+                        ));
+                    }
                 }
             }
         }
@@ -215,11 +219,17 @@ impl QueueManager {
         self.notify_shard(idx);
 
         // Update debounce cache
+        // OPTIMIZATION: Uses nested CompactString map to avoid String allocation
         if let Some(ref id) = debounce_id {
-            let debounce_key = format!("{}:{}", queue, id);
+            let queue_key = intern(&queue);
+            let id_key = intern(id);
             let ttl = debounce_ttl.unwrap_or(5000); // Default 5 seconds
             let expiry = now_ms() + ttl;
-            self.debounce_cache.write().insert(debounce_key, expiry);
+            self.debounce_cache
+                .write()
+                .entry(queue_key)
+                .or_default()
+                .insert(id_key, expiry);
         }
 
         // Store custom ID mapping for idempotency
@@ -253,9 +263,12 @@ impl QueueManager {
         }
 
         // Filter valid jobs and check debounce
+        // OPTIMIZATION: Uses nested CompactString map to avoid String allocation
         let now = now_ms();
+        let queue_key = intern(&queue);
         let valid_jobs: Vec<_> = {
             let debounce_cache = self.debounce_cache.read();
+            let queue_debounce = debounce_cache.get(&queue_key);
             jobs.into_iter()
                 .filter(|input| {
                     // Check data validity
@@ -264,10 +277,12 @@ impl QueueManager {
                     }
                     // Check debounce
                     if let Some(ref id) = input.debounce_id {
-                        let debounce_key = format!("{}:{}", queue, id);
-                        if let Some(&expiry) = debounce_cache.get(&debounce_key) {
-                            if now < expiry {
-                                return false; // Debounced
+                        if let Some(queue_map) = queue_debounce {
+                            let id_key = intern(id);
+                            if let Some(&expiry) = queue_map.get(&id_key) {
+                                if now < expiry {
+                                    return false; // Debounced
+                                }
                             }
                         }
                     }
@@ -286,7 +301,8 @@ impl QueueManager {
         let mut ids = Vec::with_capacity(valid_jobs.len());
         let mut created_jobs = Vec::with_capacity(valid_jobs.len());
         let mut waiting_jobs = Vec::new();
-        let mut debounce_updates: Vec<(String, u64)> = Vec::new();
+        // OPTIMIZATION: Use CompactString for debounce updates to avoid String allocation
+        let mut debounce_updates: Vec<(compact_str::CompactString, u64)> = Vec::new();
 
         let idx = Self::shard_index(&queue);
         let queue_name = intern(&queue);
@@ -297,9 +313,9 @@ impl QueueManager {
             for (input, job_id) in valid_jobs.into_iter().zip(job_ids.into_iter()) {
                 // Track debounce updates
                 if let Some(ref id) = input.debounce_id {
-                    let debounce_key = format!("{}:{}", queue, id);
+                    let id_key = intern(id);
                     let ttl = input.debounce_ttl.unwrap_or(5000);
-                    debounce_updates.push((debounce_key, now + ttl));
+                    debounce_updates.push((id_key, now + ttl));
                 }
                 let job = self.create_job_with_id(
                     job_id,
@@ -354,10 +370,12 @@ impl QueueManager {
         }
 
         // Update debounce cache
+        // OPTIMIZATION: Uses nested CompactString map
         if !debounce_updates.is_empty() {
             let mut cache = self.debounce_cache.write();
-            for (key, expiry) in debounce_updates {
-                cache.insert(key, expiry);
+            let queue_map = cache.entry(queue_key).or_default();
+            for (id_key, expiry) in debounce_updates {
+                queue_map.insert(id_key, expiry);
             }
         }
 

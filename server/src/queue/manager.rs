@@ -89,9 +89,12 @@ pub struct QueueManager {
     // Prevents job loss on crash but reduces throughput (~10x slower)
     // Enable with SYNC_PERSISTENCE=1 for maximum durability
     pub(crate) sync_persistence: bool,
-    // Debounce cache: maps "queue:debounce_id" -> expiry_timestamp
-    // Used to prevent duplicate jobs within a time window
-    pub(crate) debounce_cache: RwLock<GxHashMap<String, u64>>,
+    // Debounce cache: nested map queue -> debounce_id -> expiry_timestamp
+    // OPTIMIZATION: Uses CompactString keys (inline up to 24 chars) to avoid String allocation
+    // Old: format!("{}:{}", queue, id) allocated ~50 bytes per push
+    // New: CompactString keys inline up to 24 chars each with zero heap allocation
+    pub(crate) debounce_cache:
+        RwLock<GxHashMap<compact_str::CompactString, GxHashMap<compact_str::CompactString, u64>>>,
     // Custom job ID mapping: custom_id -> internal job ID
     pub(crate) custom_id_map: RwLock<GxHashMap<String, u64>>,
     // Job waiters for finished() promise: job_id -> list of waiting channels
@@ -312,7 +315,10 @@ impl QueueManager {
             stalled_count: RwLock::new(GxHashMap::default()),
             distributed_pull,
             sync_persistence,
-            debounce_cache: RwLock::new(GxHashMap::default()),
+            debounce_cache: RwLock::new(GxHashMap::with_capacity_and_hasher(
+                64,
+                Default::default(),
+            )),
             // Custom job ID and finished() promise support
             custom_id_map: RwLock::new(GxHashMap::default()),
             job_waiters: RwLock::new(GxHashMap::default()),
@@ -500,9 +506,12 @@ impl QueueManager {
     }
 
     /// Get processing shard index for a job ID.
+    /// OPTIMIZATION: Uses bit masking instead of modulo (faster on most CPUs)
+    /// Only works because NUM_SHARDS is a power of 2 (32 = 2^5)
     #[inline(always)]
     pub fn processing_shard_index(job_id: u64) -> usize {
-        (job_id % NUM_SHARDS as u64) as usize
+        // 0x1F = 31 = NUM_SHARDS - 1 (bit mask for modulo 32)
+        (job_id as usize) & 0x1F
     }
 
     /// Insert job into processing (sharded).
@@ -520,10 +529,28 @@ impl QueueManager {
     }
 
     /// Get job from processing (sharded).
+    /// NOTE: This clones the job. For read-only access, prefer `processing_get_ref`.
     #[inline]
     pub(crate) fn processing_get(&self, job_id: u64) -> Option<Job> {
         let idx = Self::processing_shard_index(job_id);
         self.processing_shards[idx].read().get(&job_id).cloned()
+    }
+
+    /// OPTIMIZATION: Get read-only reference to job via closure (avoids cloning).
+    /// Use this when you only need to read job data without modifying it.
+    ///
+    /// Example:
+    /// ```ignore
+    /// let queue_name = manager.processing_get_ref(job_id, |job| job.queue.clone());
+    /// ```
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn processing_get_ref<F, R>(&self, job_id: u64, f: F) -> Option<R>
+    where
+        F: FnOnce(&Job) -> R,
+    {
+        let idx = Self::processing_shard_index(job_id);
+        self.processing_shards[idx].read().get(&job_id).map(f)
     }
 
     /// Get mutable reference to job in processing via closure.
@@ -654,7 +681,10 @@ impl QueueManager {
                 cron_jobs.insert(cron.name.clone(), cron);
             }
             if !cron_jobs.is_empty() {
-                info!(count = cron_jobs.len(), "Recovered cron jobs from PostgreSQL");
+                info!(
+                    count = cron_jobs.len(),
+                    "Recovered cron jobs from PostgreSQL"
+                );
             }
         }
 

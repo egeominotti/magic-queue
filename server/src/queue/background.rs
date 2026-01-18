@@ -338,6 +338,8 @@ impl QueueManager {
                     // Persist first (needs reference)
                     self.persist_dlq(&job, Some("Job timed out"));
                     self.metrics.record_timeout();
+                    // OPTIMIZATION: Update atomic counter (processing -> DLQ)
+                    self.metrics.record_dlq();
                     // Then move (no clone)
                     self.shards[idx]
                         .write()
@@ -359,6 +361,8 @@ impl QueueManager {
                     self.index_job(job_id, super::types::JobLocation::Queue { shard_idx: idx });
                     // Persist first (uses primitives)
                     self.persist_fail(job_id, new_run_at, job.attempts);
+                    // OPTIMIZATION: Update atomic counter (processing -> queue)
+                    self.metrics.record_retry();
                     // Then move (no clone)
                     self.shards[idx]
                         .write()

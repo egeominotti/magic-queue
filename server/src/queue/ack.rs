@@ -156,6 +156,12 @@ impl QueueManager {
                     self.unindex_job(job_id);
                     self.job_logs.write().remove(&job_id);
                     self.stalled_count.write().remove(&job_id);
+                    // OPTIMIZATION: Update atomic counter (processing -> removed)
+                    self.metrics.record_fail();
+                    // Decrement processing counter manually since record_dlq() not called
+                    self.metrics
+                        .current_processing
+                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 } else {
                     self.index_job(job_id, JobLocation::Dlq { shard_idx: idx });
                     // Persist first (needs reference)
@@ -171,6 +177,8 @@ impl QueueManager {
                         .push_back(job);
 
                     self.metrics.record_fail();
+                    // OPTIMIZATION: Update atomic counter (processing -> DLQ)
+                    self.metrics.record_dlq();
 
                     // Broadcast failed event
                     self.broadcast_event(JobEvent {
@@ -184,8 +192,6 @@ impl QueueManager {
                     });
                     return Ok(());
                 }
-
-                self.metrics.record_fail();
 
                 // Broadcast failed event for remove_on_fail case
                 self.broadcast_event(JobEvent {
@@ -218,7 +224,9 @@ impl QueueManager {
 
             // Persist first - use sync mode if enabled for durability
             if self.is_sync_persistence() {
-                let _ = self.persist_fail_sync(job_id, new_run_at, job.attempts).await;
+                let _ = self
+                    .persist_fail_sync(job_id, new_run_at, job.attempts)
+                    .await;
             } else {
                 self.persist_fail(job_id, new_run_at, job.attempts);
             }
@@ -230,6 +238,9 @@ impl QueueManager {
                 .entry(queue_arc)
                 .or_default()
                 .push(job);
+
+            // OPTIMIZATION: Update atomic counter (processing -> queue)
+            self.metrics.record_retry();
 
             self.notify_shard(idx);
             return Ok(());

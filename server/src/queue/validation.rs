@@ -43,28 +43,37 @@ pub fn validate_queue_name(name: &str) -> Result<(), String> {
 #[inline]
 pub fn estimate_json_size(value: &Value) -> usize {
     match value {
-        Value::Null => 4,  // "null"
-        Value::Bool(b) => if *b { 4 } else { 5 },  // "true" or "false"
+        Value::Null => 4, // "null"
+        Value::Bool(b) => {
+            if *b {
+                4
+            } else {
+                5
+            }
+        } // "true" or "false"
         Value::Number(n) => {
             // Estimate number length (most are < 20 chars)
-            if n.is_i64() {
-                20
-            } else if n.is_u64() {
-                20
+            // Integers (i64, u64) are typically < 20 chars, floats slightly longer
+            if n.is_f64() && !n.is_i64() && !n.is_u64() {
+                24 // floating point with decimal
             } else {
-                24 // floating point
+                20 // integer
             }
         }
-        Value::String(s) => s.len() + 2,  // quotes + content (doesn't count escapes, conservative)
+        Value::String(s) => s.len() + 2, // quotes + content (doesn't count escapes, conservative)
         Value::Array(arr) => {
             // brackets + commas + contents
             2 + arr.len().saturating_sub(1) + arr.iter().map(estimate_json_size).sum::<usize>()
         }
         Value::Object(obj) => {
             // braces + colons + commas + keys + values
-            2 + obj.len().saturating_sub(1) + obj.iter().map(|(k, v)| {
-                k.len() + 3 + estimate_json_size(v)  // "key": value
-            }).sum::<usize>()
+            2 + obj.len().saturating_sub(1)
+                + obj
+                    .iter()
+                    .map(|(k, v)| {
+                        k.len() + 3 + estimate_json_size(v) // "key": value
+                    })
+                    .sum::<usize>()
         }
     }
 }

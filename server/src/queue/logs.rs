@@ -66,9 +66,17 @@ impl QueueManager {
     }
 
     /// Cleanup expired debounce entries.
+    /// OPTIMIZATION: Works with nested CompactString map structure
     pub(crate) fn cleanup_debounce_cache(&self) {
         let now = now_ms();
         let mut cache = self.debounce_cache.write();
-        cache.retain(|_, &mut expiry| expiry > now);
+
+        // Remove expired entries from each queue's debounce map
+        for queue_map in cache.values_mut() {
+            queue_map.retain(|_, &mut expiry| expiry > now);
+        }
+
+        // Remove empty queue maps
+        cache.retain(|_, queue_map| !queue_map.is_empty());
     }
 }

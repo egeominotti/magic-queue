@@ -453,6 +453,13 @@ impl Default for Shard {
 
 // ============== Global Metrics ==============
 
+/// Global metrics with atomic counters for O(1) stats queries.
+///
+/// ## Performance Optimization
+///
+/// Instead of iterating all 32 shards to count jobs (O(n) where n = shards),
+/// we maintain atomic counters that are updated on push/pull/ack/fail.
+/// This makes stats() calls O(1) instead of O(32).
 pub struct GlobalMetrics {
     pub total_pushed: AtomicU64,
     pub total_completed: AtomicU64,
@@ -460,6 +467,13 @@ pub struct GlobalMetrics {
     pub total_timed_out: AtomicU64,
     pub latency_sum: AtomicU64,
     pub latency_count: AtomicU64,
+    // === O(1) Stats Counters ===
+    /// Current number of jobs in queues (waiting + delayed)
+    pub current_queued: AtomicU64,
+    /// Current number of jobs being processed
+    pub current_processing: AtomicU64,
+    /// Current number of jobs in DLQ
+    pub current_dlq: AtomicU64,
 }
 
 impl GlobalMetrics {
@@ -471,12 +485,23 @@ impl GlobalMetrics {
             total_timed_out: AtomicU64::new(0),
             latency_sum: AtomicU64::new(0),
             latency_count: AtomicU64::new(0),
+            current_queued: AtomicU64::new(0),
+            current_processing: AtomicU64::new(0),
+            current_dlq: AtomicU64::new(0),
         }
     }
 
     #[inline(always)]
     pub fn record_push(&self, count: u64) {
         self.total_pushed.fetch_add(count, Ordering::Relaxed);
+        self.current_queued.fetch_add(count, Ordering::Relaxed);
+    }
+
+    /// Record job pulled from queue to processing
+    #[inline(always)]
+    pub fn record_pull(&self) {
+        self.current_queued.fetch_sub(1, Ordering::Relaxed);
+        self.current_processing.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -484,6 +509,7 @@ impl GlobalMetrics {
         self.total_completed.fetch_add(1, Ordering::Relaxed);
         self.latency_sum.fetch_add(latency, Ordering::Relaxed);
         self.latency_count.fetch_add(1, Ordering::Relaxed);
+        self.current_processing.fetch_sub(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -491,9 +517,49 @@ impl GlobalMetrics {
         self.total_failed.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Record job moved to DLQ
+    #[inline(always)]
+    pub fn record_dlq(&self) {
+        self.current_processing.fetch_sub(1, Ordering::Relaxed);
+        self.current_dlq.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record job retried (back to queue from processing)
+    #[inline(always)]
+    pub fn record_retry(&self) {
+        self.current_processing.fetch_sub(1, Ordering::Relaxed);
+        self.current_queued.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record job removed from DLQ (retry or purge)
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn record_dlq_remove(&self) {
+        self.current_dlq.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Record job moved from DLQ back to queue
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn record_dlq_retry(&self) {
+        self.current_dlq.fetch_sub(1, Ordering::Relaxed);
+        self.current_queued.fetch_add(1, Ordering::Relaxed);
+    }
+
     #[inline(always)]
     pub fn record_timeout(&self) {
         self.total_timed_out.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Get current stats (O(1) instead of O(shards))
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn get_current_stats(&self) -> (u64, u64, u64) {
+        (
+            self.current_queued.load(Ordering::Relaxed),
+            self.current_processing.load(Ordering::Relaxed),
+            self.current_dlq.load(Ordering::Relaxed),
+        )
     }
 }
 
