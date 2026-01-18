@@ -10,7 +10,8 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   # Override target-cpu=native from .cargo/config.toml for CI compatibility
-  RUSTFLAGS: "-C target-cpu=x86-64-v2"
+  # x86-64-v2 + AES for gxhash compatibility
+  RUSTFLAGS: "-C target-cpu=x86-64-v2 -C target-feature=+aes"
 
 jobs:
   # Run Rust formatting, linting and tests
