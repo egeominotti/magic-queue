@@ -282,6 +282,67 @@ pub enum Command {
     GetJobCounts {
         queue: String,
     },
+
+    // === Key-Value Storage (Redis-like) ===
+    /// Set a key-value pair with optional TTL
+    KvSet {
+        key: String,
+        value: Value,
+        #[serde(default)]
+        ttl: Option<u64>, // TTL in milliseconds
+    },
+    /// Get a value by key
+    KvGet {
+        key: String,
+    },
+    /// Delete a key
+    KvDel {
+        key: String,
+    },
+    /// Get multiple values by keys
+    KvMget {
+        keys: Vec<String>,
+    },
+    /// Set multiple key-value pairs
+    KvMset {
+        entries: Vec<KvEntry>,
+    },
+    /// Check if a key exists
+    KvExists {
+        key: String,
+    },
+    /// Set TTL on existing key
+    KvExpire {
+        key: String,
+        ttl: u64, // TTL in milliseconds
+    },
+    /// Get remaining TTL for a key
+    KvTtl {
+        key: String,
+    },
+    /// List keys matching pattern (simple glob: * and ?)
+    KvKeys {
+        #[serde(default)]
+        pattern: Option<String>,
+    },
+    /// Increment a numeric value
+    KvIncr {
+        key: String,
+        #[serde(default = "default_incr_by")]
+        by: i64,
+    },
+}
+
+fn default_incr_by() -> i64 {
+    1
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KvEntry {
+    pub key: String,
+    pub value: Value,
+    #[serde(default)]
+    pub ttl: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

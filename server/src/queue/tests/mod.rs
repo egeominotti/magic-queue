@@ -92,3 +92,6 @@ mod cron_advanced;
 
 // Remaining coverage: paused pull, get_result, subscribe, shutdown, manager info
 mod remaining;
+
+// Key-Value storage
+mod kv;

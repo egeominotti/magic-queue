@@ -274,7 +274,125 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Avg Latency:     {:.2} ms\n", avg_latency);
     }
 
-    println!("╔══════════════════════════════════════════════════════════════╗");
+    // ═══════════════════════════════════════════════════════════════
+    // Benchmark 6: KV Set (Sequential)
+    // ═══════════════════════════════════════════════════════════════
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("Benchmark 6: KV Set ({} keys)", BENCHMARK_JOBS);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    let start = Instant::now();
+    for i in 0..BENCHMARK_JOBS {
+        let cmd = format!(
+            r#"{{"cmd":"KVSET","key":"bench:key:{}","value":{{"data":"test{}"}}}}"#,
+            i, i
+        );
+        writer.write_all(cmd.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+        line.clear();
+        reader.read_line(&mut line).await?;
+    }
+    let elapsed = start.elapsed();
+    let ops_per_sec = BENCHMARK_JOBS as f64 / elapsed.as_secs_f64();
+    let latency_us = elapsed.as_micros() as f64 / BENCHMARK_JOBS as f64;
+
+    println!("  Duration:     {:?}", elapsed);
+    println!("  Throughput:   {:.0} ops/sec", ops_per_sec);
+    println!("  Avg Latency:  {:.1} µs\n", latency_us);
+
+    // ═══════════════════════════════════════════════════════════════
+    // Benchmark 7: KV Get (Sequential)
+    // ═══════════════════════════════════════════════════════════════
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("Benchmark 7: KV Get ({} keys)", BENCHMARK_JOBS);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    let start = Instant::now();
+    for i in 0..BENCHMARK_JOBS {
+        let cmd = format!(r#"{{"cmd":"KVGET","key":"bench:key:{}"}}"#, i);
+        writer.write_all(cmd.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+        line.clear();
+        reader.read_line(&mut line).await?;
+    }
+    let elapsed = start.elapsed();
+    let ops_per_sec = BENCHMARK_JOBS as f64 / elapsed.as_secs_f64();
+    let latency_us = elapsed.as_micros() as f64 / BENCHMARK_JOBS as f64;
+
+    println!("  Duration:     {:?}", elapsed);
+    println!("  Throughput:   {:.0} ops/sec", ops_per_sec);
+    println!("  Avg Latency:  {:.1} µs\n", latency_us);
+
+    // ═══════════════════════════════════════════════════════════════
+    // Benchmark 8: KV Pipelining (send all, then read all)
+    // ═══════════════════════════════════════════════════════════════
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("Benchmark 8: KV Pipelining SET ({} commands)", BENCHMARK_JOBS);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    let start = Instant::now();
+
+    // Send all commands WITHOUT waiting for response
+    for i in 0..BENCHMARK_JOBS {
+        let cmd = format!(
+            r#"{{"cmd":"KVSET","key":"pipe:key:{}","value":{{"n":{}}}}}"#,
+            i, i
+        );
+        writer.write_all(cmd.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+    }
+    writer.flush().await?;
+
+    // Now read all responses
+    for _ in 0..BENCHMARK_JOBS {
+        line.clear();
+        reader.read_line(&mut line).await?;
+    }
+
+    let elapsed = start.elapsed();
+    let ops_per_sec = BENCHMARK_JOBS as f64 / elapsed.as_secs_f64();
+    let latency_us = elapsed.as_micros() as f64 / BENCHMARK_JOBS as f64;
+
+    println!("  Duration:     {:?}", elapsed);
+    println!("  Throughput:   {:.0} ops/sec", ops_per_sec);
+    println!("  Avg Latency:  {:.1} µs\n", latency_us);
+
+    // ═══════════════════════════════════════════════════════════════
+    // Benchmark 9: KV INCR (Atomic Counter)
+    // ═══════════════════════════════════════════════════════════════
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("Benchmark 9: KV INCR Atomic Counter ({} ops)", BENCHMARK_JOBS);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    let start = Instant::now();
+    for _ in 0..BENCHMARK_JOBS {
+        let cmd = r#"{"cmd":"KVINCR","key":"counter:bench"}"#;
+        writer.write_all(cmd.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+        line.clear();
+        reader.read_line(&mut line).await?;
+    }
+    let elapsed = start.elapsed();
+    let ops_per_sec = BENCHMARK_JOBS as f64 / elapsed.as_secs_f64();
+    let latency_us = elapsed.as_micros() as f64 / BENCHMARK_JOBS as f64;
+
+    println!("  Duration:     {:?}", elapsed);
+    println!("  Throughput:   {:.0} ops/sec", ops_per_sec);
+    println!("  Avg Latency:  {:.1} µs\n", latency_us);
+
+    // Verify counter value
+    let cmd = r#"{"cmd":"KVGET","key":"counter:bench"}"#;
+    writer.write_all(cmd.as_bytes()).await?;
+    writer.write_all(b"\n").await?;
+    writer.flush().await?;
+    line.clear();
+    reader.read_line(&mut line).await?;
+    println!("  Final counter value: {}", line.trim());
+
+    println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║                    Benchmark Complete!                       ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
 

@@ -322,27 +322,36 @@ describe('Integration Tests', () => {
 
   describe('Queue API Integration', () => {
     test('should work with Queue high-level API', async () => {
-      const emailQueue = new Queue<{ to: string; subject: string }, { sent: boolean }>(
+      // BullMQ pattern: separate Queue for adding, Worker for processing
+      const emailQueue = new Queue<{ to: string; subject: string }>(
         TEST_QUEUE,
-        { connection: { host: 'localhost', port: 6789 } }
+        { host: 'localhost', port: 6789 }
       );
 
       const sentEmails: string[] = [];
 
-      emailQueue.process(async (job) => {
-        sentEmails.push(job.data.to);
-        return { sent: true };
-      });
+      // Worker handles processing (not queue.process())
+      const emailWorker = new Worker<{ to: string; subject: string }, { sent: boolean }>(
+        TEST_QUEUE,
+        async (job) => {
+          sentEmails.push(job.data.to);
+          return { sent: true };
+        },
+        { host: 'localhost', port: 6789, concurrency: 2 }
+      );
 
-      // Add emails
-      await emailQueue.add({ to: 'a@test.com', subject: 'Hello A' });
-      await emailQueue.add({ to: 'b@test.com', subject: 'Hello B' });
+      await emailWorker.start();
+
+      // Add emails (BullMQ: add(name, data, opts))
+      await emailQueue.add('send', { to: 'a@test.com', subject: 'Hello A' });
+      await emailQueue.add('send', { to: 'b@test.com', subject: 'Hello B' });
 
       await new Promise(resolve => setTimeout(resolve, 500));
 
       expect(sentEmails).toContain('a@test.com');
       expect(sentEmails).toContain('b@test.com');
 
+      await emailWorker.stop();
       await emailQueue.close();
     });
   });

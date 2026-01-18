@@ -56,6 +56,7 @@ mod cron;
 mod dlq;
 mod flows;
 mod job_ops;
+mod kv;
 mod logs;
 mod monitoring;
 mod queue_control;

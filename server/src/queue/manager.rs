@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use super::cluster::ClusterManager;
 use super::postgres::PostgresStorage;
+use super::kv::KvStore;
 use super::types::{
     init_coarse_time, intern, now_ms, CircuitBreakerConfig, CircuitBreakerEntry, GlobalMetrics,
     GxHashMap, GxHashSet, JobLocation, Shard, SnapshotConfig, Subscriber, Webhook, Worker,
@@ -114,6 +115,8 @@ pub struct QueueManager {
     pub(crate) http_client: reqwest::Client,
     // Shutdown flag for graceful shutdown of background tasks
     pub(crate) shutdown_flag: std::sync::atomic::AtomicBool,
+    // Key-Value storage (Redis-like)
+    pub(crate) kv_store: KvStore,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -334,6 +337,8 @@ impl QueueManager {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             shutdown_flag: std::sync::atomic::AtomicBool::new(false),
+            // Key-Value storage
+            kv_store: RwLock::new(GxHashMap::with_capacity_and_hasher(1024, Default::default())),
         });
 
         let mgr = Arc::clone(&manager);

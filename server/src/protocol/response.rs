@@ -131,6 +131,37 @@ pub enum Response {
         ok: bool,
         error: String,
     },
+    // === Key-Value Storage Responses ===
+    /// Response for KvGet
+    KvValue {
+        ok: bool,
+        value: Option<Value>,
+    },
+    /// Response for KvMget
+    KvValues {
+        ok: bool,
+        values: Vec<Option<Value>>,
+    },
+    /// Response for KvKeys
+    KvKeys {
+        ok: bool,
+        keys: Vec<String>,
+    },
+    /// Response for KvExists
+    KvExists {
+        ok: bool,
+        exists: bool,
+    },
+    /// Response for KvTtl (-1 = no TTL, -2 = key doesn't exist)
+    KvTtl {
+        ok: bool,
+        ttl: i64,
+    },
+    /// Response for KvIncr
+    KvIncr {
+        ok: bool,
+        value: i64,
+    },
 }
 
 impl Response {
@@ -308,5 +339,36 @@ impl Response {
     #[inline(always)]
     pub fn jobs_batch(jobs: Vec<JobBrowserItem>) -> Self {
         Response::JobsBatch { ok: true, jobs }
+    }
+
+    // === Key-Value Storage Response Helpers ===
+    #[inline(always)]
+    pub fn kv_value(value: Option<Value>) -> Self {
+        Response::KvValue { ok: true, value }
+    }
+
+    #[inline(always)]
+    pub fn kv_values(values: Vec<Option<Value>>) -> Self {
+        Response::KvValues { ok: true, values }
+    }
+
+    #[inline(always)]
+    pub fn kv_keys(keys: Vec<String>) -> Self {
+        Response::KvKeys { ok: true, keys }
+    }
+
+    #[inline(always)]
+    pub fn kv_exists(exists: bool) -> Self {
+        Response::KvExists { ok: true, exists }
+    }
+
+    #[inline(always)]
+    pub fn kv_ttl(ttl: i64) -> Self {
+        Response::KvTtl { ok: true, ttl }
+    }
+
+    #[inline(always)]
+    pub fn kv_incr(value: i64) -> Self {
+        Response::KvIncr { ok: true, value }
     }
 }

@@ -79,6 +79,7 @@ impl QueueManager {
                         self.cleanup_job_logs();
                         self.cleanup_stale_index_entries();
                         self.cleanup_debounce_cache();
+                        self.cleanup_expired_kv();
                         cleanup_interned_strings();
                     }
                 }

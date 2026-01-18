@@ -24,6 +24,16 @@ export interface Job<T = unknown> {
   depends_on: number[];
   parent_id?: number;
   children_ids: number[];
+  children_completed: number;
+  lifo: boolean;
+  remove_on_complete: boolean;
+  remove_on_fail: boolean;
+  last_heartbeat: number;
+  stall_timeout: number;
+  stall_count: number;
+  keep_completed_age: number;
+  keep_completed_count: number;
+  completed_at: number;
 }
 
 export type JobState =
@@ -61,6 +71,22 @@ export interface PushOptions {
   depends_on?: number[];
   /** Tags for filtering */
   tags?: string[];
+  /** LIFO mode (stack) */
+  lifo?: boolean;
+  /** Remove from completed set immediately */
+  remove_on_complete?: boolean;
+  /** Remove from DLQ immediately */
+  remove_on_fail?: boolean;
+  /** Stall detection timeout in ms */
+  stall_timeout?: number;
+  /** Debounce ID for grouping */
+  debounce_id?: string;
+  /** Debounce window in ms */
+  debounce_ttl?: number;
+  /** Keep completed job result for this duration (ms) */
+  keepCompletedAge?: number;
+  /** Keep completed job in last N completed */
+  keepCompletedCount?: number;
 }
 
 export interface WorkerOptions {
@@ -83,10 +109,16 @@ export interface ClientOptions {
   port?: number;
   /** HTTP port (default: 6790) */
   httpPort?: number;
+  /** Unix socket path (alternative to TCP) */
+  socketPath?: string;
   /** Auth token */
   token?: string;
   /** Connection timeout in ms (default: 5000) */
   timeout?: number;
+  /** Use HTTP instead of TCP */
+  useHttp?: boolean;
+  /** Use binary (MessagePack) protocol */
+  useBinary?: boolean;
 }
 
 // ============== Queue Info ==============
