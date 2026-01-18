@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: flashq-postgres
     environment:
       POSTGRES_USER: flashq
@@ -20,7 +20,7 @@ services:
     build: .
     container_name: flashq
     environment:
-      - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
+      # - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
       - HTTP=1
       - HTTP_PORT=6790
       - PORT=6789
@@ -30,17 +30,10 @@ services:
       # Rate limiting
       - RATE_LIMIT_REQUESTS=1000
       - RATE_LIMIT_WINDOW_SECS=60
-      # Snapshot mode (Redis-style persistence)
-      - SNAPSHOT_MODE=${SNAPSHOT_MODE:-0}
-      - SNAPSHOT_INTERVAL=${SNAPSHOT_INTERVAL:-60}
-      - SNAPSHOT_MIN_CHANGES=${SNAPSHOT_MIN_CHANGES:-100}
     ports:
       - "6789:6789" # TCP
       - "6790:6790" # HTTP + Dashboard
       - "6791:6791" # gRPC
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6790/health"]
       interval: 10s
