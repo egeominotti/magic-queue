@@ -9,6 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Override target-cpu=native from .cargo/config.toml for CI compatibility
+  RUSTFLAGS: "-C target-cpu=x86-64-v2"
 
 jobs:
   # Run Rust formatting, linting and tests
