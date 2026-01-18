@@ -50,12 +50,7 @@ postgres:
 	docker-compose up -d postgres
 
 up:
-	docker-compose up -d postgres
-	@echo "Waiting for PostgreSQL..."
-	@until docker-compose exec -T postgres pg_isready -U flashq > /dev/null 2>&1; do \
-		sleep 1; \
-	done
-	@echo "PostgreSQL ready!"
+	docker-compose up -d
 
 down:
 	docker-compose down
