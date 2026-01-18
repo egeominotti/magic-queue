@@ -29,6 +29,9 @@ export type { BullMQWorkerOptions } from './worker';
 // Low-level API
 export { FlashQ, FlashQ as default } from './client';
 
+// Constants
+export { MAX_BATCH_SIZE } from './client/core';
+
 // Optional: Real-time events
 export { EventSubscriber } from './events';
 

@@ -3,6 +3,9 @@
  */
 import type { IFlashQClient, Job, PushOptions } from './types';
 
+/** Maximum batch size allowed by the server */
+export const MAX_BATCH_SIZE = 1000;
+
 /**
  * Push a job to a queue.
  *
@@ -101,6 +104,10 @@ export async function pushBatch<T = unknown>(
   queue: string,
   jobs: Array<{ data: T } & PushOptions>
 ): Promise<number[]> {
+  if (jobs.length > MAX_BATCH_SIZE) {
+    throw new Error(`Batch size ${jobs.length} exceeds maximum allowed (${MAX_BATCH_SIZE})`);
+  }
+
   const response = await client.send<{ ok: boolean; ids: number[] }>({
     cmd: 'PUSHB',
     queue,
@@ -186,6 +193,10 @@ export async function pullBatch<T = unknown>(
   count: number,
   timeout?: number
 ): Promise<Array<Job & { data: T }>> {
+  if (count > MAX_BATCH_SIZE) {
+    throw new Error(`Batch size ${count} exceeds maximum allowed (${MAX_BATCH_SIZE})`);
+  }
+
   const serverTimeout = timeout ?? 60000;
   const clientTimeout = serverTimeout + 5000;
   const response = await client.send<{ ok: boolean; jobs: Job[] }>(
@@ -240,6 +251,10 @@ export async function ackBatch(
   client: IFlashQClient,
   jobIds: number[]
 ): Promise<number> {
+  if (jobIds.length > MAX_BATCH_SIZE) {
+    throw new Error(`Batch size ${jobIds.length} exceeds maximum allowed (${MAX_BATCH_SIZE})`);
+  }
+
   const response = await client.send<{ ok: boolean; ids: number[] }>({
     cmd: 'ACKB',
     ids: jobIds,

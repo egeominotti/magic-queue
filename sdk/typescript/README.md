@@ -26,6 +26,90 @@ const worker = new Worker('emails', async (job) => {
 });
 ```
 
+---
+
+## ⚡ Performance Benchmark: flashQ vs BullMQ
+
+> **flashQ is 3x to 10x faster than BullMQ** in real-world benchmarks.
+
+### Test Environment
+
+| Component | Version | Configuration |
+|-----------|---------|---------------|
+| **flashQ Server** | 0.1.0 | Docker with `io_uring` enabled, Rust + tokio async runtime |
+| **BullMQ** | 5.66.5 | npm package |
+| **Redis** | 7.4.7 | Docker (`redis:7-alpine`), jemalloc allocator |
+| **Runtime** | Bun 1.x | TypeScript SDK |
+| **Platform** | Linux/macOS | Docker containers |
+
+### Benchmark Configuration
+
+```
+Workers:              8
+Concurrency/worker:   50
+Total concurrency:    400
+Batch size:           1,000 jobs
+Data verification:    Enabled (input === output)
+```
+
+### Results: No-op Jobs (100,000 jobs)
+
+Minimal job processing to measure pure queue overhead.
+
+| Metric | flashQ | BullMQ | Speedup |
+|--------|-------:|-------:|--------:|
+| **Push Rate** | 307,692 jobs/sec | 43,649 jobs/sec | **7.0x** |
+| **Process Rate** | 292,398 jobs/sec | 27,405 jobs/sec | **10.7x** |
+| **Total Time** | 0.67s | 5.94s | **8.9x** |
+
+### Results: CPU-Bound Jobs (100,000 jobs)
+
+Each job performs realistic CPU work:
+- JSON serialize/deserialize
+- 10x SHA256 hash rounds
+- Array sort/filter/reduce (100 elements)
+- String manipulation
+
+| Metric | flashQ | BullMQ | Speedup |
+|--------|-------:|-------:|--------:|
+| **Push Rate** | 220,751 jobs/sec | 43,422 jobs/sec | **5.1x** |
+| **Process Rate** | 62,814 jobs/sec | 23,923 jobs/sec | **2.6x** |
+| **Total Time** | 2.04s | 6.48s | **3.2x** |
+
+### Results: 1 Million Jobs (flashQ only)
+
+| Scenario | Push Rate | Process Rate | Total Time | Data Integrity |
+|----------|----------:|-------------:|-----------:|:--------------:|
+| **No-op** | 266,809/s | 262,536/s | 7.56s | ✅ 100% |
+| **CPU-bound** | 257,334/s | 65,240/s | 19.21s | ✅ 100% |
+
+### Why flashQ is Faster
+
+| Optimization | Description |
+|--------------|-------------|
+| **Rust + tokio** | Zero-cost abstractions, no GC pauses |
+| **io_uring** | Linux kernel async I/O (when available) |
+| **32 Shards** | Lock-free concurrent access via DashMap |
+| **MessagePack** | 40% smaller payloads vs JSON |
+| **Batch Operations** | Amortized network overhead |
+| **No Redis Dependency** | Direct TCP protocol, no intermediary |
+
+### Run Benchmarks
+
+```bash
+# flashQ benchmarks
+bun run examples/heavy-benchmark.ts      # No-op 100K
+bun run examples/cpu-benchmark.ts        # CPU-bound 100K
+bun run examples/million-benchmark.ts    # 1M jobs
+
+# BullMQ comparison (requires Redis)
+docker run -d -p 6379:6379 redis:7-alpine
+bun run examples/bullmq-benchmark.ts     # No-op 100K
+bun run examples/bullmq-cpu-benchmark.ts # CPU-bound 100K
+```
+
+---
+
 ## Queue
 
 ```typescript
@@ -183,14 +267,14 @@ bun run examples/01-basic.ts
 | 07-retry.ts | Retry with backoff |
 | 08-priority.ts | Priority ordering |
 | 09-concurrency.ts | Parallel processing |
-| 10-benchmark.ts | Performance test |
+| 10-benchmark.ts | Basic performance test |
+| **heavy-benchmark.ts** | 100K no-op benchmark |
+| **cpu-benchmark.ts** | 100K CPU-bound benchmark |
+| **million-benchmark.ts** | 1M jobs with verification |
+| **bullmq-benchmark.ts** | BullMQ comparison (no-op) |
+| **bullmq-cpu-benchmark.ts** | BullMQ comparison (CPU) |
 | kv-benchmark.ts | KV store benchmark |
 | pubsub-example.ts | Pub/Sub messaging |
-
-## Performance
-
-- **Push**: 600K+ jobs/sec
-- **Process**: 200K+ jobs/sec
 
 ## License
 
