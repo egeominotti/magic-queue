@@ -32,7 +32,9 @@ impl QueueManager {
             if let Some(id) = job_id {
                 if let Some(pos) = dlq.iter().position(|j| j.id == id) {
                     // Safe: position() just found this index
-                    let mut job = dlq.remove(pos).expect("position valid after iter().position()");
+                    let mut job = dlq
+                        .remove(pos)
+                        .expect("position valid after iter().position()");
                     job.attempts = 0;
                     job.run_at = now;
                     jobs_to_retry.push(job);

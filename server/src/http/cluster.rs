@@ -67,7 +67,9 @@ pub async fn cluster_nodes(State(qm): State<AppState>) -> Json<ApiResponse<Vec<N
 }
 
 /// List cluster nodes with metrics.
-pub async fn cluster_nodes_metrics(State(qm): State<AppState>) -> Json<ApiResponse<Vec<NodeMetrics>>> {
+pub async fn cluster_nodes_metrics(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<Vec<NodeMetrics>>> {
     if let Some(cluster) = qm.cluster() {
         match cluster.list_nodes_with_metrics().await {
             Ok(nodes) => ApiResponse::success(nodes),
@@ -93,7 +95,9 @@ pub async fn cluster_metrics(State(qm): State<AppState>) -> Json<ApiResponse<Clu
 }
 
 /// Select best node for load balancing.
-pub async fn cluster_best_node(State(qm): State<AppState>) -> Json<ApiResponse<Option<NodeMetrics>>> {
+pub async fn cluster_best_node(
+    State(qm): State<AppState>,
+) -> Json<ApiResponse<Option<NodeMetrics>>> {
     if let Some(cluster) = qm.cluster() {
         match cluster.select_best_node().await {
             Ok(node) => ApiResponse::success(node),

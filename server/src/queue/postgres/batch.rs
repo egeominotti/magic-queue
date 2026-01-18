@@ -5,7 +5,11 @@ use sqlx::PgPool;
 use crate::protocol::Job;
 
 /// Insert multiple jobs in a batch.
-pub async fn insert_jobs_batch(pool: &PgPool, jobs: &[Job], state: &str) -> Result<(), sqlx::Error> {
+pub async fn insert_jobs_batch(
+    pool: &PgPool,
+    jobs: &[Job],
+    state: &str,
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     for job in jobs {

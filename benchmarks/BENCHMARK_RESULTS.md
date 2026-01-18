@@ -8,15 +8,15 @@
 
 | Scenario | flashQ (jobs/sec) | BullMQ (jobs/sec) | Speedup |
 |----------|-------------------|-------------------|---------|
-| Single Push | 21,487 | 4,383 | **4.9x** |
-| Batch Push | 601,389 | 42,518 | **14.1x** |
-| Processing | 310,224 | 14,657 | **21.2x** |
-| High Throughput | 242,293 | 14,678 | **16.5x** |
-| Large Payload | 17,653 | 4,699 | **3.8x** |
+| Single Push | 24,806 | 5,607 | **4.4x** |
+| Batch Push | 591,603 | 42,925 | **13.8x** |
+| Processing | 311,082 | 14,438 | **21.5x** |
+| High Throughput | 237,791 | 13,495 | **17.6x** |
+| Large Payload | 20,332 | 4,282 | **4.7x** |
 
 ## Summary
 
-**flashQ is 12.1x faster than BullMQ on average.**
+**flashQ is 12.4x faster than BullMQ on average.**
 
 ### Why flashQ is faster
 

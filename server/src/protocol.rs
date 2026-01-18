@@ -540,7 +540,9 @@ impl Job {
     /// Check if job has timed out. Uses saturating_sub to prevent overflow.
     #[inline(always)]
     pub fn is_timed_out(&self, now: u64) -> bool {
-        self.timeout > 0 && self.started_at > 0 && now.saturating_sub(self.started_at) > self.timeout
+        self.timeout > 0
+            && self.started_at > 0
+            && now.saturating_sub(self.started_at) > self.timeout
     }
 
     #[inline(always)]

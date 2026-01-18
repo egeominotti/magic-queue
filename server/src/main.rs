@@ -181,7 +181,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if use_unix {
         let _ = std::fs::remove_file(UNIX_SOCKET_PATH);
         let listener = UnixListener::bind(UNIX_SOCKET_PATH)?;
-        info!(socket = UNIX_SOCKET_PATH, "flashQ TCP server listening (Unix socket)");
+        info!(
+            socket = UNIX_SOCKET_PATH,
+            "flashQ TCP server listening (Unix socket)"
+        );
 
         loop {
             tokio::select! {

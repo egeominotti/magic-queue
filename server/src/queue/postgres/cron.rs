@@ -40,10 +40,9 @@ pub async fn delete_cron(pool: &PgPool, name: &str) -> Result<bool, sqlx::Error>
 
 /// Load all cron jobs.
 pub async fn load_crons(pool: &PgPool) -> Result<Vec<CronJob>, sqlx::Error> {
-    let rows =
-        sqlx::query("SELECT name, queue, data, schedule, priority, next_run FROM cron_jobs")
-            .fetch_all(pool)
-            .await?;
+    let rows = sqlx::query("SELECT name, queue, data, schedule, priority, next_run FROM cron_jobs")
+        .fetch_all(pool)
+        .await?;
 
     let mut crons = Vec::with_capacity(rows.len());
     for row in rows {
@@ -65,7 +64,11 @@ pub async fn load_crons(pool: &PgPool) -> Result<Vec<CronJob>, sqlx::Error> {
 }
 
 /// Update cron job next_run time.
-pub async fn update_cron_next_run(pool: &PgPool, name: &str, next_run: u64) -> Result<(), sqlx::Error> {
+pub async fn update_cron_next_run(
+    pool: &PgPool,
+    name: &str,
+    next_run: u64,
+) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE cron_jobs SET next_run = $1 WHERE name = $2")
         .bind(next_run as i64)
         .bind(name)

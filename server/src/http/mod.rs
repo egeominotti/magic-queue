@@ -41,17 +41,8 @@ fn create_cors_layer() -> CorsLayer {
                 .collect();
             CorsLayer::new()
                 .allow_origin(AllowOrigin::list(origins))
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::DELETE,
-                    Method::OPTIONS,
-                ])
-                .allow_headers([
-                    header::CONTENT_TYPE,
-                    header::AUTHORIZATION,
-                    header::ACCEPT,
-                ])
+                .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         }
         _ => {
             // Development: allow all (with warning)
@@ -84,12 +75,21 @@ pub fn create_router(state: AppState) -> Router {
         .route("/queues/{queue}/dlq", get(queues::get_dlq))
         .route("/queues/{queue}/dlq/retry", post(queues::retry_dlq))
         .route("/queues/{queue}/rate-limit", post(queues::set_rate_limit))
-        .route("/queues/{queue}/rate-limit", delete(queues::clear_rate_limit))
+        .route(
+            "/queues/{queue}/rate-limit",
+            delete(queues::clear_rate_limit),
+        )
         .route("/queues/{queue}/concurrency", post(queues::set_concurrency))
-        .route("/queues/{queue}/concurrency", delete(queues::clear_concurrency))
+        .route(
+            "/queues/{queue}/concurrency",
+            delete(queues::clear_concurrency),
+        )
         // BullMQ Advanced queue operations
         .route("/queues/{queue}/drain", post(queues::drain_queue))
-        .route("/queues/{queue}/obliterate", delete(queues::obliterate_queue))
+        .route(
+            "/queues/{queue}/obliterate",
+            delete(queues::obliterate_queue),
+        )
         .route("/queues/{queue}/clean", post(queues::clean_queue))
         // Job operations
         .route("/jobs", get(jobs::list_jobs))
@@ -129,13 +129,19 @@ pub fn create_router(state: AppState) -> Router {
         .route("/webhooks", get(webhooks::list_webhooks))
         .route("/webhooks", post(webhooks::create_webhook))
         .route("/webhooks/{id}", delete(webhooks::delete_webhook))
-        .route("/webhooks/incoming/{queue}", post(webhooks::incoming_webhook))
+        .route(
+            "/webhooks/incoming/{queue}",
+            post(webhooks::incoming_webhook),
+        )
         // Server management
         .route("/settings", get(settings::get_settings))
         .route("/settings/test-db", post(settings::test_db_connection))
         .route("/settings/database", post(settings::save_db_settings))
         .route("/settings/auth", post(settings::save_auth_settings))
-        .route("/settings/queue-defaults", post(settings::save_queue_defaults))
+        .route(
+            "/settings/queue-defaults",
+            post(settings::save_queue_defaults),
+        )
         .route("/settings/cleanup", post(settings::save_cleanup_settings))
         .route("/settings/cleanup/run", post(settings::run_cleanup_now))
         .route("/server/shutdown", post(settings::shutdown_server))
@@ -143,17 +149,26 @@ pub fn create_router(state: AppState) -> Router {
         .route("/server/reset", post(settings::reset_server))
         .route("/server/clear-queues", post(settings::clear_all_queues))
         .route("/server/clear-dlq", post(settings::clear_all_dlq))
-        .route("/server/clear-completed", post(settings::clear_completed_jobs))
+        .route(
+            "/server/clear-completed",
+            post(settings::clear_completed_jobs),
+        )
         .route("/server/reset-metrics", post(settings::reset_metrics))
         // System metrics
         .route("/system/metrics", get(settings::get_system_metrics))
         // Health & Cluster
         .route("/health", get(cluster::health_check))
         .route("/cluster/nodes", get(cluster::cluster_nodes))
-        .route("/cluster/nodes/metrics", get(cluster::cluster_nodes_metrics))
+        .route(
+            "/cluster/nodes/metrics",
+            get(cluster::cluster_nodes_metrics),
+        )
         .route("/cluster/metrics", get(cluster::cluster_metrics))
         .route("/cluster/best-node", get(cluster::cluster_best_node))
-        .route("/cluster/sticky-node/{key}", get(cluster::cluster_sticky_node))
+        .route(
+            "/cluster/sticky-node/{key}",
+            get(cluster::cluster_sticky_node),
+        )
         .route(
             "/cluster/load-balance-strategy",
             get(cluster::get_load_balance_strategy),

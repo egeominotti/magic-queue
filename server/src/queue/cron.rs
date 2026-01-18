@@ -69,7 +69,9 @@ impl QueueManager {
         } else {
             // Safe: we checked above that at least one of schedule/repeat_every is Some
             Self::parse_next_cron_run(
-                schedule.as_ref().expect("schedule must exist if repeat_every is None"),
+                schedule
+                    .as_ref()
+                    .expect("schedule must exist if repeat_every is None"),
                 now,
             )
         };

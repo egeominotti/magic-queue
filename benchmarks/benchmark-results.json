@@ -6,20 +6,20 @@
       "system": "flashQ",
       "scenario": "singlePush",
       "jobCount": 10000,
-      "totalTimeMs": 465.40150000000006,
-      "throughput": 21486.823742510496,
-      "avgLatencyMs": 0.04654015
+      "totalTimeMs": 403.13033399999995,
+      "throughput": 24805.873328301812,
+      "avgLatencyMs": 0.040313033399999997
     },
     "bullmq": {
       "name": "Single Push",
       "system": "BullMQ",
       "scenario": "singlePush",
       "jobCount": 10000,
-      "totalTimeMs": 2281.296708,
-      "throughput": 4383.471893389503,
-      "avgLatencyMs": 0.2281296708
+      "totalTimeMs": 1783.5352079999998,
+      "throughput": 5606.841936814741,
+      "avgLatencyMs": 0.17835352079999997
     },
-    "speedup": 4.9017820269165435
+    "speedup": 4.424214844621442
   },
   {
     "scenario": "Batch Push",
@@ -28,20 +28,20 @@
       "system": "flashQ",
       "scenario": "batchPush",
       "jobCount": 100000,
-      "totalTimeMs": 166.281833,
-      "throughput": 601388.607497489,
-      "avgLatencyMs": 0.0016628183300000001
+      "totalTimeMs": 169.03229200000033,
+      "throughput": 591602.9346629211,
+      "avgLatencyMs": 0.0016903229200000032
     },
     "bullmq": {
       "name": "Batch Push",
       "system": "BullMQ",
       "scenario": "batchPush",
       "jobCount": 100000,
-      "totalTimeMs": 2351.921291,
-      "throughput": 42518.429669677236,
-      "avgLatencyMs": 0.02351921291
+      "totalTimeMs": 2329.657334,
+      "throughput": 42924.767750414576,
+      "avgLatencyMs": 0.02329657334
     },
-    "speedup": 14.144186701381868
+    "speedup": 13.782321155533971
   },
   {
     "scenario": "Processing",
@@ -50,20 +50,20 @@
       "system": "flashQ",
       "scenario": "processing",
       "jobCount": 50000,
-      "totalTimeMs": 161.17399999999998,
-      "throughput": 310223.7333564967,
-      "avgLatencyMs": 0.0032234799999999995
+      "totalTimeMs": 160.72912500000075,
+      "throughput": 311082.3878372993,
+      "avgLatencyMs": 0.003214582500000015
     },
     "bullmq": {
       "name": "Processing",
       "system": "BullMQ",
       "scenario": "processing",
       "jobCount": 50000,
-      "totalTimeMs": 3411.2914999999994,
-      "throughput": 14657.205342903124,
-      "avgLatencyMs": 0.06822582999999999
+      "totalTimeMs": 3463.1892920000028,
+      "throughput": 14437.559077553293,
+      "avgLatencyMs": 0.06926378584000005
     },
-    "speedup": 21.16527169394567
+    "speedup": 21.546743889758538
   },
   {
     "scenario": "High Throughput",
@@ -72,20 +72,20 @@
       "system": "flashQ",
       "scenario": "highThroughput",
       "jobCount": 50000,
-      "totalTimeMs": 206.36179199999606,
-      "throughput": 242292.9143782632,
-      "avgLatencyMs": 0.004127235839999921
+      "totalTimeMs": 210.26854099999764,
+      "throughput": 237791.15868788268,
+      "avgLatencyMs": 0.004205370819999952
     },
     "bullmq": {
       "name": "High Throughput",
       "system": "BullMQ",
       "scenario": "highThroughput",
       "jobCount": 50000,
-      "totalTimeMs": 3406.535791999995,
-      "throughput": 14677.667593401311,
-      "avgLatencyMs": 0.0681307158399999
+      "totalTimeMs": 3705.0993750000052,
+      "throughput": 13494.914694427036,
+      "avgLatencyMs": 0.0741019875000001
     },
-    "speedup": 16.507589699550877
+    "speedup": 17.620797468700026
   },
   {
     "scenario": "Large Payload",
@@ -94,19 +94,19 @@
       "system": "flashQ",
       "scenario": "largePayload",
       "jobCount": 5000,
-      "totalTimeMs": 283.2332499999902,
-      "throughput": 17653.294590236746,
-      "avgLatencyMs": 0.05664664999999804
+      "totalTimeMs": 245.91937499999767,
+      "throughput": 20331.86689743355,
+      "avgLatencyMs": 0.04918387499999954
     },
     "bullmq": {
       "name": "Large Payload",
       "system": "BullMQ",
       "scenario": "largePayload",
       "jobCount": 5000,
-      "totalTimeMs": 1064.086958999993,
-      "throughput": 4698.864089734637,
-      "avgLatencyMs": 0.2128173917999986
+      "totalTimeMs": 1167.6013329999987,
+      "throughput": 4282.283566046601,
+      "avgLatencyMs": 0.23352026659999975
     },
-    "speedup": 3.7569281113712094
+    "speedup": 4.747902978364393
   }
 ]

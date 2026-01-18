@@ -259,7 +259,10 @@ pub async fn load_dlq_jobs(pool: &PgPool) -> Result<Vec<Job>, sqlx::Error> {
 }
 
 /// Load a specific job by ID (for sync).
-pub async fn load_job_by_id(pool: &PgPool, job_id: u64) -> Result<Option<(Job, String)>, sqlx::Error> {
+pub async fn load_job_by_id(
+    pool: &PgPool,
+    job_id: u64,
+) -> Result<Option<(Job, String)>, sqlx::Error> {
     let row = sqlx::query(
         r#"
         SELECT id, queue, data, priority, created_at, run_at, started_at, attempts,

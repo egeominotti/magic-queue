@@ -228,7 +228,10 @@ impl PostgresStorage {
     }
 
     /// Snapshot DLQ jobs to PostgreSQL.
-    pub async fn snapshot_dlq(&self, dlq_jobs: &[(Job, Option<String>)]) -> Result<(), sqlx::Error> {
+    pub async fn snapshot_dlq(
+        &self,
+        dlq_jobs: &[(Job, Option<String>)],
+    ) -> Result<(), sqlx::Error> {
         snapshot::snapshot_dlq(&self.pool, dlq_jobs).await
     }
 

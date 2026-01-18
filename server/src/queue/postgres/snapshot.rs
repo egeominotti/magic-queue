@@ -55,7 +55,10 @@ pub async fn snapshot_jobs(pool: &PgPool, jobs: &[(Job, String)]) -> Result<(), 
 }
 
 /// Snapshot DLQ jobs to PostgreSQL.
-pub async fn snapshot_dlq(pool: &PgPool, dlq_jobs: &[(Job, Option<String>)]) -> Result<(), sqlx::Error> {
+pub async fn snapshot_dlq(
+    pool: &PgPool,
+    dlq_jobs: &[(Job, Option<String>)],
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Truncate DLQ table

@@ -1,9 +1,6 @@
 //! Server settings HTTP handlers.
 
-use axum::{
-    extract::State,
-    response::Json,
-};
+use axum::{extract::State, response::Json};
 use serde::{Deserialize, Serialize};
 
 use super::types::{ApiResponse, AppState};
@@ -17,10 +14,7 @@ pub fn init_start_time() {
 
 /// Get server uptime in seconds.
 pub fn get_uptime_seconds() -> u64 {
-    START_TIME
-        .get()
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0)
+    START_TIME.get().map(|t| t.elapsed().as_secs()).unwrap_or(0)
 }
 
 /// Get start time instant.
