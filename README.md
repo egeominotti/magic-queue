@@ -7,6 +7,7 @@
 Built with Rust. BullMQ-compatible. 600K+ jobs/sec.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/egeominotti/flashq/ci.yml?branch=main&label=CI)](https://github.com/egeominotti/flashq/actions)
+[![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 [Quick Start](#quick-start) • [SDK](#sdk) • [Features](#features) • [Docs](#documentation)
@@ -92,8 +93,12 @@ Dashboard: http://localhost:6790
 
 ## SDK
 
+[![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
+
 ```bash
 bun add flashq
+# or
+npm install flashq
 ```
 
 ```typescript
