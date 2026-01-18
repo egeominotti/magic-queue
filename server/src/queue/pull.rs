@@ -1,12 +1,6 @@
 //! Pull operations for retrieving jobs from the queue.
 //!
 //! Contains `pull`, `pull_batch`, and distributed pull implementations.
-//!
-//! ## Performance Optimizations
-//!
-//! - **Reduced lock contention**: Read-only checks (paused, rate limit peek) use read lock
-//! - **Exponential backoff**: Prevents thundering herd when no jobs available
-//! - **Avoid cloning**: Jobs moved directly to processing without intermediate clone
 
 use std::sync::Arc;
 
@@ -18,17 +12,11 @@ use super::types::{intern, now_ms, JobLocation};
 use crate::protocol::Job;
 
 impl QueueManager {
-    /// Optimized pull with reduced lock contention and exponential backoff.
-    ///
-    /// Performance improvements:
-    /// 1. Read-only checks use read lock first (paused check)
-    /// 2. Exponential backoff prevents thundering herd (10ms -> 20ms -> ... -> 200ms max)
-    /// 3. Only falls back to Notify after max backoff reached
+    /// Pull a job from the queue. Blocks until a job is available.
     pub async fn pull(&self, queue_name: &str) -> Job {
         let idx = Self::shard_index(queue_name);
         let queue_arc = intern(queue_name);
 
-        // Result of lock acquisition: Job found, need to wait, or need to sleep
         enum PullResult {
             Job(Box<Job>),
             Wait,
@@ -37,71 +25,42 @@ impl QueueManager {
             SleepConcurrency,
         }
 
-        // Exponential backoff state to prevent thundering herd
-        let mut backoff_ms = 10u64;
-        const MAX_BACKOFF_MS: u64 = 200;
-
         loop {
             let now = now_ms();
 
-            // OPTIMIZATION: Quick read-only check for paused state first
-            // This avoids acquiring write lock when queue is paused
-            let is_paused = {
-                let shard = self.shards[idx].read();
-                shard
-                    .queue_state
-                    .get(&queue_arc)
-                    .map(|s| s.paused)
-                    .unwrap_or(false)
-            }; // Lock is dropped here before any await
-            if is_paused {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
-            }
-
-            // Now acquire write lock for actual job retrieval
             let pull_result = {
                 let mut shard = self.shards[idx].write();
                 let state = shard.get_state(&queue_arc);
 
-                // Re-check paused (could have changed)
                 if state.paused {
                     PullResult::SleepPaused
-                }
-                // Check rate limit
-                else if state
+                } else if state
                     .rate_limiter
                     .as_mut()
                     .is_some_and(|l| !l.try_acquire())
                 {
                     PullResult::SleepRateLimit
-                }
-                // Check concurrency limit
-                else if state.concurrency.as_mut().is_some_and(|c| !c.try_acquire()) {
+                } else if state.concurrency.as_mut().is_some_and(|c| !c.try_acquire()) {
                     PullResult::SleepConcurrency
                 } else {
-                    // Try to get a job (with lazy TTL deletion)
                     let mut result = None;
                     if let Some(heap) = shard.queues.get_mut(&queue_arc) {
-                        // IPQ.peek() cleans stale entries and returns valid job
                         while let Some(job) = heap.peek() {
                             if job.is_expired(now) {
                                 heap.pop();
                                 continue;
                             }
                             if job.is_ready(now) {
-                                // Safe: peek() returned Some above
                                 let mut job = heap.pop().expect("heap non-empty after peek");
                                 job.started_at = now;
-                                job.last_heartbeat = now; // Initialize heartbeat for stall detection
+                                job.last_heartbeat = now;
                                 result = Some(job);
                                 break;
                             }
-                            break; // Job not ready yet (delayed)
+                            break;
                         }
                     }
 
-                    // If no job found, release concurrency slot
                     if let Some(job) = result {
                         PullResult::Job(Box::new(job))
                     } else {
@@ -118,39 +77,33 @@ impl QueueManager {
                 PullResult::Job(job) => {
                     self.index_job(job.id, JobLocation::Processing);
                     self.processing_insert((*job).clone());
-                    // OPTIMIZATION: Update atomic counter for O(1) stats
                     self.metrics.record_pull();
                     return *job;
                 }
                 PullResult::SleepPaused => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
-                    backoff_ms = 10; // Reset backoff
                 }
                 PullResult::SleepRateLimit | PullResult::SleepConcurrency => {
                     tokio::time::sleep(Duration::from_millis(10)).await;
-                    backoff_ms = 10; // Reset backoff
                 }
                 PullResult::Wait => {
-                    // OPTIMIZATION: Exponential backoff to prevent thundering herd
-                    // Instead of all workers waking on Notify, they wake at staggered times
-                    if backoff_ms < MAX_BACKOFF_MS {
-                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                        backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
-                    } else {
-                        // After max backoff, wait for notification (job pushed)
-                        let notify = {
-                            let shard = self.shards[idx].read();
-                            Arc::clone(&shard.notify)
-                        };
-                        notify.notified().await;
-                        backoff_ms = 10; // Reset after notification
-                    }
+                    // Simple polling - wait for notify with timeout
+                    let notify = {
+                        let shard = self.shards[idx].read();
+                        Arc::clone(&shard.notify)
+                    };
+                    // Wait max 100ms then retry
+                    let _ = tokio::time::timeout(
+                        Duration::from_millis(100),
+                        notify.notified(),
+                    )
+                    .await;
                 }
             }
         }
     }
 
-    /// Optimized batch pull with reduced lock contention and exponential backoff.
+    /// Pull multiple jobs from the queue. Blocks until at least one job is available.
     pub async fn pull_batch(&self, queue_name: &str, count: usize) -> Vec<Job> {
         let idx = Self::shard_index(queue_name);
         let queue_arc = intern(queue_name);
@@ -162,32 +115,13 @@ impl QueueManager {
             Wait,
         }
 
-        // Exponential backoff state
-        let mut backoff_ms = 10u64;
-        const MAX_BACKOFF_MS: u64 = 200;
-
         loop {
             let now = now_ms();
-
-            // OPTIMIZATION: Quick read-only check for paused state
-            let is_paused = {
-                let shard = self.shards[idx].read();
-                shard
-                    .queue_state
-                    .get(&queue_arc)
-                    .map(|s| s.paused)
-                    .unwrap_or(false)
-            }; // Lock is dropped here before any await
-            if is_paused {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                continue;
-            }
 
             let batch_result = {
                 let mut shard = self.shards[idx].write();
                 let state = shard.get_state(&queue_arc);
 
-                // Re-check paused
                 if state.paused {
                     BatchResult::Paused
                 } else {
@@ -195,7 +129,6 @@ impl QueueManager {
                     let mut jobs = Vec::new();
                     let mut slots_acquired = 0usize;
 
-                    // Try to acquire concurrency slots upfront
                     if has_concurrency {
                         let state = shard.get_state(&queue_arc);
                         if let Some(ref mut conc) = state.concurrency {
@@ -204,7 +137,7 @@ impl QueueManager {
                             }
                         }
                     } else {
-                        slots_acquired = count; // No limit
+                        slots_acquired = count;
                     }
 
                     if slots_acquired > 0 {
@@ -215,11 +148,10 @@ impl QueueManager {
                                         heap.pop();
                                     }
                                     Some(job) if job.is_ready(now) => {
-                                        // Safe: peek() returned Some above
                                         let mut job =
                                             heap.pop().expect("heap non-empty after peek");
                                         job.started_at = now;
-                                        job.last_heartbeat = now; // Initialize heartbeat for stall detection
+                                        job.last_heartbeat = now;
                                         jobs.push(job);
                                     }
                                     _ => break,
@@ -227,7 +159,6 @@ impl QueueManager {
                             }
                         }
 
-                        // Release unused slots
                         if has_concurrency && jobs.len() < slots_acquired {
                             let state = shard.get_state(&queue_arc);
                             if let Some(ref mut conc) = state.concurrency {
@@ -251,7 +182,6 @@ impl QueueManager {
                     for job in jobs {
                         self.index_job(job.id, JobLocation::Processing);
                         self.processing_insert(job.clone());
-                        // OPTIMIZATION: Update atomic counter for O(1) stats
                         self.metrics.record_pull();
                         result.push(job);
                     }
@@ -259,21 +189,18 @@ impl QueueManager {
                 }
                 BatchResult::Paused => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
-                    backoff_ms = 10;
                 }
                 BatchResult::Wait => {
-                    // OPTIMIZATION: Exponential backoff to prevent thundering herd
-                    if backoff_ms < MAX_BACKOFF_MS {
-                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                        backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
-                    } else {
-                        let notify = {
-                            let shard = self.shards[idx].read();
-                            Arc::clone(&shard.notify)
-                        };
-                        notify.notified().await;
-                        backoff_ms = 10;
-                    }
+                    // Simple polling - wait for notify with timeout
+                    let notify = {
+                        let shard = self.shards[idx].read();
+                        Arc::clone(&shard.notify)
+                    };
+                    let _ = tokio::time::timeout(
+                        Duration::from_millis(100),
+                        notify.notified(),
+                    )
+                    .await;
                 }
             }
         }
