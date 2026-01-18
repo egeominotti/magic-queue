@@ -582,16 +582,26 @@ export class FlashQ extends EventEmitter {
 
   /**
    * Pull multiple jobs from a queue
+   * @param queue Queue name
+   * @param count Number of jobs to pull
+   * @param timeout Optional server-side timeout in ms (default: 60s)
    */
   async pullBatch<T = unknown>(
     queue: string,
-    count: number
+    count: number,
+    timeout?: number
   ): Promise<Array<Job & { data: T }>> {
-    const response = await this.send<{ ok: boolean; jobs: Job[] }>({
-      cmd: 'PULLB',
-      queue,
-      count,
-    });
+    const serverTimeout = timeout ?? 60000;
+    const clientTimeout = serverTimeout + 5000;
+    const response = await this.send<{ ok: boolean; jobs: Job[] }>(
+      {
+        cmd: 'PULLB',
+        queue,
+        count,
+        timeout: serverTimeout,
+      },
+      clientTimeout
+    );
     return response.jobs as Array<Job & { data: T }>;
   }
 

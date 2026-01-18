@@ -152,12 +152,11 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
         if (!this.running) break;
 
         try {
-          // Batch pull - get multiple jobs at once
-          const jobs = await client.pullBatch<T>(queue, batchSize);
+          // Batch pull with SHORT timeout (500ms) for responsive shutdown
+          const jobs = await client.pullBatch<T>(queue, batchSize, 500);
 
           // No jobs available - continue polling
           if (!jobs || jobs.length === 0) {
-            await this.sleep(10); // Small delay to avoid busy-waiting
             continue;
           }
 
@@ -214,6 +213,12 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
 
           this.processing -= jobs.length;
         } catch (error) {
+          // Timeout is expected when no jobs available - not an error
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
+            // Normal - no jobs available, retry
+            continue;
+          }
           // Connection error - wait before retry
           if (this.running) {
             this.emit('error', error);
