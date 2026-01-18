@@ -1,6 +1,6 @@
 {
   "name": "flashq",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Official TypeScript SDK for flashQ - High-Performance Job Queue (BullMQ-compatible API)",
   "author": "Ege Ominotti",
   "license": "MIT",
@@ -47,7 +47,14 @@
     "high-performance",
     "rust",
     "bun",
-    "nodejs"
+    "nodejs",
+    "ai",
+    "llm",
+    "rag",
+    "ml",
+    "machine-learning",
+    "inference",
+    "agents"
   ],
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0"

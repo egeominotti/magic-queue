@@ -1,6 +1,13 @@
 # flashQ TypeScript SDK
 
-BullMQ-compatible API for [flashQ](https://github.com/egeominotti/flashq).
+**Drop-in BullMQ replacement. No Redis required.**
+
+Same API. Single binary. 10x faster. Built with Rust.
+
+**Perfect for AI workloads:** LLM pipelines, RAG, agents, batch inference.
+
+[![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
+[![GitHub](https://img.shields.io/github/stars/egeominotti/flashq)](https://github.com/egeominotti/flashq)
 
 ## Installation
 
@@ -42,6 +49,42 @@ const worker = new Worker('emails', async (job) => {
   console.log('Processing:', job.data);
   return { sent: true };
 });
+```
+
+---
+
+## Built for AI Workloads
+
+flashQ is designed for modern AI/ML pipelines with **10MB payload support** for embeddings, images, and large contexts.
+
+| Use Case | How flashQ Helps |
+|----------|------------------|
+| **LLM API Calls** | Rate limiting to control OpenAI/Anthropic costs |
+| **Batch Inference** | 300K jobs/sec throughput for high-volume inference |
+| **AI Agents** | Job dependencies for multi-step workflows |
+| **RAG Pipelines** | Chain jobs: embed → search → generate |
+| **Training Jobs** | Progress tracking, long timeouts, retries |
+
+```typescript
+// AI Agent workflow example
+const agent = new Queue('ai-agent');
+
+// Step 1: Parse user intent
+const parse = await agent.add('parse', { prompt: userInput });
+
+// Step 2: Retrieve context (waits for step 1)
+const retrieve = await agent.add('retrieve', { query }, {
+  depends_on: [parse.id]
+});
+
+// Step 3: Generate response (waits for step 2)
+const generate = await agent.add('generate', { context }, {
+  depends_on: [retrieve.id],
+  priority: 10
+});
+
+// Wait for the final result
+const result = await agent.finished(generate.id);
 ```
 
 ---
@@ -155,6 +198,10 @@ await queue.pause();
 await queue.resume();
 await queue.drain();      // remove waiting
 await queue.obliterate(); // remove all
+
+// Wait for job completion (synchronous workflow)
+const job = await queue.add('process', data);
+const result = await queue.finished(job.id);  // blocks until done
 ```
 
 ## Worker
@@ -184,7 +231,8 @@ await worker.close();
 | `attempts` | number | Retry count |
 | `backoff` | number \| object | Backoff config |
 | `timeout` | number | Processing timeout |
-| `jobId` | string | Custom ID |
+| `jobId` | string | Custom ID for idempotency |
+| `depends_on` | number[] | Wait for these job IDs to complete |
 
 ## Key-Value Storage
 
@@ -295,6 +343,8 @@ bun run examples/01-basic.ts
 | **bullmq-benchmark-full.ts** | BullMQ memory + latency |
 | kv-benchmark.ts | KV store benchmark |
 | pubsub-example.ts | Pub/Sub messaging |
+| **ai-workflow.ts** | AI agent with job dependencies |
+| **ai-workflow-manual.ts** | Manual AI workflow control |
 
 ## License
 
