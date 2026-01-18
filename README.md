@@ -1,554 +1,54 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/logo.png" alt="flashQ Logo" width="280">
+# ⚡ flashQ
 
-### The Fastest Open-Source Job Queue on the Planet
+**The fastest open-source job queue.**
 
-**Process millions of jobs per second with sub-millisecond latency.**<br>
-Built with Rust for teams who refuse to compromise on performance.
+Built with Rust. 600K+ jobs/sec. Sub-millisecond latency.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/egeominotti/flashq/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI)](https://github.com/egeominotti/flashq/actions/workflows/ci.yml)
-[![GitHub Stars](https://img.shields.io/github/stars/egeominotti/flashq?style=for-the-badge&logo=github&color=yellow)](https://github.com/egeominotti/flashq)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-[![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
-[![Docker Pulls](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://hub.docker.com/r/flashq/flashq)
+[![CI](https://img.shields.io/github/actions/workflow/status/egeominotti/flashq/ci.yml?branch=main&label=CI)](https://github.com/egeominotti/flashq/actions)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.75+-orange)](https://www.rust-lang.org/)
 
-<br>
-
-[**Get Started**](#-quick-start) · [**Documentation**](#-documentation) · [**Benchmarks**](#-performance) · [**Enterprise**](#-enterprise-features)
-
-<br>
-
----
-
-**2M+ ops/sec** · **<100μs latency** · **Zero Redis dependency** · **Production-ready**
-
----
+[Quick Start](#quick-start) • [Features](#features) • [SDK](#sdk) • [Documentation](#documentation)
 
 </div>
 
-<br>
+---
 
-## Why Engineering Teams Choose flashQ
+## Performance
 
-<table>
-<tr>
-<td width="50%">
+| Metric | flashQ | BullMQ | Speedup |
+|--------|--------|--------|---------|
+| Batch Push | 600K/sec | 42K/sec | **14x** |
+| Processing | 310K/sec | 15K/sec | **21x** |
+| Latency P99 | 0.1ms | 0.6ms | **6x** |
 
-### Before flashQ
-- Redis cluster management overhead
-- Complex scaling challenges
-- High infrastructure costs
-- Limited throughput at scale
-- Operational complexity
+## Quick Start
 
-</td>
-<td width="50%">
-
-### With flashQ
-- Single binary, zero dependencies
-- Linear horizontal scaling
-- 80% lower infrastructure costs
-- 2M+ operations per second
-- Deploy in 30 seconds
-
-</td>
-</tr>
-</table>
-
-<br>
-
-## ⚡ Performance
-
-Real benchmarks on Apple Silicon. No synthetic tests. No asterisks.
-
-### flashQ vs BullMQ (January 2026)
-
-| Scenario | flashQ | BullMQ | Speedup |
-|----------|--------|--------|---------|
-| **Single Push** | 21,487 jobs/sec | 4,383 jobs/sec | **4.9x** |
-| **Batch Push** | 601,389 jobs/sec | 42,518 jobs/sec | **14.1x** |
-| **Processing** | 310,224 jobs/sec | 14,657 jobs/sec | **21.2x** |
-| **High Throughput** | 242,293 jobs/sec | 14,678 jobs/sec | **16.5x** |
-| **Large Payload (10KB)** | 17,653 jobs/sec | 4,699 jobs/sec | **3.8x** |
-
-> **Average: flashQ is 12.1x faster than BullMQ** *(full job lifecycle: push → process → ack)*
-
-### Extreme Scale Test: 10 Million Jobs
-
-| Metric | Result |
-|--------|--------|
-| **Total Jobs** | 10,000,000 |
-| **Processing Rate** | **245,863 jobs/sec** |
-| **Total Time** | ~40 seconds |
-| **Errors** | 0 |
-
-<details>
-<summary><b>View Latency Benchmark</b></summary>
-
-| Test | flashQ P99 | BullMQ P99 | Improvement |
-|------|------------|------------|-------------|
-| Single Push | 192μs | 645μs | **3.4x faster** |
-| Priority Push | 128μs | 606μs | **4.8x faster** |
-| 100B Payload | 141μs | 627μs | **4.4x faster** |
-| 1KB Payload | 127μs | 643μs | **5.0x faster** |
-| 10KB Payload | 196μs | 647μs | **3.3x faster** |
-
-</details>
-
-<details>
-<summary><b>View Protocol Benchmarks</b></summary>
-
-| Protocol | Single Push | Batch Push | Pull + Ack |
-|----------|-------------|------------|------------|
-| **TCP** | 21,000/sec | **650,000/sec** | **294,000/sec** |
-| HTTP/REST | 4,000/sec | 20,000/sec | 5,000/sec |
-| gRPC | 5,500/sec | 450,000/sec | 160,000/sec |
-
-</details>
-
-[**View Full Benchmarks →**](BENCHMARKS.md)
-
-<br>
-
-## 🔴 Why Not Redis?
-
-Redis became the de-facto standard for job queues because it offers the right primitives out of the box. But those primitives come with fundamental limitations.
-
-### How Redis-Based Queues Work
-
-```
-┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│  Producer   │ ──TCP──▶│    Redis    │◀──TCP── │   Worker    │
-│             │         │  (single    │         │             │
-│ LPUSH job   │         │   thread)   │         │ BRPOP queue │
-└─────────────┘         └─────────────┘         └─────────────┘
-       │                       │                       │
-       │    Network RTT        │    Network RTT        │
-       │    ~0.5-2ms          │    ~0.5-2ms          │
-       ▼                       ▼                       ▼
-   Per-job overhead: 1-4ms network latency
-```
-
-**Redis Data Structures for Queues:**
-```redis
-LIST      → LPUSH/BRPOP for FIFO queues
-SORTED SET → ZADD/ZRANGEBYSCORE for delayed/priority jobs
-HASH      → Job metadata storage
-```
-
-### The Problem: Network + Single Thread
-
-| Limitation | Impact |
-|------------|--------|
-| **Network Round-Trip** | Every PUSH/PULL = 0.5-2ms TCP overhead |
-| **Single-Threaded** | One CPU core processes ALL operations |
-| **Lua Scripts Required** | Complex operations need scripting |
-| **Memory-Only** | Expensive for millions of jobs |
-| **External Dependency** | Another service to deploy, monitor, scale |
-
-**BullMQ Batch Push (simplified):**
-```javascript
-// Each job = 1 Redis command = 1 network round-trip
-for (const job of jobs) {
-  await redis.lpush('queue:waiting', JSON.stringify(job));
-  await redis.zadd('queue:priority', job.priority, job.id);
-}
-// 1000 jobs = 2000 network calls = 2-4 seconds
-```
-
-### How flashQ Solves This
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      flashQ Server                           │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │              32 Parallel Shards                        │ │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐      ┌──────┐   │ │
-│  │  │Shard0│ │Shard1│ │Shard2│ │Shard3│ ···  │Shard31│  │ │
-│  │  │ CPU0 │ │ CPU1 │ │ CPU2 │ │ CPU3 │      │ CPU31│  │ │
-│  │  └──────┘ └──────┘ └──────┘ └──────┘      └──────┘   │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                           │                                  │
-│                    In-Process Access                        │
-│                    ~100 nanoseconds                         │
-└─────────────────────────────────────────────────────────────┘
-       │                                              │
-       │              Single TCP Connection           │
-       ▼                                              ▼
-┌─────────────┐                              ┌─────────────┐
-│  Producer   │                              │   Worker    │
-│  (batch)    │                              │  (batch)    │
-└─────────────┘                              └─────────────┘
-```
-
-### Architecture Comparison
-
-| Aspect | Redis (BullMQ) | flashQ |
-|--------|----------------|--------|
-| **Threading** | Single-threaded | 32 parallel shards |
-| **Data Access** | Network TCP (~1ms) | In-process (~100ns) |
-| **Batch Ops** | N commands = N round-trips | 1 command = 1 round-trip |
-| **Atomicity** | Lua scripts required | Native atomic batches |
-| **Memory** | All in Redis RAM | Shared process memory |
-| **Deployment** | App + Redis cluster | Single binary |
-
-### Real Numbers
-
-**Pushing 10,000 jobs:**
-
-| System | Time | Why |
-|--------|------|-----|
-| BullMQ (Redis) | ~2-4 seconds | 10K network round-trips |
-| **flashQ** | **~5 milliseconds** | 1 batch command |
-
-**The Math:**
-```
-Redis:   10,000 jobs × 0.3ms/job = 3,000ms
-flashQ:  10,000 jobs × 1 batch   = 5ms (internal processing)
-
-Speedup: 600x for batch operations
-```
-
-### When to Use Redis
-
-Redis is still excellent for:
-- ✅ Caching (its primary use case)
-- ✅ Pub/Sub messaging
-- ✅ Session storage
-- ✅ Simple queues with low volume (<1K jobs/sec)
-- ✅ When you already have Redis infrastructure
-
-### When to Use flashQ
-
-flashQ excels when you need:
-- ✅ **High throughput** (>10K jobs/sec)
-- ✅ **Low latency** (<1ms P99)
-- ✅ **Batch operations** at scale
-- ✅ **Simplified infrastructure** (no Redis to manage)
-- ✅ **Cost efficiency** (less RAM, fewer servers)
-- ✅ **Predictable performance** (no GC, no Lua overhead)
-
-<br>
-
-## 🚀 Quick Start
-
-Get up and running in under 60 seconds.
-
-### Option 1: Docker Compose - Single Node (Recommended)
+### Docker
 
 ```bash
-# Clone the repository
+docker run -p 6789:6789 -p 6790:6790 -e HTTP=1 flashq/flashq
+```
+
+### Docker Compose
+
+```bash
 git clone https://github.com/egeominotti/flashq.git
-cd flashq
-
-# Start flashQ + PostgreSQL
-docker-compose up -d
-
-# ✅ Dashboard: http://localhost:6790
-# ✅ TCP API:   localhost:6789
-# ✅ HTTP API:  localhost:6790
-# ✅ gRPC API:  localhost:6791
+cd flashq && docker-compose up -d
 ```
 
-### Option 2: Docker Compose - HA Cluster (3 Nodes)
+Dashboard: http://localhost:6790
+
+### From Source
 
 ```bash
-# Start 3-node cluster with load balancer
-docker-compose -f docker-compose.cluster.yml up -d
-
-# ✅ Load Balancer: http://localhost:8080
-# ✅ Node 1: http://localhost:6790 (TCP: 6789)
-# ✅ Node 2: http://localhost:6792 (TCP: 6791)
-# ✅ Node 3: http://localhost:6794 (TCP: 6793)
-
-# Check cluster status
-curl http://localhost:8080/cluster/nodes
-```
-
-### Option 3: Docker (Standalone)
-
-```bash
-# Run flashQ in-memory (no persistence)
-docker run -d -p 6789:6789 -p 6790:6790 \
-  -e HTTP=1 \
-  flashq/flashq:latest
-
-# Run with PostgreSQL persistence
-docker run -d -p 6789:6789 -p 6790:6790 \
-  -e HTTP=1 \
-  -e DATABASE_URL=postgres://user:pass@host:5432/flashq \
-  flashq/flashq:latest
-```
-
-### Option 4: Build from Source
-
-```bash
-# Requirements: Rust 1.75+
-git clone https://github.com/egeominotti/flashq.git
-cd flashq/server
-
-# Build optimized release
-cargo build --release
-
-# Run with HTTP dashboard
-HTTP=1 ./target/release/flashq-server
-
-# Run with all protocols
-HTTP=1 GRPC=1 ./target/release/flashq-server
-
-# Run with PostgreSQL persistence
-DATABASE_URL=postgres://user:pass@localhost/flashq \
+cd server && cargo build --release
 HTTP=1 ./target/release/flashq-server
 ```
 
-### Option 5: Makefile
-
-```bash
-make up        # Start PostgreSQL via Docker
-make server    # Run server (in-memory)
-make persist   # Run with PostgreSQL persistence
-make dashboard # Open monitoring UI in browser
-make test      # Run SDK tests
-```
-
-### Verify Installation
-
-```bash
-# Check health
-curl http://localhost:6790/health
-
-# Push a job via HTTP
-curl -X POST http://localhost:6790/queues/test/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"data": {"hello": "world"}}'
-
-# View stats
-curl http://localhost:6790/stats
-```
-
-<br>
-
-## 💼 Built for Production
-
-flashQ powers mission-critical workloads at companies processing billions of jobs monthly.
-
-<table>
-<tr>
-<td align="center" width="25%">
-<h3>🏦</h3>
-<b>Financial Services</b><br>
-<small>Real-time transaction processing</small>
-</td>
-<td align="center" width="25%">
-<h3>🛒</h3>
-<b>E-Commerce</b><br>
-<small>Order fulfillment at scale</small>
-</td>
-<td align="center" width="25%">
-<h3>📱</h3>
-<b>Mobile Apps</b><br>
-<small>Push notifications & sync</small>
-</td>
-<td align="center" width="25%">
-<h3>🤖</h3>
-<b>AI/ML Pipelines</b><br>
-<small>Model training orchestration</small>
-</td>
-</tr>
-</table>
-
-<br>
-
-## ✨ Features
-
-### Core Capabilities
-
-| Feature | Description |
-|---------|-------------|
-| **Priority Queues** | Process critical jobs first with weighted priorities |
-| **Delayed Jobs** | Schedule jobs for future execution with millisecond precision |
-| **Batch Operations** | Push/pull/ack thousands of jobs in single requests |
-| **Job Dependencies** | DAG-style orchestration for complex workflows |
-| **Persistence** | PostgreSQL backend with automatic recovery |
-
-### Reliability & Resilience
-
-| Feature | Description |
-|---------|-------------|
-| **Dead Letter Queue** | Automatic isolation of failed jobs for analysis |
-| **Exponential Backoff** | Intelligent retry strategies with configurable delays |
-| **Job Timeouts** | Auto-fail jobs exceeding processing limits |
-| **Exactly-Once Delivery** | Deduplication via unique keys |
-| **Graceful Recovery** | Automatic job recovery on server restart |
-
-### Flow Control & Scaling
-
-| Feature | Description |
-|---------|-------------|
-| **Rate Limiting** | Token bucket algorithm for API protection |
-| **Concurrency Control** | Limit parallel processing per queue |
-| **Pause/Resume** | Dynamic queue control without restarts |
-| **Cron Scheduling** | Full 6-field cron expressions |
-| **Multi-Protocol** | TCP, HTTP/REST, gRPC, WebSocket, Unix Socket |
-
-### BullMQ-Compatible Features
-
-| Feature | Description |
-|---------|-------------|
-| **Custom Job ID** | Idempotent job creation with `jobId` option |
-| **finished()** | Wait for job completion (synchronous workflows) |
-| **Retention Policies** | Control result storage with age/count limits |
-| **drain()** | Remove all waiting jobs from a queue |
-| **obliterate()** | Remove ALL queue data (jobs, DLQ, state) |
-| **clean()** | Cleanup jobs by age and state |
-| **changePriority()** | Modify job priority at runtime |
-| **promote()** | Move delayed jobs to waiting immediately |
-| **getJobs()** | List jobs with filtering and pagination |
-
-### Observability
-
-| Feature | Description |
-|---------|-------------|
-| **Real-time Dashboard** | Monitor queues, jobs, and performance metrics |
-| **Prometheus Metrics** | Native `/metrics/prometheus` endpoint |
-| **Progress Tracking** | Live job progress with custom messages |
-| **WebSocket Events** | Real-time job lifecycle notifications |
-| **Audit Logging** | Complete job history and state transitions |
-
-<br>
-
-## 📊 Dashboard
-
-Monitor your queues in real-time with the built-in web dashboard.
-
-<div align="center">
-
-<img src="https://raw.githubusercontent.com/egeominotti/flashq/main/docs/dashboard.png" alt="flashQ Dashboard" width="850">
-
-</div>
-
-**Features:**
-- Real-time queue statistics and job counts
-- Job browser with filtering by queue and state
-- Live metrics and performance graphs
-- DLQ management and retry controls
-- Cron job configuration
-- Worker monitoring
-
-Access the dashboard at `http://localhost:6790` when running with `HTTP=1`.
-
-<br>
-
-## 🏢 Enterprise Features
-
-flashQ Enterprise includes additional capabilities for large-scale deployments:
-
-| Feature | Community | Enterprise |
-|---------|:---------:|:----------:|
-| Core job processing | ✅ | ✅ |
-| PostgreSQL persistence | ✅ | ✅ |
-| Real-time dashboard | ✅ | ✅ |
-| Prometheus metrics | ✅ | ✅ |
-| **High Availability Clustering** | - | ✅ |
-| **Automatic Failover** | - | ✅ |
-| **Role-Based Access Control** | - | ✅ |
-| **SSO/SAML Integration** | - | ✅ |
-| **Dedicated Support** | - | ✅ |
-| **SLA Guarantees** | - | ✅ |
-
-[**Contact Sales →**](mailto:enterprise@flashq.io)
-
-<br>
-
-## 📖 Documentation
-
-### Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | TCP server port | `6789` |
-| `HTTP` | Enable HTTP API | disabled |
-| `HTTP_PORT` | HTTP/Dashboard port | `6790` |
-| `GRPC` | Enable gRPC API | disabled |
-| `GRPC_PORT` | gRPC port | `6791` |
-| `DATABASE_URL` | PostgreSQL connection | in-memory |
-| `AUTH_TOKENS` | Authentication tokens | disabled |
-| `CLUSTER_MODE` | Enable HA clustering | disabled |
-
-### Job Lifecycle
-
-```
-PUSH ──→ WAITING ──→ PULL ──→ ACTIVE ──→ ACK ──→ COMPLETED
-              │                    │
-              │                    └──→ FAIL ──→ RETRY ──→ WAITING
-              │                              └──→ DLQ (max attempts)
-              │
-              └──→ DELAYED (scheduled)
-              └──→ WAITING_CHILDREN (dependencies)
-```
-
-### API Quick Reference
-
-<details>
-<summary><b>HTTP Endpoints</b></summary>
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/queues/{queue}/jobs` | Push job |
-| `GET` | `/queues/{queue}/jobs` | Pull jobs |
-| `POST` | `/jobs/{id}/ack` | Acknowledge |
-| `POST` | `/jobs/{id}/fail` | Fail job |
-| `GET` | `/jobs/{id}` | Get job state |
-| `GET` | `/stats` | Statistics |
-| `GET` | `/metrics/prometheus` | Prometheus metrics |
-| `GET` | `/health` | Health check |
-| `GET` | `/cluster/nodes` | Cluster status |
-
-</details>
-
-<details>
-<summary><b>TCP Protocol</b></summary>
-
-```json
-// Push job with custom ID (idempotent)
-{"cmd": "PUSH", "queue": "orders", "data": {"orderId": "123"}, "job_id": "order-123", "priority": 10}
-
-// Pull job (blocking)
-{"cmd": "PULL", "queue": "orders"}
-
-// Acknowledge with result
-{"cmd": "ACK", "id": 123, "result": {"processed": true}}
-
-// Wait for job completion
-{"cmd": "WAITJOB", "id": 123, "timeout": 30000}
-
-// Lookup by custom ID
-{"cmd": "GETJOBBYCUSTOMID", "job_id": "order-123"}
-
-// Batch operations
-{"cmd": "PUSHB", "queue": "jobs", "jobs": [{"data": {...}}, {"data": {...}}]}
-{"cmd": "PULLB", "queue": "jobs", "count": 100}
-{"cmd": "ACKB", "ids": [1, 2, 3, 4, 5]}
-
-// Queue management
-{"cmd": "DRAIN", "queue": "old-queue"}
-{"cmd": "OBLITERATE", "queue": "temp-queue"}
-{"cmd": "CLEAN", "queue": "logs", "grace": 3600000, "state": "completed"}
-
-// Job management
-{"cmd": "CHANGEPRIORITY", "id": 123, "priority": 100}
-{"cmd": "PROMOTE", "id": 123}
-{"cmd": "GETJOBS", "queue": "orders", "state": "waiting", "limit": 10}
-```
-
-</details>
-
-<br>
-
-## 🔧 SDK & Integration
-
-### TypeScript/Bun (Official)
+## SDK
 
 ```bash
 bun add flashq
@@ -557,188 +57,121 @@ bun add flashq
 ```typescript
 import { FlashQ, Worker } from 'flashq';
 
-// Initialize client
-const client = new FlashQ({
-  host: 'localhost',
-  port: 6789,
-  token: 'your-secret-token'
+const client = new FlashQ();
+
+// Add job
+await client.add('emails', { to: 'user@example.com' });
+
+// Process jobs
+const worker = new Worker('emails', async (job) => {
+  await sendEmail(job.data);
+  return { sent: true };
 });
-
-await client.connect();
-
-// Push jobs with idempotency
-const job = await client.push('orders', {
-  orderId: 'ORD-12345',
-  customer: 'user@example.com',
-  items: ['item1', 'item2']
-}, {
-  jobId: 'order-ORD-12345',  // Custom ID for idempotency
-  priority: 10,
-  max_attempts: 3,
-  backoff: 5000,
-  keepCompletedAge: 86400000  // Keep result for 24h
-});
-
-// Idempotent: same jobId returns existing job
-const sameJob = await client.push('orders', {...}, { jobId: 'order-ORD-12345' });
-console.log(job.id === sameJob.id); // true
-
-// Wait for job completion (synchronous workflow)
-const result = await client.finished(job.id, 30000); // 30s timeout
-
-// Lookup by custom ID
-const found = await client.getJobByCustomId('order-ORD-12345');
-console.log(found?.state); // 'completed'
-
-// Process jobs with Worker
-const worker = new Worker('orders', async (job) => {
-  await processOrder(job.data);
-  return { processed: true, timestamp: Date.now() };
-}, { concurrency: 10 });
-
 await worker.start();
-
-// Queue management
-await client.drain('old-queue');      // Remove all waiting jobs
-await client.obliterate('temp-queue'); // Remove ALL queue data
-await client.clean('logs', 3600000, 'completed'); // Clean old completed
 ```
 
-### Other Languages
-
-| Language | Status | Repository |
-|----------|--------|------------|
-| TypeScript/Bun | ✅ Official | [sdk/typescript](sdk/typescript) |
-| Python | 🚧 Coming Soon | - |
-| Go | 🚧 Coming Soon | - |
-| Java | 🚧 Coming Soon | - |
-
-<br>
-
-## 🏗 Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         flashQ Server                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐ │
-│   │   TCP    │    │   HTTP   │    │   gRPC   │    │    WS    │ │
-│   │  :6789   │    │  :6790   │    │  :6791   │    │  :6790   │ │
-│   └────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘ │
-│        └───────────────┴───────────────┴───────────────┘        │
-│                              │                                   │
-│   ┌──────────────────────────▼──────────────────────────────┐  │
-│   │                   Queue Manager                          │  │
-│   │  ┌────────────────────────────────────────────────────┐ │  │
-│   │  │         32 Sharded Priority Queues                 │ │  │
-│   │  │    (BinaryHeap + FxHashMap + parking_lot)          │ │  │
-│   │  └────────────────────────────────────────────────────┘ │  │
-│   │                                                          │  │
-│   │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │  │
-│   │  │   DLQ    │  │   Rate   │  │  Concur. │  │  Cron   │ │  │
-│   │  │  Store   │  │ Limiters │  │ Controls │  │ Runner  │ │  │
-│   │  └──────────┘  └──────────┘  └──────────┘  └─────────┘ │  │
-│   └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│   ┌──────────────────────────▼──────────────────────────────┐  │
-│   │              PostgreSQL Storage (Optional)               │  │
-│   │     Jobs • Results • DLQ • Cron • Cluster State         │  │
-│   └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Performance Optimizations
-
-- **GxHash** — Fastest hasher (AES-NI accelerated, 30% faster than FxHash)
-- **sonic-rs** — SIMD-accelerated JSON (30% faster than simd-json)
-- **parking_lot** — Superior lock performance (2x faster than std)
-- **mimalloc** — High-performance memory allocator (15% faster)
-- **32 Shards** — Minimized lock contention, true parallelism
-- **ULID IDs** — Sortable, faster than UUID v4
-- **LTO Build** — Link-time optimization for maximum performance
-
-<br>
-
-## 🧪 Testing & Reliability
-
-### Test Coverage
-
-| Suite | Tests | Coverage |
-|-------|-------|----------|
-| Unit Tests (Rust) | 104 | Core operations, BullMQ features, edge cases |
-| Integration Tests | 53 | Full API coverage |
-| Advanced Features Tests | 42 | BullMQ-like operations |
-| Stress Tests | 33 | Load, concurrency, resilience |
-
-### Stress Test Results
-
-| Scenario | Result |
-|----------|--------|
-| Concurrent Push (10 connections) | **59,000 ops/sec** |
-| Sustained Load (30 seconds) | **22K push/s, 11K pull/s, 0% errors** |
-| Large Payloads (500KB) | Integrity preserved |
-| Connection Churn (50 cycles) | 100% success |
-| DLQ Flood (100 jobs) | 100% recovery |
-
-<br>
-
-## 🔒 Security
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| **Token Authentication** | Secure API access with bearer tokens |
-| **Input Validation** | Strict validation on all inputs |
-| **Size Limits** | 1MB max job size, 1000 max batch size |
-| **HMAC Signatures** | Webhook payload verification |
-| **Prometheus Safety** | Sanitized metric labels |
+| **Priority Queues** | Higher priority jobs process first |
+| **Delayed Jobs** | Schedule jobs for future execution |
+| **Batch Operations** | Push/pull thousands of jobs at once |
+| **Retry & DLQ** | Automatic retries with dead letter queue |
+| **Rate Limiting** | Control throughput per queue |
+| **Cron Jobs** | Schedule recurring jobs |
+| **Job Dependencies** | Parent/child job flows |
+| **Progress Tracking** | Real-time job progress |
+| **Persistence** | Optional PostgreSQL storage |
+| **Dashboard** | Built-in monitoring UI |
 
-<br>
+## Architecture
 
-## 📊 Comparison
+```
+┌─────────────────────────────────────────────────┐
+│                  flashQ Server                   │
+├─────────────────────────────────────────────────┤
+│  TCP :6789 │ HTTP :6790 │ gRPC :6791 │ WS      │
+├─────────────────────────────────────────────────┤
+│            32 Sharded Priority Queues            │
+│         (parallel processing, zero contention)   │
+├─────────────────────────────────────────────────┤
+│          PostgreSQL (optional persistence)       │
+└─────────────────────────────────────────────────┘
+```
 
-| Feature | flashQ | BullMQ | Celery | AWS SQS |
-|---------|:------:|:------:|:------:|:-------:|
-| Self-hosted | ✅ | ✅ | ✅ | ❌ |
-| No external deps | ✅ | ❌ (Redis) | ❌ (RabbitMQ) | - |
-| Priority queues | ✅ | ✅ | ✅ | ❌ |
-| Job dependencies | ✅ | ✅ | ✅ | ❌ |
-| Rate limiting | ✅ | ✅ | ❌ | ❌ |
-| Real-time dashboard | ✅ | ❌ | ❌ | ✅ |
-| <100μs latency | ✅ | ❌ | ❌ | ❌ |
-| 1M+ ops/sec | ✅ | ❌ | ❌ | ❌ |
+## Configuration
 
-<br>
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | TCP port | 6789 |
+| `HTTP` | Enable HTTP/Dashboard | disabled |
+| `HTTP_PORT` | HTTP port | 6790 |
+| `GRPC` | Enable gRPC | disabled |
+| `DATABASE_URL` | PostgreSQL URL | in-memory |
+| `AUTH_TOKENS` | Auth tokens (comma-separated) | disabled |
 
-## 🤝 Community & Support
+## Documentation
 
-- **GitHub Issues** — Bug reports and feature requests
-- **Discussions** — Questions and community support
-- **Enterprise Support** — Dedicated support for production deployments
+### Job Options
 
-<br>
+```typescript
+await client.add('queue', data, {
+  priority: 10,       // higher = first
+  delay: 5000,        // delay in ms
+  max_attempts: 3,    // retry count
+  backoff: 1000,      // exponential backoff base
+  timeout: 30000,     // processing timeout
+  unique_key: 'id',   // deduplication
+  jobId: 'custom-id', // custom ID for lookup
+});
+```
 
-## 📄 License
+### Worker Options
 
-flashQ is open-source software licensed under the [MIT License](LICENSE).
+```typescript
+const worker = new Worker('queue', handler, {
+  concurrency: 10,    // parallel jobs
+});
+```
 
-<br>
+### Queue Control
+
+```typescript
+await client.pause('queue');
+await client.resume('queue');
+await client.drain('queue');       // remove waiting jobs
+await client.obliterate('queue');  // remove all data
+```
+
+### HTTP API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/queues/{queue}/jobs` | Add job |
+| GET | `/queues/{queue}/jobs` | Pull jobs |
+| POST | `/jobs/{id}/ack` | Acknowledge |
+| POST | `/jobs/{id}/fail` | Fail job |
+| GET | `/stats` | Statistics |
+| GET | `/health` | Health check |
+
+## Examples
+
+See [sdk/typescript/examples/](sdk/typescript/examples/) for 18 complete examples:
+
+- Basic operations, workers, delayed jobs
+- Priority, batch, retry, progress
+- Cron, stats, rate limiting
+- Job flows, deduplication, events
+
+## License
+
+MIT
 
 ---
 
 <div align="center">
 
-**Ready to supercharge your job processing?**
-
-[**Get Started →**](#-quick-start)
-
-<br>
-
-Built with ❤️ and Rust
-
-<br>
-
-[GitHub](https://github.com/egeominotti/flashq) · [Documentation](#-documentation)
+**[Get Started →](#quick-start)**
 
 </div>
