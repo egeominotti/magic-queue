@@ -194,11 +194,15 @@ async fn start_http_server(queue_manager: &Arc<QueueManager>, shutdown_tx: &broa
         };
         info!(port = http_port, "HTTP API listening");
         info!(url = %format!("http://localhost:{}", http_port), "Dashboard available");
-        if let Err(e) = axum::serve(listener, router)
-            .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.recv().await;
-            })
-            .await
+        // Use into_make_service_with_connect_info to provide client IP to rate limiter
+        if let Err(e) = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.recv().await;
+        })
+        .await
         {
             error!(error = %e, "HTTP server error");
         }
