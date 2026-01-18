@@ -1,0 +1,28 @@
+# Prometheus configuration for flashQ monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Rule files (optional)
+# rule_files:
+#   - "alert_rules.yml"
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # flashQ metrics
+  - job_name: 'flashq'
+    metrics_path: '/metrics/prometheus'
+    static_configs:
+      - targets: ['flashq:6790']
+    scrape_interval: 5s
+    scrape_timeout: 5s

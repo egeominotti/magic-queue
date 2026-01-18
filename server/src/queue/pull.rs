@@ -45,19 +45,26 @@ impl QueueManager {
                 } else {
                     let mut result = None;
                     if let Some(heap) = shard.queues.get_mut(&queue_arc) {
-                        while let Some(job) = heap.peek() {
-                            if job.is_expired(now) {
-                                heap.pop();
-                                continue;
+                        loop {
+                            // Safe pattern: pop directly and check, avoiding peek+expect race
+                            match heap.pop() {
+                                Some(job) if job.is_expired(now) => {
+                                    // Expired job, continue to next
+                                    continue;
+                                }
+                                Some(mut job) if job.is_ready(now) => {
+                                    job.started_at = now;
+                                    job.last_heartbeat = now;
+                                    result = Some(job);
+                                    break;
+                                }
+                                Some(job) => {
+                                    // Job not ready yet (delayed), put it back and stop
+                                    heap.push(job);
+                                    break;
+                                }
+                                None => break,
                             }
-                            if job.is_ready(now) {
-                                let mut job = heap.pop().expect("heap non-empty after peek");
-                                job.started_at = now;
-                                job.last_heartbeat = now;
-                                result = Some(job);
-                                break;
-                            }
-                            break;
                         }
                     }
 
@@ -93,11 +100,8 @@ impl QueueManager {
                         Arc::clone(&shard.notify)
                     };
                     // Wait max 100ms then retry
-                    let _ = tokio::time::timeout(
-                        Duration::from_millis(100),
-                        notify.notified(),
-                    )
-                    .await;
+                    let _ =
+                        tokio::time::timeout(Duration::from_millis(100), notify.notified()).await;
                 }
             }
         }
@@ -143,18 +147,23 @@ impl QueueManager {
                     if slots_acquired > 0 {
                         if let Some(heap) = shard.queues.get_mut(&queue_arc) {
                             while jobs.len() < slots_acquired {
-                                match heap.peek() {
+                                // Safe pattern: pop directly and check, avoiding peek+expect race
+                                match heap.pop() {
                                     Some(job) if job.is_expired(now) => {
-                                        heap.pop();
+                                        // Expired job, continue to next
+                                        continue;
                                     }
-                                    Some(job) if job.is_ready(now) => {
-                                        let mut job =
-                                            heap.pop().expect("heap non-empty after peek");
+                                    Some(mut job) if job.is_ready(now) => {
                                         job.started_at = now;
                                         job.last_heartbeat = now;
                                         jobs.push(job);
                                     }
-                                    _ => break,
+                                    Some(job) => {
+                                        // Job not ready yet (delayed), put it back and stop
+                                        heap.push(job);
+                                        break;
+                                    }
+                                    None => break,
                                 }
                             }
                         }
@@ -196,11 +205,8 @@ impl QueueManager {
                         let shard = self.shards[idx].read();
                         Arc::clone(&shard.notify)
                     };
-                    let _ = tokio::time::timeout(
-                        Duration::from_millis(100),
-                        notify.notified(),
-                    )
-                    .await;
+                    let _ =
+                        tokio::time::timeout(Duration::from_millis(100), notify.notified()).await;
                 }
             }
         }

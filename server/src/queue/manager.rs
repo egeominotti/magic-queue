@@ -112,6 +112,8 @@ pub struct QueueManager {
     pub(crate) tcp_connection_count: std::sync::atomic::AtomicUsize,
     // Shared HTTP client for webhooks (reuse connections)
     pub(crate) http_client: reqwest::Client,
+    // Shutdown flag for graceful shutdown of background tasks
+    pub(crate) shutdown_flag: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -331,6 +333,7 @@ impl QueueManager {
                 .pool_max_idle_per_host(10)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
+            shutdown_flag: std::sync::atomic::AtomicBool::new(false),
         });
 
         let mgr = Arc::clone(&manager);
@@ -436,26 +439,68 @@ impl QueueManager {
     }
 
     /// Get next job ID from PostgreSQL sequence (cluster-wide unique).
-    /// Falls back to local atomic counter if database unavailable.
+    /// In cluster mode, falls back to node-specific local IDs to avoid collisions.
+    /// In standalone mode, uses simple atomic counter.
     pub async fn next_job_id(&self) -> u64 {
         if let Some(ref storage) = self.storage {
             if let Ok(id) = storage.next_sequence_id().await {
                 return id;
             }
+            // In cluster mode, use node-specific fallback to avoid collisions
+            // Format: high 16 bits = node hash, low 48 bits = local counter
+            // This gives ~281 trillion unique IDs per node before collision risk
+            tracing::warn!("PostgreSQL sequence unavailable, using node-specific fallback ID");
+            return self.node_specific_fallback_id();
         }
-        // Fallback to local counter
+        // Standalone mode: simple atomic counter
         crate::protocol::next_id()
     }
 
     /// Get next N job IDs from PostgreSQL sequence (cluster-wide unique).
+    /// In cluster mode, falls back to node-specific local IDs to avoid collisions.
     pub async fn next_job_ids(&self, count: usize) -> Vec<u64> {
         if let Some(ref storage) = self.storage {
             if let Ok(ids) = storage.next_sequence_ids(count as i64).await {
                 return ids;
             }
+            // In cluster mode, use node-specific fallback to avoid collisions
+            tracing::warn!(
+                count = count,
+                "PostgreSQL sequence unavailable, using node-specific fallback IDs"
+            );
+            return (0..count)
+                .map(|_| self.node_specific_fallback_id())
+                .collect();
         }
-        // Fallback to local counter
+        // Standalone mode: simple atomic counter
         (0..count).map(|_| crate::protocol::next_id()).collect()
+    }
+
+    /// Generate a node-specific fallback ID to avoid collisions in cluster mode.
+    /// Uses high 16 bits for node hash, low 48 bits for local counter.
+    /// This prevents ID collisions between nodes when PostgreSQL is unavailable.
+    fn node_specific_fallback_id(&self) -> u64 {
+        let local_id = crate::protocol::next_id();
+        let node_hash = self.node_id_hash();
+        // Combine: top 16 bits = node hash, bottom 48 bits = local counter
+        // This allows ~281 trillion IDs per node before wraparound
+        ((node_hash as u64) << 48) | (local_id & 0x0000_FFFF_FFFF_FFFF)
+    }
+
+    /// Get a 16-bit hash of the node ID for use in fallback ID generation.
+    fn node_id_hash(&self) -> u16 {
+        if let Some(ref cluster) = self.cluster {
+            // Use FNV-1a hash for good distribution
+            let mut hash: u32 = 2166136261;
+            for byte in cluster.node_id.as_bytes() {
+                hash ^= *byte as u32;
+                hash = hash.wrapping_mul(16777619);
+            }
+            (hash & 0xFFFF) as u16
+        } else {
+            // Standalone mode: use 0
+            0
+        }
     }
 
     #[inline]
@@ -497,6 +542,19 @@ impl QueueManager {
         self.cluster.as_ref()
     }
 
+    /// Signal shutdown to stop background tasks.
+    pub fn shutdown(&self) {
+        self.shutdown_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Check if shutdown has been requested.
+    #[inline]
+    pub fn is_shutdown(&self) -> bool {
+        self.shutdown_flag
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Get shard index for a queue name.
     #[inline(always)]
     pub fn shard_index(queue: &str) -> usize {
@@ -534,6 +592,13 @@ impl QueueManager {
     pub(crate) fn processing_get(&self, job_id: u64) -> Option<Job> {
         let idx = Self::processing_shard_index(job_id);
         self.processing_shards[idx].read().get(&job_id).cloned()
+    }
+
+    /// Check if a job is in processing (sharded, O(1) lookup).
+    #[inline]
+    pub(crate) fn processing_contains(&self, job_id: u64) -> bool {
+        let idx = Self::processing_shard_index(job_id);
+        self.processing_shards[idx].read().contains_key(&job_id)
     }
 
     /// OPTIMIZATION: Get read-only reference to job via closure (avoids cloning).

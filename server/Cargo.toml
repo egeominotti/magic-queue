@@ -51,6 +51,7 @@ prost = "0.13"
 # Utils
 once_cell = "1.19"
 futures = "0.3"
+url = "2"                           # URL parsing for webhook validation
 
 # Observability
 tracing = "0.1"

@@ -105,6 +105,7 @@ impl IndexedPriorityQueue {
 
     /// Peek at highest priority job - O(log n) amortized (skips stale entries)
     #[inline]
+    #[allow(dead_code)]
     pub fn peek(&mut self) -> Option<&Job> {
         // Clean up stale entries from the top
         while let Some(entry) = self.heap.peek() {

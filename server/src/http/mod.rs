@@ -9,6 +9,7 @@ mod events;
 mod jobs;
 mod metrics;
 mod queues;
+mod rate_limit;
 mod settings;
 mod types;
 mod webhooks;
@@ -17,10 +18,13 @@ mod workers;
 
 use axum::{
     http::{header, Method},
+    middleware,
     routing::{delete, get, post},
-    Router,
+    Extension, Router,
 };
 use tower_http::cors::{AllowOrigin, CorsLayer};
+
+pub use rate_limit::RateLimiter;
 
 use crate::dashboard;
 
@@ -61,6 +65,15 @@ fn create_cors_layer() -> CorsLayer {
 /// Create the HTTP router with all API routes.
 pub fn create_router(state: AppState) -> Router {
     let cors = create_cors_layer();
+    let rate_limiter = RateLimiter::from_env();
+
+    // Log rate limiting configuration
+    if rate_limiter.is_enabled() {
+        tracing::info!(
+            "HTTP rate limiting enabled: {} requests per window",
+            std::env::var("RATE_LIMIT_REQUESTS").unwrap_or_else(|_| "1000".to_string())
+        );
+    }
 
     // Initialize start time for uptime tracking
     settings::init_start_time();
@@ -182,5 +195,7 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .merge(dashboard::dashboard_routes())
         .merge(api_routes)
+        .layer(middleware::from_fn(rate_limit::rate_limit_middleware))
+        .layer(Extension(rate_limiter))
         .layer(cors)
 }

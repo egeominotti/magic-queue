@@ -21,10 +21,13 @@ pub async fn create_webhook(
     State(qm): State<AppState>,
     Json(req): Json<CreateWebhookRequest>,
 ) -> Json<ApiResponse<String>> {
-    let id = qm
+    match qm
         .add_webhook(req.url, req.events, req.queue, req.secret)
-        .await;
-    ApiResponse::success(id)
+        .await
+    {
+        Ok(id) => ApiResponse::success(id),
+        Err(e) => ApiResponse::error(e),
+    }
 }
 
 /// Delete a webhook.

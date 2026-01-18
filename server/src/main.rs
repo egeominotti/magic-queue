@@ -48,17 +48,27 @@ fn is_shutting_down() -> bool {
 /// Create a shutdown signal handler
 async fn shutdown_signal(shutdown_tx: broadcast::Sender<()>) {
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("Failed to install Ctrl+C handler");
+        match signal::ctrl_c().await {
+            Ok(()) => {}
+            Err(e) => {
+                warn!(error = %e, "Failed to install Ctrl+C handler, continuing without it");
+                // Wait indefinitely since we can't catch the signal
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler")
-            .recv()
-            .await;
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to install SIGTERM handler, continuing without it");
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(not(unix))]
@@ -139,21 +149,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|p| p.parse().ok())
             .unwrap_or(DEFAULT_HTTP_PORT);
 
+        // Validate port range
+        if http_port == 0 {
+            error!(port = http_port, "Invalid HTTP port, must be 1-65535");
+            std::process::exit(1);
+        }
+
         let qm_http = Arc::clone(&queue_manager);
         let mut shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
             let router = http::create_router(qm_http);
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
+            let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
                 .await
-                .expect("Failed to bind HTTP listener");
+            {
+                Ok(l) => l,
+                Err(e) => {
+                    error!(port = http_port, error = %e, "Failed to bind HTTP listener. Port may be in use.");
+                    return;
+                }
+            };
             info!(port = http_port, "HTTP API listening");
             info!(url = %format!("http://localhost:{}", http_port), "Dashboard available");
-            axum::serve(listener, router)
+            if let Err(e) = axum::serve(listener, router)
                 .with_graceful_shutdown(async move {
                     let _ = shutdown_rx.recv().await;
                 })
                 .await
-                .expect("HTTP server error");
+            {
+                error!(error = %e, "HTTP server error");
+            }
         });
     }
 
@@ -164,11 +188,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|p| p.parse().ok())
             .unwrap_or(DEFAULT_GRPC_PORT);
 
+        // Validate port range
+        if grpc_port == 0 {
+            error!(port = grpc_port, "Invalid gRPC port, must be 1-65535");
+            std::process::exit(1);
+        }
+
         let qm_grpc = Arc::clone(&queue_manager);
         tokio::spawn(async move {
-            let addr = format!("0.0.0.0:{}", grpc_port)
-                .parse()
-                .expect("valid socket address format");
+            let addr_str = format!("0.0.0.0:{}", grpc_port);
+            let addr = match addr_str.parse() {
+                Ok(a) => a,
+                Err(e) => {
+                    error!(addr = %addr_str, error = %e, "Invalid gRPC address format");
+                    return;
+                }
+            };
             info!(port = grpc_port, "gRPC server listening");
             if let Err(e) = grpc::run_grpc_server(addr, qm_grpc).await {
                 error!(error = %e, "gRPC server error");
@@ -245,6 +280,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    // Signal background tasks to shutdown
+    queue_manager.shutdown();
 
     // Graceful shutdown: wait for active jobs to complete
     info!("Stopping new connections, waiting for active jobs to complete...");

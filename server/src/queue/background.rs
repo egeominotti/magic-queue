@@ -12,6 +12,8 @@ use super::postgres::CLUSTER_SYNC_CHANNEL;
 use super::types::{cleanup_interned_strings, intern, now_ms, JobLocation};
 
 impl QueueManager {
+    /// Run background tasks (cleanup, cron, metrics, etc.).
+    /// Checks shutdown flag periodically for graceful termination.
     pub async fn background_tasks(self: Arc<Self>) {
         let mut wakeup_ticker = interval(Duration::from_millis(500)); // Wake up waiting workers (reduced from 100ms - notify_shard handles immediate wakeups)
         let mut cron_ticker = interval(Duration::from_secs(1));
@@ -22,7 +24,28 @@ impl QueueManager {
         let mut cluster_ticker = interval(Duration::from_secs(5)); // Cluster heartbeat every 5s
         let mut snapshot_ticker = interval(Duration::from_secs(1)); // Check snapshot every 1s
 
+        info!("Background tasks started");
+
         loop {
+            // Check for shutdown signal
+            if self.is_shutdown() {
+                info!("Background tasks received shutdown signal, stopping...");
+                // Final snapshot before shutdown if enabled
+                if self.snapshot_config.is_some() {
+                    info!("Taking final snapshot before shutdown...");
+                    self.maybe_snapshot().await;
+                }
+                // Unregister from cluster if enabled
+                if let Some(ref cluster) = self.cluster {
+                    info!("Unregistering from cluster...");
+                    if let Err(e) = cluster.unregister().await {
+                        warn!(error = %e, "Failed to unregister from cluster");
+                    }
+                }
+                info!("Background tasks stopped");
+                return;
+            }
+
             tokio::select! {
                 _ = wakeup_ticker.tick() => {
                     // Wake up workers that may have missed push notifications
@@ -457,35 +480,72 @@ impl QueueManager {
         }
     }
 
-    /// Clean up stale entries in job_index that point to non-existent jobs
-    /// This handles edge cases where index entries weren't properly cleaned
+    /// Clean up stale entries in job_index that point to non-existent jobs.
+    /// This handles edge cases where index entries weren't properly cleaned,
+    /// including: completed jobs, processing jobs, queued jobs, and DLQ jobs.
+    /// Called periodically by the cleanup background task.
     pub(crate) fn cleanup_stale_index_entries(&self) {
         use super::types::JobLocation;
 
         const MAX_INDEX_SIZE: usize = 100_000;
+        const CLEANUP_BATCH: usize = 10_000;
 
         let index_len = self.job_index.len();
         if index_len <= MAX_INDEX_SIZE {
             return;
         }
 
-        // Collect IDs that are marked as Completed in the index
-        // These are safe to remove if they're not in completed_jobs anymore
+        let mut to_remove = Vec::with_capacity(CLEANUP_BATCH);
         let completed_jobs = self.completed_jobs.read();
-        let mut to_remove = Vec::new();
 
-        // Iterate lock-free DashMap
+        // Iterate lock-free DashMap and check each location
         for entry in self.job_index.iter() {
+            if to_remove.len() >= CLEANUP_BATCH {
+                break;
+            }
+
             let id = *entry.key();
             let location = *entry.value();
-            if matches!(location, JobLocation::Completed) && !completed_jobs.contains(&id) {
+
+            let is_stale = match location {
+                JobLocation::Completed => !completed_jobs.contains(&id),
+
+                JobLocation::Processing => !self.processing_contains(id),
+
+                JobLocation::Queue { shard_idx } => {
+                    let shard = self.shards[shard_idx].read();
+                    !shard.queues.values().any(|heap| heap.contains(id))
+                }
+
+                JobLocation::Dlq { shard_idx } => {
+                    let shard = self.shards[shard_idx].read();
+                    !shard.dlq.values().any(|dlq| dlq.iter().any(|j| j.id == id))
+                }
+
+                JobLocation::WaitingDeps { shard_idx } => {
+                    let shard = self.shards[shard_idx].read();
+                    !shard.waiting_deps.contains_key(&id)
+                }
+
+                JobLocation::WaitingChildren { shard_idx } => {
+                    let shard = self.shards[shard_idx].read();
+                    !shard.waiting_children.contains_key(&id)
+                }
+            };
+
+            if is_stale {
                 to_remove.push(id);
             }
         }
 
+        drop(completed_jobs);
+
         // Remove stale entries (lock-free)
         for id in to_remove {
             self.job_index.remove(&id);
+            // Also clean up associated data that might be orphaned
+            self.job_logs.write().remove(&id);
+            self.stalled_count.write().remove(&id);
         }
     }
 

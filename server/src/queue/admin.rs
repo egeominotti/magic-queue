@@ -392,17 +392,21 @@ impl QueueManager {
     }
 
     /// Add a webhook.
+    /// Validates URL to prevent SSRF attacks (blocks internal/private IPs).
     pub async fn add_webhook(
         &self,
         url: String,
         events: Vec<String>,
         queue: Option<String>,
         secret: Option<String>,
-    ) -> String {
+    ) -> Result<String, String> {
+        // Validate webhook URL to prevent SSRF
+        validate_webhook_url(&url)?;
+
         let id = format!("wh_{}", crate::protocol::next_id());
         let webhook = Webhook::new(id.clone(), url, events, queue, secret);
         self.webhooks.write().insert(id.clone(), webhook);
-        id
+        Ok(id)
     }
 
     /// Delete a webhook.
@@ -680,6 +684,145 @@ impl QueueManager {
     pub fn decrement_connections(&self) {
         self.tcp_connection_count
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Validate webhook URL to prevent SSRF attacks.
+/// Blocks internal/private IPs and localhost.
+fn validate_webhook_url(url: &str) -> Result<(), String> {
+    use std::net::IpAddr;
+
+    // Parse the URL
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    // Only allow http and https schemes
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(format!(
+                "Invalid scheme '{}': only http/https allowed",
+                scheme
+            ))
+        }
+    }
+
+    // Get the host
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL must have a host".to_string())?;
+
+    // Block localhost variants
+    let host_lower = host.to_lowercase();
+    if host_lower == "localhost"
+        || host_lower == "127.0.0.1"
+        || host_lower == "::1"
+        || host_lower == "[::1]"
+        || host_lower == "0.0.0.0"
+        || host_lower.ends_with(".localhost")
+        || host_lower.ends_with(".local")
+    {
+        return Err("Localhost URLs are not allowed for webhooks".to_string());
+    }
+
+    // Try to parse as IP address and check for private ranges
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_private_ip(&ip) {
+            return Err(format!(
+                "Private/internal IP addresses are not allowed: {}",
+                ip
+            ));
+        }
+    }
+
+    // Also check if it's an IPv6 in brackets
+    if host.starts_with('[') && host.ends_with(']') {
+        let inner = &host[1..host.len() - 1];
+        if let Ok(ip) = inner.parse::<IpAddr>() {
+            if is_private_ip(&ip) {
+                return Err(format!(
+                    "Private/internal IP addresses are not allowed: {}",
+                    ip
+                ));
+            }
+        }
+    }
+
+    // Block internal domain patterns commonly used in cloud environments
+    if host_lower.ends_with(".internal")
+        || host_lower.ends_with(".lan")
+        || host_lower.contains(".svc.cluster.local")
+        || host_lower.starts_with("metadata.")
+        || host_lower.contains("169.254.")
+        || host_lower == "metadata.google.internal"
+    {
+        return Err(format!(
+            "Internal/cloud metadata URLs are not allowed: {}",
+            host
+        ));
+    }
+
+    Ok(())
+}
+
+/// Check if an IP address is private/internal (RFC1918, link-local, loopback, etc.)
+fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ipv4) => {
+            // Loopback (127.0.0.0/8)
+            if ipv4.is_loopback() {
+                return true;
+            }
+            // Private (RFC1918)
+            if ipv4.is_private() {
+                return true;
+            }
+            // Link-local (169.254.0.0/16 - AWS metadata, etc.)
+            if ipv4.is_link_local() {
+                return true;
+            }
+            // Broadcast
+            if ipv4.is_broadcast() {
+                return true;
+            }
+            // Unspecified (0.0.0.0)
+            if ipv4.is_unspecified() {
+                return true;
+            }
+            // Documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
+            if ipv4.is_documentation() {
+                return true;
+            }
+            // Shared address space (100.64.0.0/10) - often used internally
+            let octets = ipv4.octets();
+            if octets[0] == 100 && (octets[1] >= 64 && octets[1] <= 127) {
+                return true;
+            }
+            false
+        }
+        std::net::IpAddr::V6(ipv6) => {
+            // Loopback (::1)
+            if ipv6.is_loopback() {
+                return true;
+            }
+            // Unspecified (::)
+            if ipv6.is_unspecified() {
+                return true;
+            }
+            // IPv4-mapped addresses (::ffff:x.x.x.x) - check the embedded IPv4
+            if let Some(ipv4) = ipv6.to_ipv4_mapped() {
+                return is_private_ip(&std::net::IpAddr::V4(ipv4));
+            }
+            // Unique local (fc00::/7)
+            let segments = ipv6.segments();
+            if (segments[0] & 0xfe00) == 0xfc00 {
+                return true;
+            }
+            // Link-local (fe80::/10)
+            if (segments[0] & 0xffc0) == 0xfe80 {
+                return true;
+            }
+            false
+        }
     }
 }
 
