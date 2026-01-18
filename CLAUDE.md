@@ -552,7 +552,7 @@ cargo fmt
 ### Input Validation
 
 - **Queue names**: Only alphanumeric, underscore, hyphen, dot allowed (max 256 chars)
-- **Job data size**: Max 1MB per job to prevent DoS
+- **Job data size**: Max 10MB per job (supports AI/ML workloads like embeddings)
 - **Batch limits**: Max 1000 jobs per batch request (gRPC/HTTP)
 - **Cron schedules**: Max 256 chars, validated before saving
 

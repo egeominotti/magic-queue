@@ -351,8 +351,8 @@ async fn test_job_ttl_not_expired() {
 async fn test_payload_too_large_rejected() {
     let qm = setup();
 
-    // Create a very large payload (over 1MB limit)
-    let large_string = "x".repeat(1_100_000); // ~1.1MB
+    // Create a very large payload (over 10MB limit)
+    let large_string = "x".repeat(11_000_000); // ~11MB
     let result = qm
         .push(
             "test".to_string(),

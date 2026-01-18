@@ -5,8 +5,8 @@
 
 use serde_json::Value;
 
-/// Maximum job data size in bytes (1MB) to prevent DoS attacks
-pub const MAX_JOB_DATA_SIZE: usize = 1_048_576;
+/// Maximum job data size in bytes (10MB) for AI/ML workloads (embeddings, images, etc.)
+pub const MAX_JOB_DATA_SIZE: usize = 10_485_760;
 
 /// Maximum queue name length
 pub const MAX_QUEUE_NAME_LENGTH: usize = 256;

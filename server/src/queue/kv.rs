@@ -16,8 +16,8 @@ use super::types::now_ms;
 
 /// Maximum key length (1KB)
 pub const MAX_KEY_LENGTH: usize = 1024;
-/// Maximum value size (1MB)
-pub const MAX_VALUE_SIZE: usize = 1_048_576;
+/// Maximum value size (10MB) for AI/ML workloads
+pub const MAX_VALUE_SIZE: usize = 10_485_760;
 /// Maximum keys per MSET/MGET operation
 pub const MAX_BATCH_SIZE: usize = 1000;
 
