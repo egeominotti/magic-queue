@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>flashQ - AI Background Jobs Without Redis</title>
+  <meta name="description" content="BullMQ-compatible job queue. 10x faster. Zero Redis ops. Built for AI workloads.">
+  <meta name="keywords" content="job queue, bullmq, redis alternative, ai, llm, background jobs, task queue">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="flashQ - AI Background Jobs Without Redis">
+  <meta property="og:description" content="BullMQ-compatible API. 10x faster. Zero ops. Built for AI workloads.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flashq.dev">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="flashQ - AI Background Jobs Without Redis">
+  <meta name="twitter:description" content="BullMQ-compatible API. 10x faster. Zero ops.">
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0a0a0b;
+      --bg-secondary: #111113;
+      --bg-tertiary: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --accent: #f97316;
+      --accent-hover: #fb923c;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 10, 11, 0.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .logo span {
+      font-size: 1.5rem;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--border);
+    }
+
+    /* Hero */
+    .hero {
+      padding: 160px 0 100px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 600px;
+      background: radial-gradient(ellipse, rgba(249, 115, 22, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 0.813rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h1 .highlight {
+      background: linear-gradient(135deg, var(--accent) 0%, #fbbf24 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .hero-buttons .btn {
+      padding: 14px 28px;
+      font-size: 1rem;
+    }
+
+    /* Stats */
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-top: 80px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    /* Code preview */
+    .code-preview {
+      margin-top: 80px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .code-dot.red { background: #ef4444; }
+    .code-dot.yellow { background: #eab308; }
+    .code-dot.green { background: #22c55e; }
+
+    .code-content {
+      padding: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    .code-content .comment { color: #6b7280; }
+    .code-content .keyword { color: #c084fc; }
+    .code-content .string { color: #4ade80; }
+    .code-content .function { color: #60a5fa; }
+    .code-content .variable { color: #fbbf24; }
+
+    /* Section */
+    section {
+      padding: 100px 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    .section-header h2 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .section-header p {
+      color: var(--text-secondary);
+      font-size: 1.125rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      transition: border-color 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--accent);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--bg-tertiary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 0.938rem;
+    }
+
+    /* Use cases */
+    .use-cases {
+      background: var(--bg-secondary);
+    }
+
+    .use-cases-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .use-case {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    .use-case-icon {
+      font-size: 2rem;
+      margin-bottom: 16px;
+    }
+
+    .use-case h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .use-case p {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    /* Comparison */
+    .comparison-table {
+      overflow-x: auto;
+    }
+
+    .comparison-table table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+      padding: 16px 24px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .comparison-table th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+
+    .comparison-table td {
+      font-size: 0.938rem;
+    }
+
+    .comparison-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .comparison-table .highlight-col {
+      background: rgba(249, 115, 22, 0.1);
+    }
+
+    .check { color: var(--green); }
+    .cross { color: #ef4444; }
+
+    /* Pricing */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .pricing-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      position: relative;
+    }
+
+    .pricing-card.popular {
+      border-color: var(--accent);
+    }
+
+    .popular-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: white;
+      padding: 4px 16px;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .pricing-card h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .pricing-card .price {
+      font-size: 3rem;
+      font-weight: 800;
+      margin: 16px 0;
+    }
+
+    .pricing-card .price span {
+      font-size: 1rem;
+      font-weight: 400;
+      color: var(--text-secondary);
+    }
+
+    .pricing-card .description {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      margin-bottom: 24px;
+    }
+
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 32px;
+    }
+
+    .pricing-features li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+      font-size: 0.938rem;
+      color: var(--text-secondary);
+    }
+
+    .pricing-features li::before {
+      content: '✓';
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .pricing-card .btn {
+      width: 100%;
+    }
+
+    /* Waitlist */
+    .waitlist {
+      background: linear-gradient(180deg, var(--bg) 0%, var(--bg-secondary) 100%);
+      text-align: center;
+    }
+
+    .waitlist-form {
+      display: flex;
+      gap: 12px;
+      max-width: 500px;
+      margin: 40px auto 0;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .waitlist-form input {
+      flex: 1;
+      min-width: 250px;
+      padding: 14px 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .waitlist-form input:focus {
+      border-color: var(--accent);
+    }
+
+    .waitlist-form input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .waitlist-form .btn {
+      padding: 14px 32px;
+    }
+
+    /* FAQ */
+    .faq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 24px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    .faq-item h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .faq-item p {
+      color: var(--text-secondary);
+      font-size: 0.938rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 48px 0;
+    }
+
+    footer .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--text);
+    }
+
+    .footer-copy {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        padding: 120px 0 60px;
+      }
+
+      .stats {
+        gap: 32px;
+      }
+
+      .faq-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .comparison-table th,
+      .comparison-table td {
+        padding: 12px 16px;
+        font-size: 0.813rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav>
+    <div class="container">
+      <a href="#" class="logo">
+        <span>⚡</span> flashQ
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="#waitlist" class="btn btn-primary">Get Early Access</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Now in beta — 50+ teams on waitlist
+      </div>
+      <h1>
+        AI Background Jobs<br>
+        <span class="highlight">Without Redis</span>
+      </h1>
+      <p>
+        BullMQ-compatible API. 10x faster. Zero ops.<br>
+        The simplest way to run LLM pipelines, RAG workflows, and batch inference.
+      </p>
+      <div class="hero-buttons">
+        <a href="#waitlist" class="btn btn-primary">Get Early Access</a>
+        <a href="https://github.com/egeominotti/flashq" class="btn btn-secondary" target="_blank">
+          View on GitHub
+        </a>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-value">10x</div>
+          <div class="stat-label">Faster than BullMQ</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">0</div>
+          <div class="stat-label">Redis to manage</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">10MB</div>
+          <div class="stat-label">Max payload size</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">300K</div>
+          <div class="stat-label">Jobs/sec throughput</div>
+        </div>
+      </div>
+
+      <!-- Code Preview -->
+      <div class="code-preview">
+        <div class="code-header">
+          <div class="code-dot red"></div>
+          <div class="code-dot yellow"></div>
+          <div class="code-dot green"></div>
+        </div>
+        <div class="code-content">
+<span class="comment">// Same BullMQ API you already know</span>
+<span class="keyword">import</span> { Queue, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'ai-pipeline'</span>);
+
+<span class="comment">// Push job with dependencies</span>
+<span class="keyword">const</span> <span class="variable">embed</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'embed'</span>, { text });
+<span class="keyword">const</span> <span class="variable">generate</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'generate'</span>, { prompt }, {
+  <span class="variable">depends_on</span>: [embed.id]
+});
+
+<span class="comment">// Wait for result</span>
+<span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> queue.<span class="function">finished</span>(generate.id);
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header">
+        <h2>Built for AI Workloads</h2>
+        <p>Everything you need to run production AI pipelines, without the infrastructure headache.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🔗</div>
+          <h3>Job Dependencies</h3>
+          <p>Chain jobs with depends_on. Perfect for RAG pipelines: embed → search → generate.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⏱️</div>
+          <h3>Rate Limiting</h3>
+          <p>Control API costs with built-in rate limiting. Never exceed your OpenAI quota again.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>10MB Payloads</h3>
+          <p>Send embeddings, images, and large context windows without workarounds.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Smart Retries</h3>
+          <p>Exponential backoff, configurable attempts, dead letter queue for failed jobs.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Real-time Dashboard</h3>
+          <p>Monitor jobs, queues, and throughput with the built-in dashboard.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🚀</div>
+          <h3>BullMQ Compatible</h3>
+          <p>Same API you already know. Migrate from BullMQ in minutes, not days.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="use-cases">
+    <div class="container">
+      <div class="section-header">
+        <h2>Perfect for AI Teams</h2>
+        <p>From indie hackers to production ML pipelines.</p>
+      </div>
+
+      <div class="use-cases-grid">
+        <div class="use-case">
+          <div class="use-case-icon">🤖</div>
+          <h3>LLM API Calls</h3>
+          <p>Rate limit OpenAI/Anthropic calls. Retry on 429s. Track costs per job.</p>
+        </div>
+        <div class="use-case">
+          <div class="use-case-icon">🔍</div>
+          <h3>RAG Pipelines</h3>
+          <p>Chain embed → search → generate with job dependencies. Get results synchronously.</p>
+        </div>
+        <div class="use-case">
+          <div class="use-case-icon">🧠</div>
+          <h3>AI Agents</h3>
+          <p>Orchestrate multi-step agent workflows. Handle tool calls and reasoning loops.</p>
+        </div>
+        <div class="use-case">
+          <div class="use-case-icon">📈</div>
+          <h3>Batch Inference</h3>
+          <p>Process millions of predictions. 300K jobs/sec throughput. Progress tracking.</p>
+        </div>
+        <div class="use-case">
+          <div class="use-case-icon">🎨</div>
+          <h3>Image Generation</h3>
+          <p>Queue Stable Diffusion jobs. Large payloads for images. Webhook on completion.</p>
+        </div>
+        <div class="use-case">
+          <div class="use-case-icon">📄</div>
+          <h3>Document Processing</h3>
+          <p>Parse PDFs, extract text, generate summaries. Handle long-running jobs.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison -->
+  <section>
+    <div class="container">
+      <div class="section-header">
+        <h2>Why flashQ?</h2>
+        <p>See how we compare to the alternatives.</p>
+      </div>
+
+      <div class="comparison-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th class="highlight-col">flashQ Cloud</th>
+              <th>BullMQ + Redis</th>
+              <th>Inngest</th>
+              <th>AWS SQS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>BullMQ-compatible API</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>No Redis required</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+            </tr>
+            <tr>
+              <td>Job dependencies</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Priority queues</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Rate limiting</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Max payload</td>
+              <td class="highlight-col"><strong>10 MB</strong></td>
+              <td>512 MB</td>
+              <td>4 MB</td>
+              <td>256 KB</td>
+            </tr>
+            <tr>
+              <td>Throughput</td>
+              <td class="highlight-col"><strong>300K/sec</strong></td>
+              <td>30K/sec</td>
+              <td>~10K/sec</td>
+              <td>~3K/sec</td>
+            </tr>
+            <tr>
+              <td>Self-host option</td>
+              <td class="highlight-col"><span class="check">✓</span></td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing">
+    <div class="container">
+      <div class="section-header">
+        <h2>Simple, Predictable Pricing</h2>
+        <p>Start free. Scale as you grow.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <h3>Free</h3>
+          <div class="price">$0<span>/mo</span></div>
+          <p class="description">Perfect for side projects and prototypes.</p>
+          <ul class="pricing-features">
+            <li>1,000 jobs/day</li>
+            <li>1 queue</li>
+            <li>7 days retention</li>
+            <li>Community support</li>
+          </ul>
+          <a href="#waitlist" class="btn btn-secondary">Start Free</a>
+        </div>
+
+        <div class="pricing-card popular">
+          <span class="popular-badge">Most Popular</span>
+          <h3>Pro</h3>
+          <div class="price">$49<span>/mo</span></div>
+          <p class="description">For growing teams shipping AI products.</p>
+          <ul class="pricing-features">
+            <li>1M jobs/month</li>
+            <li>Unlimited queues</li>
+            <li>30 days retention</li>
+            <li>Dashboard access</li>
+            <li>Priority support</li>
+            <li>99.9% SLA</li>
+          </ul>
+          <a href="#waitlist" class="btn btn-primary">Get Started</a>
+        </div>
+
+        <div class="pricing-card">
+          <h3>Scale</h3>
+          <div class="price">$199<span>/mo</span></div>
+          <p class="description">For high-volume production workloads.</p>
+          <ul class="pricing-features">
+            <li>10M jobs/month</li>
+            <li>Unlimited queues</li>
+            <li>90 days retention</li>
+            <li>Dedicated support</li>
+            <li>Custom SLA</li>
+            <li>SSO/SAML</li>
+          </ul>
+          <a href="#waitlist" class="btn btn-secondary">Contact Sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Waitlist -->
+  <section id="waitlist" class="waitlist">
+    <div class="container">
+      <div class="section-header">
+        <h2>Get Early Access</h2>
+        <p>Join 50+ teams on the waitlist. Be the first to try flashQ Cloud.</p>
+      </div>
+
+      <form class="waitlist-form" action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+        <input type="email" name="email" placeholder="you@company.com" required>
+        <button type="submit" class="btn btn-primary">Join Waitlist</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section>
+    <div class="container">
+      <div class="section-header">
+        <h2>Frequently Asked Questions</h2>
+      </div>
+
+      <div class="faq-grid">
+        <div class="faq-item">
+          <h3>Can I migrate from BullMQ?</h3>
+          <p>Yes! flashQ uses the same API as BullMQ. Just change your import from 'bullmq' to 'flashq' and you're done.</p>
+        </div>
+        <div class="faq-item">
+          <h3>Is there a self-hosted option?</h3>
+          <p>Yes. flashQ is open source and available on GitHub. You can self-host with Docker or download the binary.</p>
+        </div>
+        <div class="faq-item">
+          <h3>What about data persistence?</h3>
+          <p>flashQ Cloud uses PostgreSQL for persistence with automatic backups. Self-hosted supports both in-memory and PostgreSQL.</p>
+        </div>
+        <div class="faq-item">
+          <h3>How does pricing work?</h3>
+          <p>You pay a flat monthly fee based on your job volume. No hidden fees, no per-request charges, no surprises.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <a href="#" class="logo">
+        <span>⚡</span> flashQ
+      </a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="https://github.com/egeominotti/flashq/blob/main/README.md" target="_blank">Docs</a>
+        <a href="mailto:hello@flashq.dev">Contact</a>
+      </div>
+      <div class="footer-copy">
+        © 2025 flashQ. MIT License.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Form submission
+    const form = document.querySelector('.waitlist-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = form.querySelector('input[type="email"]').value;
+      const btn = form.querySelector('button');
+
+      btn.textContent = 'Joining...';
+      btn.disabled = true;
+
+      // Simulate API call (replace with actual endpoint)
+      await new Promise(r => setTimeout(r, 1000));
+
+      btn.textContent = 'You\'re on the list!';
+      btn.style.background = '#22c55e';
+
+      // Store email locally for now
+      console.log('Waitlist signup:', email);
+    });
+  </script>
+</body>
+</html>
