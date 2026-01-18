@@ -287,6 +287,7 @@ impl QueueManager {
     /// Pull jobs from queue without waiting (non-blocking version of pull_batch).
     /// Returns immediately with whatever jobs are available (may be empty).
     /// Used primarily for testing and situations where blocking is not desired.
+    #[allow(dead_code)]
     pub async fn pull_batch_nowait(&self, queue_name: &str, count: usize) -> Vec<Job> {
         let idx = Self::shard_index(queue_name);
         let queue_arc = intern(queue_name);

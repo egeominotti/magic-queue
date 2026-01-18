@@ -13,6 +13,7 @@ fn default_log_level() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "UPPERCASE")]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     // === Core Commands ===
     Push {
