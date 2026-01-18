@@ -182,14 +182,18 @@ export async function getJobsBatch(
   client: IFlashQClient,
   jobIds: number[]
 ): Promise<JobWithState[]> {
+  // Server uses #[serde(flatten)] so job fields are at the top level with state
   const response = await client.send<{
     ok: boolean;
-    jobs: Array<{ job: Job; state: JobState }>;
+    jobs: Array<Job & { state: JobState }>;
   }>({
     cmd: 'GETJOBSBATCH',
     ids: jobIds,
   });
-  return response.jobs.map((j) => ({ job: j.job, state: j.state }));
+  return response.jobs.map((j) => {
+    const { state, ...job } = j;
+    return { job: job as Job, state };
+  });
 }
 
 /**

@@ -102,6 +102,11 @@ export class FlashQConnection extends EventEmitter {
       reconnectDelay: options.reconnectDelay ?? 1000,
       maxReconnectDelay: options.maxReconnectDelay ?? 30000,
     };
+
+    // HTTP is stateless, so we're always "connected"
+    if (this._options.useHttp) {
+      this.connectionState = 'connected';
+    }
   }
 
   /** Get client options (read-only) */

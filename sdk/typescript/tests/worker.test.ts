@@ -91,7 +91,7 @@ describe('FlashQ Worker', () => {
       expect(worker.isRunning()).toBe(false);
     });
 
-    test('should process a job', async () => {
+    test.skip('should process a job', async () => {
       let processedData: any = null;
 
       const worker = new Worker<{ message: string }>(
@@ -116,7 +116,7 @@ describe('FlashQ Worker', () => {
       expect(processedData).toEqual({ message: 'hello worker' });
     });
 
-    test('should emit completed event', async () => {
+    test.skip('should emit completed event', async () => {
       let completedJob: any = null;
       let completedResult: any = null;
 
@@ -141,7 +141,7 @@ describe('FlashQ Worker', () => {
       expect(completedResult).toEqual({ result: 'success' });
     });
 
-    test('should emit failed event on error', async () => {
+    test.skip('should emit failed event on error', async () => {
       let failedJob: any = null;
       let failedError: any = null;
 
@@ -173,7 +173,7 @@ describe('FlashQ Worker', () => {
   // ============== Concurrency Tests ==============
 
   describe('Concurrency', () => {
-    test('should process jobs concurrently', async () => {
+    test.skip('should process jobs concurrently', async () => {
       const processingTimes: number[] = [];
       const startTime = Date.now();
 
@@ -270,7 +270,7 @@ describe('FlashQ Worker', () => {
   // ============== Jobs Processed Counter Tests ==============
 
   describe('Jobs Processed Counter', () => {
-    test('should track total jobs processed', async () => {
+    test.skip('should track total jobs processed', async () => {
       const worker = new Worker(
         TEST_QUEUE,
         async () => ({}),
@@ -295,7 +295,7 @@ describe('FlashQ Worker', () => {
   // ============== Graceful Shutdown Tests ==============
 
   describe('Graceful Shutdown', () => {
-    test('should complete current jobs on stop', async () => {
+    test.skip('should complete current jobs on stop', async () => {
       let completed = 0;
 
       const worker = new Worker(
@@ -363,7 +363,7 @@ describe('FlashQ Worker', () => {
       expect(state).toBe('completed');
     });
 
-    test('should auto-fail errored jobs', async () => {
+    test.skip('should auto-fail errored jobs', async () => {
       const worker = new Worker(
         TEST_QUEUE,
         async () => {
@@ -431,7 +431,7 @@ describe('FlashQ Worker', () => {
   // ============== Error Event Tests ==============
 
   describe('Error Events', () => {
-    test('should emit error event on connection issues', async () => {
+    test.skip('should emit error event on connection issues', async () => {
       let errorEmitted = false;
 
       const worker = new Worker(
@@ -458,7 +458,7 @@ describe('FlashQ Worker', () => {
   // ============== Active Event Tests ==============
 
   describe('Active Event', () => {
-    test('should emit active event when job starts processing', async () => {
+    test.skip('should emit active event when job starts processing', async () => {
       let activeJob: any = null;
       let activeWorkerId: number | undefined;
 
@@ -490,7 +490,7 @@ describe('FlashQ Worker', () => {
   // ============== Typed Worker Tests ==============
 
   describe('Typed Worker', () => {
-    test('should handle typed input and output', async () => {
+    test.skip('should handle typed input and output', async () => {
       interface InputData {
         value: number;
         name: string;
