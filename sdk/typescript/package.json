@@ -1,6 +1,6 @@
 {
   "name": "flashq",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Official TypeScript SDK for flashQ - High-Performance Job Queue (BullMQ-compatible API)",
   "author": "Ege Ominotti",
   "license": "MIT",

@@ -254,14 +254,16 @@ export class Worker<T = unknown, R = unknown> extends EventEmitter {
             })
           );
 
-          // Batch ack successful jobs - THEN emit completed
+          // Ack successful jobs with results - THEN emit completed
           if (this.options.autoAck && successJobs.length > 0) {
-            await client.ackBatch(successJobs.map((j) => j.job.id));
-            // Emit completed AFTER ack succeeds
-            for (const { job, result } of successJobs) {
-              this.jobsProcessed++;
-              this.emit('completed', job, result, workerId);
-            }
+            // Use individual ack() to preserve results for finished() promise
+            await Promise.all(
+              successJobs.map(async ({ job, result }) => {
+                await client.ack(job.id, result);
+                this.jobsProcessed++;
+                this.emit('completed', job, result, workerId);
+              })
+            );
           } else if (!this.options.autoAck && successJobs.length > 0) {
             // If autoAck is disabled, emit completed after processing
             for (const { job, result } of successJobs) {

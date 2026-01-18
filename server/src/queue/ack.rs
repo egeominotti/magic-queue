@@ -115,6 +115,10 @@ impl QueueManager {
                 }
                 self.completed_jobs.write().insert(id);
                 self.index_job(id, JobLocation::Completed);
+
+                // Notify any waiters (finished() promise) - no result for batch ack
+                self.notify_job_waiters(id, None);
+
                 acked += 1;
             }
         }
