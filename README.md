@@ -39,7 +39,7 @@ Same API. Single binary. 10x faster. Built with Rust.
 | **Backend** | postgres | redis | redis | redis | redis | redis | mongo |
 | Observables | ✓ | ✓ | | | | | |
 | Group Rate Limit | | ✓ | | | | | |
-| Group Support | | ✓ | | | | | |
+| Group Support | ✓ | ✓ | | | | | |
 | Batches Support | ✓ | ✓ | | | | | |
 | Parent/Child Dependencies | ✓ | ✓ | ✓ | | | | |
 | Deduplication (Debouncing) | ✓ | ✓ | ✓ | ✓ | | | |
