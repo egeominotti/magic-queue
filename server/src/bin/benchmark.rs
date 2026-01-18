@@ -329,7 +329,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Benchmark 8: KV Pipelining (send all, then read all)
     // ═══════════════════════════════════════════════════════════════
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("Benchmark 8: KV Pipelining SET ({} commands)", BENCHMARK_JOBS);
+    println!(
+        "Benchmark 8: KV Pipelining SET ({} commands)",
+        BENCHMARK_JOBS
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let start = Instant::now();
@@ -363,7 +366,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Benchmark 9: KV INCR (Atomic Counter)
     // ═══════════════════════════════════════════════════════════════
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("Benchmark 9: KV INCR Atomic Counter ({} ops)", BENCHMARK_JOBS);
+    println!(
+        "Benchmark 9: KV INCR Atomic Counter ({} ops)",
+        BENCHMARK_JOBS
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let start = Instant::now();

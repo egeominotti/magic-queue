@@ -203,7 +203,10 @@ mod tests {
     /// Test create_cors_layer function with specific origins
     #[test]
     fn test_create_cors_layer_with_origins() {
-        std::env::set_var("CORS_ALLOW_ORIGIN", "http://localhost:3000,http://example.com");
+        std::env::set_var(
+            "CORS_ALLOW_ORIGIN",
+            "http://localhost:3000,http://example.com",
+        );
         let _ = create_cors_layer();
         std::env::remove_var("CORS_ALLOW_ORIGIN");
     }

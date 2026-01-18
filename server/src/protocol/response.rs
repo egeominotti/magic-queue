@@ -403,7 +403,10 @@ impl Response {
     // === Pub/Sub Response Helpers ===
     #[inline(always)]
     pub fn pub_count(receivers: usize) -> Self {
-        Response::PubCount { ok: true, receivers }
+        Response::PubCount {
+            ok: true,
+            receivers,
+        }
     }
 
     #[inline(always)]

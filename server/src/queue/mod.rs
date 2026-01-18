@@ -58,8 +58,8 @@ mod flows;
 mod job_ops;
 mod kv;
 mod logs;
-mod pubsub;
 mod monitoring;
+mod pubsub;
 mod queue_control;
 mod rate_limit;
 

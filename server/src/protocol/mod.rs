@@ -159,7 +159,9 @@ mod tests {
         let invalid = vec![0xFF, 0xFF, 0xFF];
         let result: Result<Request, _> = deserialize_msgpack(&invalid);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("MessagePack deserialize error"));
+        assert!(result
+            .unwrap_err()
+            .contains("MessagePack deserialize error"));
     }
 
     // ============== ID Generator Tests ==============
@@ -274,8 +276,7 @@ mod tests {
 
     #[test]
     fn test_job_builder_basic() {
-        let job = JobBuilder::new("test-queue", json!({"task": "process"}))
-            .build(1, 1000);
+        let job = JobBuilder::new("test-queue", json!({"task": "process"})).build(1, 1000);
 
         assert_eq!(job.id, 1);
         assert_eq!(job.queue, "test-queue");
@@ -360,8 +361,7 @@ mod tests {
 
     #[test]
     fn test_job_builder_with_auto_id() {
-        let job = JobBuilder::new("queue", json!({}))
-            .build_with_auto_id(1000);
+        let job = JobBuilder::new("queue", json!({})).build_with_auto_id(1000);
 
         assert!(job.id > 0);
     }

@@ -67,7 +67,8 @@ async fn test_kv_set_with_ttl() {
     let qm = setup();
 
     // Set with 100ms TTL
-    qm.kv_set("key1".to_string(), json!("value"), Some(100)).unwrap();
+    qm.kv_set("key1".to_string(), json!("value"), Some(100))
+        .unwrap();
 
     // Should exist immediately
     assert!(qm.kv_exists("key1"));
@@ -115,7 +116,8 @@ async fn test_kv_ttl() {
     assert_eq!(qm.kv_ttl("key1"), -1);
 
     // Key with TTL returns remaining time
-    qm.kv_set("key2".to_string(), json!("value"), Some(5000)).unwrap();
+    qm.kv_set("key2".to_string(), json!("value"), Some(5000))
+        .unwrap();
     let ttl = qm.kv_ttl("key2");
     assert!(ttl > 0 && ttl <= 5000);
 }
@@ -126,10 +128,16 @@ async fn test_kv_ttl() {
 async fn test_kv_mget() {
     let qm = setup();
 
-    qm.kv_set("key1".to_string(), json!("value1"), None).unwrap();
-    qm.kv_set("key2".to_string(), json!("value2"), None).unwrap();
+    qm.kv_set("key1".to_string(), json!("value1"), None)
+        .unwrap();
+    qm.kv_set("key2".to_string(), json!("value2"), None)
+        .unwrap();
 
-    let values = qm.kv_mget(&["key1".to_string(), "nonexistent".to_string(), "key2".to_string()]);
+    let values = qm.kv_mget(&[
+        "key1".to_string(),
+        "nonexistent".to_string(),
+        "key2".to_string(),
+    ]);
 
     assert_eq!(values.len(), 3);
     assert_eq!(values[0], Some(json!("value1")));
@@ -163,7 +171,8 @@ async fn test_kv_keys_all() {
 
     qm.kv_set("user:1".to_string(), json!("a"), None).unwrap();
     qm.kv_set("user:2".to_string(), json!("b"), None).unwrap();
-    qm.kv_set("session:1".to_string(), json!("c"), None).unwrap();
+    qm.kv_set("session:1".to_string(), json!("c"), None)
+        .unwrap();
 
     let keys = qm.kv_keys(None);
     assert_eq!(keys.len(), 3);
@@ -175,7 +184,8 @@ async fn test_kv_keys_pattern_star() {
 
     qm.kv_set("user:1".to_string(), json!("a"), None).unwrap();
     qm.kv_set("user:2".to_string(), json!("b"), None).unwrap();
-    qm.kv_set("session:1".to_string(), json!("c"), None).unwrap();
+    qm.kv_set("session:1".to_string(), json!("c"), None)
+        .unwrap();
 
     let keys = qm.kv_keys(Some("user:*"));
     assert_eq!(keys.len(), 2);
@@ -229,7 +239,8 @@ async fn test_kv_incr_existing() {
 async fn test_kv_incr_non_numeric() {
     let qm = setup();
 
-    qm.kv_set("key".to_string(), json!("not a number"), None).unwrap();
+    qm.kv_set("key".to_string(), json!("not a number"), None)
+        .unwrap();
 
     let result = qm.kv_incr("key", 1);
     assert!(result.is_err());
@@ -317,11 +328,13 @@ async fn test_kv_different_value_types() {
     assert_eq!(qm.kv_get("null"), Some(json!(null)));
 
     // Array
-    qm.kv_set("arr".to_string(), json!([1, 2, 3]), None).unwrap();
+    qm.kv_set("arr".to_string(), json!([1, 2, 3]), None)
+        .unwrap();
     assert_eq!(qm.kv_get("arr"), Some(json!([1, 2, 3])));
 
     // Object
-    qm.kv_set("obj".to_string(), json!({"a": 1, "b": 2}), None).unwrap();
+    qm.kv_set("obj".to_string(), json!({"a": 1, "b": 2}), None)
+        .unwrap();
     assert_eq!(qm.kv_get("obj"), Some(json!({"a": 1, "b": 2})));
 }
 
@@ -343,7 +356,8 @@ async fn test_kv_overwrite_changes_ttl() {
     let qm = setup();
 
     // Set with TTL
-    qm.kv_set("key".to_string(), json!("v1"), Some(5000)).unwrap();
+    qm.kv_set("key".to_string(), json!("v1"), Some(5000))
+        .unwrap();
     assert!(qm.kv_ttl("key") > 0);
 
     // Overwrite without TTL

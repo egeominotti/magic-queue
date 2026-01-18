@@ -66,7 +66,11 @@ impl QueueManager {
             return Err("Key cannot be empty".into());
         }
         if key.len() > MAX_KEY_LENGTH {
-            return Err(format!("Key too long ({} > {} bytes)", key.len(), MAX_KEY_LENGTH));
+            return Err(format!(
+                "Key too long ({} > {} bytes)",
+                key.len(),
+                MAX_KEY_LENGTH
+            ));
         }
 
         // Validate value size (rough estimate)
@@ -185,7 +189,13 @@ impl QueueManager {
 
         self.kv_store
             .iter()
-            .filter(|entry| !entry.value().expires_at.map(|exp| now > exp).unwrap_or(false))
+            .filter(|entry| {
+                !entry
+                    .value()
+                    .expires_at
+                    .map(|exp| now > exp)
+                    .unwrap_or(false)
+            })
             .filter(|entry| match pattern {
                 Some(p) => glob_match(p, entry.key()),
                 None => true,
@@ -231,9 +241,8 @@ impl QueueManager {
     /// Called by background task
     pub(crate) fn cleanup_expired_kv(&self) {
         let now = now_ms();
-        self.kv_store.retain(|_, entry| {
-            !entry.expires_at.map(|exp| now > exp).unwrap_or(false)
-        });
+        self.kv_store
+            .retain(|_, entry| !entry.expires_at.map(|exp| now > exp).unwrap_or(false));
     }
 
     /// Get KV store statistics
@@ -241,7 +250,8 @@ impl QueueManager {
     pub fn kv_stats(&self) -> (usize, usize) {
         let now = now_ms();
         let total = self.kv_store.len();
-        let with_ttl = self.kv_store
+        let with_ttl = self
+            .kv_store
             .iter()
             .filter(|e| {
                 e.value().expires_at.is_some()

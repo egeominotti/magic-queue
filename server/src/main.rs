@@ -113,13 +113,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(DEFAULT_HTTP_PORT as i32);
 
     // Create QueueManager with optional PostgreSQL persistence and clustering
-    let queue_manager = create_queue_manager(
-        enable_cluster,
-        &database_url,
-        &auth_tokens,
-        http_port,
-    )
-    .await;
+    let queue_manager =
+        create_queue_manager(enable_cluster, &database_url, &auth_tokens, http_port).await;
 
     // Start HTTP server if enabled
     if enable_http {
@@ -250,7 +245,10 @@ async fn run_tcp_server(
     if use_unix {
         let _ = std::fs::remove_file(UNIX_SOCKET_PATH);
         let listener = UnixListener::bind(UNIX_SOCKET_PATH)?;
-        info!(socket = UNIX_SOCKET_PATH, "flashQ TCP server listening (Unix socket)");
+        info!(
+            socket = UNIX_SOCKET_PATH,
+            "flashQ TCP server listening (Unix socket)"
+        );
 
         loop {
             tokio::select! {

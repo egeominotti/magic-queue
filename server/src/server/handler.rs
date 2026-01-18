@@ -550,9 +550,7 @@ async fn process_command(
             // For now this is a no-op acknowledgement
             Response::pub_subscribed(channels)
         }
-        Command::Punsub { patterns } => {
-            Response::pub_subscribed(patterns)
-        }
+        Command::Punsub { patterns } => Response::pub_subscribed(patterns),
         Command::PubsubChannels { pattern } => {
             let channels = queue_manager.pubsub.channels(pattern.as_deref());
             Response::pub_channels(channels)

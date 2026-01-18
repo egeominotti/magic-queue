@@ -153,11 +153,7 @@ impl PubSub {
         self.channels
             .iter()
             .filter(|entry| !entry.value().is_empty())
-            .filter(|entry| {
-                pattern
-                    .map(|p| glob_match(p, entry.key()))
-                    .unwrap_or(true)
-            })
+            .filter(|entry| pattern.map(|p| glob_match(p, entry.key())).unwrap_or(true))
             .map(|entry| entry.key().clone())
             .collect()
     }
@@ -167,11 +163,7 @@ impl PubSub {
         channels
             .iter()
             .map(|channel| {
-                let count = self
-                    .channels
-                    .get(channel)
-                    .map(|s| s.len())
-                    .unwrap_or(0);
+                let count = self.channels.get(channel).map(|s| s.len()).unwrap_or(0);
                 (channel.clone(), count)
             })
             .collect()
@@ -262,11 +254,18 @@ mod tests {
         let _rx2 = pubsub.subscribe(vec!["chat".to_string()]);
         let _rx3 = pubsub.subscribe(vec!["alerts".to_string()]);
 
-        let counts = pubsub.numsub(&["chat".to_string(), "alerts".to_string(), "missing".to_string()]);
-        assert_eq!(counts, vec![
-            ("chat".to_string(), 2),
-            ("alerts".to_string(), 1),
-            ("missing".to_string(), 0),
+        let counts = pubsub.numsub(&[
+            "chat".to_string(),
+            "alerts".to_string(),
+            "missing".to_string(),
         ]);
+        assert_eq!(
+            counts,
+            vec![
+                ("chat".to_string(), 2),
+                ("alerts".to_string(), 1),
+                ("missing".to_string(), 0),
+            ]
+        );
     }
 }

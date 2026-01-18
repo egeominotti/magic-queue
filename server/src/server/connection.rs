@@ -363,9 +363,10 @@ mod tests {
 
         // Spawn server handler
         let qm_clone = qm.clone();
-        let server_handle = tokio::spawn(async move {
-            handle_connection(server_reader, server_writer, qm_clone).await
-        });
+        let server_handle =
+            tokio::spawn(
+                async move { handle_connection(server_reader, server_writer, qm_clone).await },
+            );
 
         // Send a command from client
         client_writer
