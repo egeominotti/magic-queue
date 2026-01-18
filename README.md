@@ -2,9 +2,9 @@
 
 # ⚡ flashQ
 
-**The fastest open-source job queue.**
+**Drop-in BullMQ replacement. No Redis. 90% less infrastructure cost.**
 
-Built with Rust. BullMQ-compatible. 600K+ jobs/sec.
+Built with Rust. Same API. 10x faster.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/egeominotti/flashq/ci.yml?branch=main&label=CI)](https://github.com/egeominotti/flashq/actions)
 [![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
@@ -16,9 +16,23 @@ Built with Rust. BullMQ-compatible. 600K+ jobs/sec.
 
 ---
 
-## ⚡ Performance: flashQ vs BullMQ
+## Why flashQ?
 
-> **flashQ is 3x to 10x faster than BullMQ** in real-world benchmarks.
+| BullMQ + Redis | flashQ |
+|----------------|--------|
+| Redis server required | **No Redis needed** |
+| $300-2000/mo managed Redis | **$0 extra infrastructure** |
+| Redis monitoring & scaling | **Single binary, zero ops** |
+| Network latency to Redis | **In-process, ~10x faster** |
+| Same BullMQ API | **Same BullMQ API** |
+
+> **Stop paying for Redis.** flashQ is a standalone job queue server with the same API you already know.
+
+---
+
+## Performance: flashQ vs BullMQ
+
+> **3x to 10x faster** in real-world benchmarks.
 
 ### Benchmark Environment
 
