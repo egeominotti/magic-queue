@@ -53,16 +53,17 @@ const parse = await agent.add('parse', { prompt: userInput });
 
 // Step 2: Retrieve context (waits for step 1)
 const retrieve = await agent.add('retrieve', { query }, {
-  dependencies: [parse.id]
+  depends_on: [parse.id]
 });
 
 // Step 3: Generate response (waits for step 2)
 const generate = await agent.add('generate', { context }, {
-  dependencies: [retrieve.id],
+  depends_on: [retrieve.id],
   priority: 10
 });
 
-const result = await generate.finished();
+// Wait for the final result
+const result = await agent.finished(generate.id);
 ```
 
 ---

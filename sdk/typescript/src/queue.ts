@@ -28,6 +28,10 @@ export interface JobOptions {
   removeOnComplete?: boolean | number;
   /** Remove job on failure */
   removeOnFail?: boolean | number;
+  /** Job IDs that must complete before this job runs */
+  depends_on?: number[];
+  /** Tags for filtering */
+  tags?: string[];
 }
 
 /**
@@ -71,6 +75,8 @@ export class Queue<T = unknown> {
       timeout: opts.timeout,
       ttl: opts.ttl,
       jobId: opts.jobId,
+      depends_on: opts.depends_on,
+      tags: opts.tags,
     };
 
     // Handle backoff (BullMQ uses object, flashQ uses number)
@@ -117,6 +123,13 @@ export class Queue<T = unknown> {
   async getJob(jobId: number): Promise<Job<T> | null> {
     const result = await this.client.getJob(jobId);
     return result?.job as Job<T> | null;
+  }
+
+  /**
+   * Wait for a job to complete and return its result
+   */
+  async finished<R = unknown>(jobId: number, timeout?: number): Promise<R | null> {
+    return this.client.finished<R>(jobId, timeout);
   }
 
   /**
