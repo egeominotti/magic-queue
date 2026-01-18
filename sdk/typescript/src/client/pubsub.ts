@@ -5,6 +5,31 @@
 
 import type { FlashQConnection } from './connection';
 
+// Response types
+interface PubResponse {
+  ok: boolean;
+  receivers: number;
+  error?: string;
+}
+
+interface SubResponse {
+  ok: boolean;
+  channels: string[];
+  error?: string;
+}
+
+interface ChannelsResponse {
+  ok: boolean;
+  channels: string[];
+  error?: string;
+}
+
+interface NumsubResponse {
+  ok: boolean;
+  counts: Array<[string, number]>;
+  error?: string;
+}
+
 /**
  * Publish a message to a channel.
  * @returns Number of subscribers that received the message.
@@ -14,11 +39,11 @@ export async function publish(
   channel: string,
   message: unknown
 ): Promise<number> {
-  const response = await client.send({ cmd: 'PUB', channel, message });
+  const response = await client.send<PubResponse>({ cmd: 'PUB', channel, message });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Publish failed');
+    throw new Error(response.error || 'Publish failed');
   }
-  return (response as { receivers: number }).receivers;
+  return response.receivers;
 }
 
 /**
@@ -29,11 +54,11 @@ export async function subscribe(
   client: FlashQConnection,
   channels: string[]
 ): Promise<string[]> {
-  const response = await client.send({ cmd: 'SUB', channels });
+  const response = await client.send<SubResponse>({ cmd: 'SUB', channels });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Subscribe failed');
+    throw new Error(response.error || 'Subscribe failed');
   }
-  return (response as { channels: string[] }).channels;
+  return response.channels;
 }
 
 /**
@@ -44,11 +69,11 @@ export async function psubscribe(
   client: FlashQConnection,
   patterns: string[]
 ): Promise<string[]> {
-  const response = await client.send({ cmd: 'PSUB', patterns });
+  const response = await client.send<SubResponse>({ cmd: 'PSUB', patterns });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Pattern subscribe failed');
+    throw new Error(response.error || 'Pattern subscribe failed');
   }
-  return (response as { channels: string[] }).channels;
+  return response.channels;
 }
 
 /**
@@ -59,11 +84,11 @@ export async function unsubscribe(
   client: FlashQConnection,
   channels: string[]
 ): Promise<string[]> {
-  const response = await client.send({ cmd: 'UNSUB', channels });
+  const response = await client.send<SubResponse>({ cmd: 'UNSUB', channels });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Unsubscribe failed');
+    throw new Error(response.error || 'Unsubscribe failed');
   }
-  return (response as { channels: string[] }).channels;
+  return response.channels;
 }
 
 /**
@@ -74,11 +99,11 @@ export async function punsubscribe(
   client: FlashQConnection,
   patterns: string[]
 ): Promise<string[]> {
-  const response = await client.send({ cmd: 'PUNSUB', patterns });
+  const response = await client.send<SubResponse>({ cmd: 'PUNSUB', patterns });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Pattern unsubscribe failed');
+    throw new Error(response.error || 'Pattern unsubscribe failed');
   }
-  return (response as { channels: string[] }).channels;
+  return response.channels;
 }
 
 /**
@@ -90,11 +115,11 @@ export async function channels(
   client: FlashQConnection,
   pattern?: string
 ): Promise<string[]> {
-  const response = await client.send({ cmd: 'PUBSUBCHANNELS', pattern });
+  const response = await client.send<ChannelsResponse>({ cmd: 'PUBSUBCHANNELS', pattern });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Channels list failed');
+    throw new Error(response.error || 'Channels list failed');
   }
-  return (response as { channels: string[] }).channels;
+  return response.channels;
 }
 
 /**
@@ -105,9 +130,9 @@ export async function numsub(
   client: FlashQConnection,
   channelNames: string[]
 ): Promise<Array<[string, number]>> {
-  const response = await client.send({ cmd: 'PUBSUBNUMSUB', channels: channelNames });
+  const response = await client.send<NumsubResponse>({ cmd: 'PUBSUBNUMSUB', channels: channelNames });
   if (!response.ok) {
-    throw new Error((response as { error?: string }).error || 'Numsub failed');
+    throw new Error(response.error || 'Numsub failed');
   }
-  return (response as { counts: Array<[string, number]> }).counts;
+  return response.counts;
 }
