@@ -56,6 +56,10 @@ export { Queue } from './queue';
 export { FlashQ, FlashQ as default } from './client';
 export { Worker } from './worker';
 
+// Bun-Optimized API (30% faster with native TCP)
+export { BunFlashQ } from './bun-client';
+export { BunWorker } from './bun-worker';
+
 // Sandboxed Processors
 export { SandboxedWorker, createProcessor } from './sandbox';
 export type { SandboxOptions } from './sandbox';
