@@ -1,24 +1,39 @@
 {
   "name": "flashq",
-  "version": "1.0.0",
-  "description": "Official TypeScript SDK for flashQ - High-Performance Job Queue",
-  "main": "dist/index.js",
-  "module": "src/index.ts",
-  "types": "dist/index.d.ts",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for flashQ - High-Performance Job Queue (BullMQ-compatible API)",
+  "author": "Ege Ominotti",
+  "license": "MIT",
+  "homepage": "https://github.com/egeominotti/flashq",
+  "bugs": {
+    "url": "https://github.com/egeominotti/flashq/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/egeominotti/flashq.git",
+    "directory": "sdk/typescript"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "test:client": "bun test tests/client.test.ts",
-    "test:worker": "bun test tests/worker.test.ts",
-    "test:queue": "bun test tests/queue.test.ts",
-    "test:integration": "bun test tests/integration.test.ts",
-    "example": "bun run examples/01-basic-usage.ts",
-    "simulator": "bun run simulator/serve.ts"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
     "queue",
@@ -26,26 +41,30 @@
     "task-queue",
     "background-jobs",
     "worker",
+    "bullmq",
+    "bullmq-compatible",
     "flashq",
-    "bun"
+    "high-performance",
+    "rust",
+    "bun",
+    "nodejs"
   ],
-  "author": "",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/egeominotti/flashq.git",
-    "directory": "sdk/typescript"
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
   },
-  "optionalDependencies": {
-    "@grpc/grpc-js": "^1.14.3",
-    "@grpc/proto-loader": "^0.8.0"
+  "peerDependencies": {
+    "@grpc/grpc-js": ">=1.9.0",
+    "@grpc/proto-loader": ">=0.7.0"
   },
-  "dependencies": {
-    "@msgpack/msgpack": "^3.0.0",
-    "bullmq": "^5.66.5",
-    "ioredis": "^5.9.2"
+  "peerDependenciesMeta": {
+    "@grpc/grpc-js": {
+      "optional": true
+    },
+    "@grpc/proto-loader": {
+      "optional": true
+    }
   }
 }

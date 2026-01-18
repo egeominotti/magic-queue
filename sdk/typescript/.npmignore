@@ -1,0 +1,26 @@
+# Source (dist is included)
+src/
+
+# Examples and tests
+examples/
+tests/
+simulator/
+
+# Development files
+*.ts
+!*.d.ts
+tsconfig.json
+bun.lock
+bun.lockb
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+dump.rdb
