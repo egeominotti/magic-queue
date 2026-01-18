@@ -2,7 +2,6 @@
 /engine/target/
 /target/
 **/*.rs.bk
-Cargo.lock
 *.rlib
 *.rmeta
 
