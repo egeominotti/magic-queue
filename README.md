@@ -2,9 +2,9 @@
 
 # ⚡ flashQ
 
-**Drop-in BullMQ replacement. No Redis. 90% less infrastructure cost.**
+**Drop-in BullMQ replacement. No Redis required.**
 
-Built with Rust. Same API. 10x faster.
+Same API. Single binary. 10x faster. Built with Rust.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/egeominotti/flashq/ci.yml?branch=main&label=CI)](https://github.com/egeominotti/flashq/actions)
 [![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
@@ -18,15 +18,15 @@ Built with Rust. Same API. 10x faster.
 
 ## Why flashQ?
 
-| BullMQ + Redis | flashQ |
-|----------------|--------|
-| Redis server required | **No Redis needed** |
-| $300-2000/mo managed Redis | **$0 extra infrastructure** |
-| Redis monitoring & scaling | **Single binary, zero ops** |
-| Network latency to Redis | **In-process, ~10x faster** |
-| Same BullMQ API | **Same BullMQ API** |
+| | BullMQ + Redis | flashQ |
+|-|----------------|--------|
+| **Dependencies** | Redis server required | No external dependencies |
+| **Operations** | Redis monitoring, scaling, backups | Single binary, zero ops |
+| **Performance** | Network roundtrip to Redis | Direct TCP, 10x faster |
+| **API** | BullMQ API | Same BullMQ API |
+| **Persistence** | Redis RDB/AOF | Optional PostgreSQL |
 
-> **Stop paying for Redis.** flashQ is a standalone job queue server with the same API you already know.
+> **No Redis? No problem.** flashQ is a standalone job queue with the API you already know.
 
 ---
 
