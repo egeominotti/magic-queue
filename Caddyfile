@@ -1,7 +1,0 @@
-:8080 {
-    reverse_proxy flashq-node1:6790 flashq-node2:6790 flashq-node3:6790 {
-        lb_policy least_conn
-        health_uri /health
-        health_interval 5s
-    }
-}
