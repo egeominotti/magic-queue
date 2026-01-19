@@ -209,7 +209,9 @@ nav .container {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--accent) 0%, #dc2626 100%);
-  color: white;
+  color: #ffffff !important;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow:
     0 0 20px var(--accent-glow),
     0 4px 20px rgba(0, 0, 0, 0.3);
