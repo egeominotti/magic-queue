@@ -21,6 +21,7 @@
   <meta name="twitter:image" content="https://flashq.dev/og-image.png">
 
   <link rel="canonical" href="https://flashq.dev/blog/">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -40,6 +41,11 @@
         <a href="../blog/" class="active">Blog</a>
         <a href="../docs/">Docs</a>
         <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          Search
+          <span class="kbd">⌘K</span>
+        </button>
         <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
       </div>
       <button class="mobile-menu-btn" aria-label="Menu">
@@ -62,6 +68,12 @@
     <div class="container">
       <h1>Blog</h1>
       <p>Tutorials, guides, and insights about job queues, AI pipelines, and background processing.</p>
+      <div class="blog-header-meta">
+        <a href="feed.xml" class="rss-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/></svg>
+          RSS Feed
+        </a>
+      </div>
     </div>
   </header>
 
@@ -198,6 +210,22 @@
     </div>
   </footer>
 
+  <!-- Search Modal -->
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search articles and docs..." autofocus>
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="search-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+        <span><kbd>Enter</kbd> to select</span>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Mobile menu toggle
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
@@ -217,6 +245,105 @@
         mobileMenu.classList.remove('active');
         document.body.style.overflow = '';
       });
+    });
+
+    // Search functionality
+    const searchData = [
+      { title: "flashQ in Action: Live Demo", url: "flashq-in-action.html", description: "Interactive walkthrough of all flashQ features", tag: "Tutorial" },
+      { title: "flashQ Architecture", url: "flashq-architecture.html", description: "Deep dive into flashQ's 1.9M jobs/sec design", tag: "Deep Dive" },
+      { title: "Rate Limiting OpenAI", url: "rate-limiting-openai.html", description: "How to rate limit AI API calls with flashQ", tag: "Tutorial" },
+      { title: "Job Queue Patterns", url: "job-queue-patterns.html", description: "Essential patterns for AI applications", tag: "Best Practices" },
+      { title: "Building AI Pipelines", url: "building-ai-pipelines.html", description: "Complete guide to RAG and LLM workflows", tag: "Tutorial" },
+      { title: "flashQ vs BullMQ", url: "flashq-vs-bullmq.html", description: "Why we built a Redis-free alternative", tag: "Comparison" },
+      { title: "Monitoring AI Pipelines", url: "monitoring-ai-pipelines.html", description: "Metrics, alerts, and dashboards setup", tag: "Tutorial" },
+      { title: "What is flashQ?", url: "what-is-flashq.html", description: "Introduction to flashQ job queue", tag: "Introduction" },
+      { title: "Documentation", url: "../docs/", description: "Complete API reference and guides", tag: "Docs" },
+      { title: "Quick Start", url: "../docs/#quickstart", description: "Get started with flashQ in 5 minutes", tag: "Docs" },
+      { title: "Queue API", url: "../docs/#queue-api", description: "Queue class methods and options", tag: "Docs" },
+      { title: "Worker API", url: "../docs/#worker-api", description: "Worker class for processing jobs", tag: "Docs" },
+      { title: "Rate Limiting", url: "../docs/#rate-limiting", description: "Control API request throughput", tag: "Docs" },
+      { title: "Job Dependencies", url: "../docs/#job-dependencies", description: "Chain jobs with depends_on", tag: "Docs" }
+    ];
+
+    let selectedIndex = 0;
+
+    function openSearch() {
+      document.getElementById('searchOverlay').classList.add('active');
+      document.getElementById('searchInput').focus();
+      document.body.style.overflow = 'hidden';
+      renderResults('');
+    }
+
+    function closeSearch(e) {
+      if (e && e.target !== document.getElementById('searchOverlay')) return;
+      document.getElementById('searchOverlay').classList.remove('active');
+      document.getElementById('searchInput').value = '';
+      document.body.style.overflow = '';
+    }
+
+    function renderResults(query) {
+      const results = query
+        ? searchData.filter(item =>
+            item.title.toLowerCase().includes(query.toLowerCase()) ||
+            item.description.toLowerCase().includes(query.toLowerCase())
+          )
+        : searchData;
+
+      selectedIndex = 0;
+      const container = document.getElementById('searchResults');
+
+      if (results.length === 0) {
+        container.innerHTML = '<div class="search-empty">No results found</div>';
+        return;
+      }
+
+      container.innerHTML = results.map((item, i) => `
+        <a href="${item.url}" class="search-result ${i === 0 ? 'active' : ''}" data-index="${i}">
+          <div class="search-result-title">${item.title}</div>
+          <div class="search-result-description">${item.description}</div>
+          <span class="search-result-tag">${item.tag}</span>
+        </a>
+      `).join('');
+    }
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      renderResults(e.target.value);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const overlay = document.getElementById('searchOverlay');
+
+      // Open search with Cmd/Ctrl + K
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openSearch();
+      }
+
+      // Close with Escape
+      if (e.key === 'Escape' && overlay.classList.contains('active')) {
+        closeSearch({target: overlay});
+      }
+
+      // Navigation
+      if (overlay.classList.contains('active')) {
+        const results = document.querySelectorAll('.search-result');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          selectedIndex = Math.min(selectedIndex + 1, results.length - 1);
+          results.forEach((r, i) => r.classList.toggle('active', i === selectedIndex));
+          results[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          selectedIndex = Math.max(selectedIndex - 1, 0);
+          results.forEach((r, i) => r.classList.toggle('active', i === selectedIndex));
+          results[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          results[selectedIndex]?.click();
+        }
+      }
     });
   </script>
 </body>

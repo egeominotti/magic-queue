@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>flashQ Blog</title>
+    <description>Tutorials, guides, and insights about job queues, AI pipelines, and background processing.</description>
+    <link>https://flashq.dev/blog/</link>
+    <atom:link href="https://flashq.dev/blog/feed.xml" rel="self" type="application/rss+xml"/>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 20 Jan 2026 00:00:00 GMT</lastBuildDate>
+    <ttl>60</ttl>
+    <image>
+      <url>https://flashq.dev/og-image.png</url>
+      <title>flashQ Blog</title>
+      <link>https://flashq.dev/blog/</link>
+    </image>
+
+    <item>
+      <title>flashQ in Action: Live Demo of All Features</title>
+      <link>https://flashq.dev/blog/flashq-in-action.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/flashq-in-action.html</guid>
+      <pubDate>Mon, 20 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Interactive walkthrough: priorities, retries, DLQ, rate limiting, cron jobs, workflows, and real-time monitoring.</description>
+      <category>Tutorial</category>
+    </item>
+
+    <item>
+      <title>flashQ Architecture: How We Built a 1.9M Jobs/sec Queue Server</title>
+      <link>https://flashq.dev/blog/flashq-architecture.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/flashq-architecture.html</guid>
+      <pubDate>Mon, 20 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Deep dive into flashQ's sharded design, lock-free data structures, and optimizations that achieve 1.9M jobs/sec.</description>
+      <category>Deep Dive</category>
+    </item>
+
+    <item>
+      <title>How to Rate Limit OpenAI API Calls with flashQ</title>
+      <link>https://flashq.dev/blog/rate-limiting-openai.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/rate-limiting-openai.html</guid>
+      <pubDate>Sun, 19 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Learn how to properly rate limit OpenAI, Anthropic, and other AI API calls. Avoid 429 errors and control costs.</description>
+      <category>Tutorial</category>
+    </item>
+
+    <item>
+      <title>Job Queue Patterns for AI Applications</title>
+      <link>https://flashq.dev/blog/job-queue-patterns.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/job-queue-patterns.html</guid>
+      <pubDate>Tue, 14 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Essential patterns for building reliable AI applications: fan-out, sagas, circuit breakers, and more.</description>
+      <category>Best Practices</category>
+    </item>
+
+    <item>
+      <title>Building AI Pipelines with flashQ: A Complete Guide</title>
+      <link>https://flashq.dev/blog/building-ai-pipelines.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/building-ai-pipelines.html</guid>
+      <pubDate>Sun, 12 Jan 2026 00:00:00 GMT</pubDate>
+      <description>Learn how to build production-ready RAG pipelines, LLM workflows, and batch inference systems using flashQ.</description>
+      <category>Tutorial</category>
+    </item>
+
+    <item>
+      <title>flashQ vs BullMQ: Why We Built a Redis-Free Alternative</title>
+      <link>https://flashq.dev/blog/flashq-vs-bullmq.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/flashq-vs-bullmq.html</guid>
+      <pubDate>Sun, 05 Jan 2026 00:00:00 GMT</pubDate>
+      <description>A detailed comparison between flashQ and BullMQ. Learn when to use each and why going Redis-free matters.</description>
+      <category>Comparison</category>
+    </item>
+
+    <item>
+      <title>Monitoring AI Pipelines: Metrics, Alerts, and Dashboards</title>
+      <link>https://flashq.dev/blog/monitoring-ai-pipelines.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/monitoring-ai-pipelines.html</guid>
+      <pubDate>Sat, 28 Dec 2025 00:00:00 GMT</pubDate>
+      <description>Set up comprehensive monitoring for your AI pipelines with Prometheus, Grafana, and flashQ metrics.</description>
+      <category>Tutorial</category>
+    </item>
+
+    <item>
+      <title>What is flashQ? A Modern Job Queue for AI Workloads</title>
+      <link>https://flashq.dev/blog/what-is-flashq.html</link>
+      <guid isPermaLink="true">https://flashq.dev/blog/what-is-flashq.html</guid>
+      <pubDate>Fri, 20 Dec 2025 00:00:00 GMT</pubDate>
+      <description>Discover why we built flashQ, a high-performance job queue designed specifically for AI and ML workloads. No Redis required.</description>
+      <category>Introduction</category>
+    </item>
+
+  </channel>
+</rss>
