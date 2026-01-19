@@ -12,7 +12,7 @@ Same API. Single binary. 10x faster. Built with Rust.
 [![npm](https://img.shields.io/npm/v/flashq)](https://www.npmjs.com/package/flashq)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[Quick Start](#quick-start) • [AI Workloads](#built-for-ai-workloads) • [SDK](#sdk) • [Features](#features)
+[Website](https://flashq.dev) • [Documentation](https://flashq.dev/docs/) • [Blog](https://flashq.dev/blog/) • [Quick Start](#quick-start)
 
 </div>
 
@@ -250,6 +250,8 @@ worker.on('completed', (job, result) => {
 | **Pub/Sub** | Redis-like publish/subscribe messaging |
 
 ## Documentation
+
+📖 **Full documentation:** [flashq.dev/docs](https://flashq.dev/docs/)
 
 ### Job Options
 
