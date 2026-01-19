@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webhooks and Event-Driven Architecture with flashQ - flashQ Blog</title>
+  <meta name="description" content="Build event-driven systems with flashQ webhooks. Learn to handle Stripe, GitHub, and custom webhooks reliably with job queues, retries, and real-time notifications.">
+  <meta name="keywords" content="webhooks, event-driven architecture, stripe webhooks, github webhooks, job queue webhooks, async processing, flashq events">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Webhooks and Event-Driven Architecture with flashQ">
+  <meta property="og:description" content="Build event-driven systems with flashQ webhooks.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/webhooks-event-driven.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Webhooks and Event-Driven Architecture with flashQ">
+  <meta name="twitter:description" content="Build event-driven systems with flashQ webhooks.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/webhooks-event-driven.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Webhooks and Event-Driven Architecture with flashQ",
+    "description": "Build event-driven systems with flashQ webhooks.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Webhooks & Events</span>
+  </nav>
+
+  <header class="article-header header-tutorial">
+    <div class="container">
+      <span class="article-tag tutorial">Tutorial</span>
+      <h1>Webhooks and Event-Driven Architecture with flashQ</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 12 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Webhooks are the backbone of modern integrations. When Stripe processes a payment, GitHub receives a push, or Shopify gets an order, they send webhooks to your application. The challenge? Handling them reliably at scale.</p>
+
+      <p>flashQ transforms webhook handling from a fragile synchronous process into a robust, event-driven architecture.</p>
+
+      <h2 id="problem">The Webhook Problem</h2>
+
+      <p>Typical webhook issues:</p>
+
+      <ul>
+        <li><strong>Timeouts</strong>: Webhook providers expect fast responses (2-30 seconds)</li>
+        <li><strong>Retries</strong>: Providers retry failed webhooks, causing duplicate processing</li>
+        <li><strong>Order</strong>: Events can arrive out of order</li>
+        <li><strong>Scale</strong>: Traffic spikes during peak times</li>
+      </ul>
+
+      <h2 id="solution">The flashQ Solution</h2>
+
+      <pre><code>┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Webhook    │     │    flashQ    │     │   Worker     │
+│   Provider   │────▶│   (Enqueue)  │────▶│  (Process)   │
+│              │     │   < 100ms    │     │   Async      │
+└──────────────┘     └──────────────┘     └──────────────┘
+       │                    │
+       │   Fast response    │   Reliable processing
+       └────────────────────┘</code></pre>
+
+      <h2 id="stripe">Handling Stripe Webhooks</h2>
+
+      <pre><code><span class="comment">// app/api/webhooks/stripe/route.ts</span>
+<span class="keyword">import</span> { NextRequest, NextResponse } <span class="keyword">from</span> <span class="string">'next/server'</span>;
+<span class="keyword">import</span> Stripe <span class="keyword">from</span> <span class="string">'stripe'</span>;
+<span class="keyword">import</span> { Queue } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">const</span> <span class="variable">stripe</span> = <span class="keyword">new</span> <span class="function">Stripe</span>(process.env.STRIPE_SECRET_KEY!);
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'stripe-webhooks'</span>, { useHttp: <span class="keyword">true</span> });
+
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">POST</span>(request: NextRequest) {
+  <span class="keyword">const</span> <span class="variable">body</span> = <span class="keyword">await</span> request.<span class="function">text</span>();
+  <span class="keyword">const</span> <span class="variable">signature</span> = request.headers.<span class="function">get</span>(<span class="string">'stripe-signature'</span>)!;
+
+  <span class="comment">// Verify webhook signature</span>
+  <span class="keyword">let</span> event: Stripe.Event;
+  <span class="keyword">try</span> {
+    event = stripe.webhooks.<span class="function">constructEvent</span>(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } <span class="keyword">catch</span> (err) {
+    <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ error: <span class="string">'Invalid signature'</span> }, { status: <span class="number">400</span> });
+  }
+
+  <span class="comment">// Enqueue for async processing (fast response to Stripe)</span>
+  <span class="keyword">await</span> queue.<span class="function">add</span>(event.type, event, {
+    jobId: event.id,  <span class="comment">// Idempotency - prevents duplicate processing</span>
+  });
+
+  <span class="comment">// Respond immediately (< 100ms)</span>
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ received: <span class="keyword">true</span> });
+}</code></pre>
+
+      <h3>Stripe Worker</h3>
+
+      <pre><code><span class="comment">// workers/stripe.ts</span>
+<span class="keyword">import</span> { Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'stripe-webhooks'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> <span class="variable">event</span> = job.data;
+
+  <span class="keyword">switch</span> (event.type) {
+    <span class="keyword">case</span> <span class="string">'checkout.session.completed'</span>:
+      <span class="keyword">await</span> <span class="function">handleCheckoutComplete</span>(event.data.object);
+      <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">'invoice.paid'</span>:
+      <span class="keyword">await</span> <span class="function">handleInvoicePaid</span>(event.data.object);
+      <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">'customer.subscription.deleted'</span>:
+      <span class="keyword">await</span> <span class="function">handleSubscriptionCanceled</span>(event.data.object);
+      <span class="keyword">break</span>;
+
+    <span class="keyword">default</span>:
+      console.<span class="function">log</span>(<span class="string">`Unhandled event: ${event.type}`</span>);
+  }
+}, {
+  concurrency: <span class="number">10</span>,
+});
+
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">handleCheckoutComplete</span>(session) {
+  <span class="comment">// Create user account</span>
+  <span class="keyword">await</span> db.users.<span class="function">create</span>({
+    email: session.customer_email,
+    stripeCustomerId: session.customer,
+  });
+
+  <span class="comment">// Send welcome email</span>
+  <span class="keyword">await</span> emailQueue.<span class="function">add</span>(<span class="string">'welcome'</span>, {
+    to: session.customer_email,
+  });
+}</code></pre>
+
+      <h2 id="github">GitHub Webhooks</h2>
+
+      <pre><code><span class="comment">// app/api/webhooks/github/route.ts</span>
+<span class="keyword">import</span> crypto <span class="keyword">from</span> <span class="string">'crypto'</span>;
+
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">POST</span>(request: NextRequest) {
+  <span class="keyword">const</span> <span class="variable">body</span> = <span class="keyword">await</span> request.<span class="function">text</span>();
+  <span class="keyword">const</span> <span class="variable">signature</span> = request.headers.<span class="function">get</span>(<span class="string">'x-hub-signature-256'</span>);
+  <span class="keyword">const</span> <span class="variable">event</span> = request.headers.<span class="function">get</span>(<span class="string">'x-github-event'</span>);
+  <span class="keyword">const</span> <span class="variable">deliveryId</span> = request.headers.<span class="function">get</span>(<span class="string">'x-github-delivery'</span>);
+
+  <span class="comment">// Verify signature</span>
+  <span class="keyword">const</span> <span class="variable">expected</span> = <span class="string">`sha256=${crypto
+    .createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET!)
+    .update(body)
+    .digest('hex')}`</span>;
+
+  <span class="keyword">if</span> (signature !== expected) {
+    <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ error: <span class="string">'Invalid signature'</span> }, { status: <span class="number">401</span> });
+  }
+
+  <span class="comment">// Enqueue</span>
+  <span class="keyword">await</span> queue.<span class="function">add</span>(event!, JSON.<span class="function">parse</span>(body), {
+    jobId: deliveryId!,  <span class="comment">// Idempotency</span>
+  });
+
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ received: <span class="keyword">true</span> });
+}</code></pre>
+
+      <h2 id="outgoing">Sending Outgoing Webhooks</h2>
+
+      <p>flashQ can also send webhooks to your users:</p>
+
+      <pre><code><span class="comment">// Send webhook when job completes</span>
+worker.<span class="function">on</span>(<span class="string">'completed'</span>, <span class="keyword">async</span> (job, result) => {
+  <span class="keyword">if</span> (job.data.webhookUrl) {
+    <span class="keyword">await</span> webhookQueue.<span class="function">add</span>(<span class="string">'send'</span>, {
+      url: job.data.webhookUrl,
+      event: <span class="string">'job.completed'</span>,
+      payload: { jobId: job.id, result },
+    }, {
+      attempts: <span class="number">5</span>,
+      backoff: { type: <span class="string">'exponential'</span>, delay: <span class="number">1000</span> },
+    });
+  }
+});
+
+<span class="comment">// Webhook sender worker</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'outgoing-webhooks'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { url, event, payload } = job.data;
+
+  <span class="keyword">const</span> <span class="variable">signature</span> = crypto
+    .<span class="function">createHmac</span>(<span class="string">'sha256'</span>, process.env.WEBHOOK_SECRET!)
+    .<span class="function">update</span>(JSON.<span class="function">stringify</span>(payload))
+    .<span class="function">digest</span>(<span class="string">'hex'</span>);
+
+  <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> <span class="function">fetch</span>(url, {
+    method: <span class="string">'POST'</span>,
+    headers: {
+      <span class="string">'Content-Type'</span>: <span class="string">'application/json'</span>,
+      <span class="string">'X-Webhook-Signature'</span>: signature,
+      <span class="string">'X-Webhook-Event'</span>: event,
+    },
+    body: JSON.<span class="function">stringify</span>(payload),
+  });
+
+  <span class="keyword">if</span> (!response.ok) {
+    <span class="keyword">throw</span> <span class="keyword">new</span> <span class="function">Error</span>(<span class="string">`Webhook failed: ${response.status}`</span>);
+  }
+});</code></pre>
+
+      <h2 id="patterns">Event-Driven Patterns</h2>
+
+      <h3>Fan-Out Pattern</h3>
+
+      <pre><code><span class="comment">// One event triggers multiple actions</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'events'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">if</span> (job.name === <span class="string">'user.created'</span>) {
+    <span class="comment">// Fan out to multiple queues</span>
+    <span class="keyword">await</span> Promise.<span class="function">all</span>([
+      emailQueue.<span class="function">add</span>(<span class="string">'welcome'</span>, job.data),
+      analyticsQueue.<span class="function">add</span>(<span class="string">'track'</span>, { event: <span class="string">'signup'</span>, ...job.data }),
+      slackQueue.<span class="function">add</span>(<span class="string">'notify'</span>, { message: <span class="string">`New user: ${job.data.email}`</span> }),
+    ]);
+  }
+});</code></pre>
+
+      <h3>Saga Pattern</h3>
+
+      <pre><code><span class="comment">// Multi-step workflow with compensation</span>
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">processOrder</span>(orderId) {
+  <span class="keyword">const</span> <span class="variable">steps</span> = [];
+
+  <span class="keyword">try</span> {
+    <span class="comment">// Step 1: Reserve inventory</span>
+    steps.<span class="function">push</span>(<span class="keyword">await</span> inventoryQueue.<span class="function">add</span>(<span class="string">'reserve'</span>, { orderId }));
+    <span class="keyword">await</span> queue.<span class="function">finished</span>(steps[<span class="number">0</span>].id);
+
+    <span class="comment">// Step 2: Process payment</span>
+    steps.<span class="function">push</span>(<span class="keyword">await</span> paymentQueue.<span class="function">add</span>(<span class="string">'charge'</span>, { orderId }));
+    <span class="keyword">await</span> queue.<span class="function">finished</span>(steps[<span class="number">1</span>].id);
+
+    <span class="comment">// Step 3: Ship order</span>
+    steps.<span class="function">push</span>(<span class="keyword">await</span> shippingQueue.<span class="function">add</span>(<span class="string">'ship'</span>, { orderId }));
+    <span class="keyword">await</span> queue.<span class="function">finished</span>(steps[<span class="number">2</span>].id);
+
+  } <span class="keyword">catch</span> (error) {
+    <span class="comment">// Compensation: rollback in reverse order</span>
+    <span class="keyword">for</span> (<span class="keyword">const</span> step <span class="keyword">of</span> steps.<span class="function">reverse</span>()) {
+      <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'compensate'</span>, { stepId: step.id });
+    }
+  }
+}</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">💡 Pro Tip</div>
+        <p>Always use webhook event IDs as job IDs for idempotency. This prevents duplicate processing when providers retry failed deliveries.</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>flashQ transforms webhook handling from a synchronous bottleneck into a scalable, event-driven architecture. Key benefits:</p>
+
+      <ul>
+        <li><strong>Fast responses</strong>: Acknowledge webhooks immediately</li>
+        <li><strong>Reliability</strong>: Automatic retries with backoff</li>
+        <li><strong>Idempotency</strong>: Prevent duplicate processing</li>
+        <li><strong>Scalability</strong>: Handle traffic spikes gracefully</li>
+      </ul>
+
+      <div class="article-cta">
+        <h3>Build Event-Driven Apps</h3>
+        <p>Start handling webhooks reliably with flashQ.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#problem">The Problem</a></li>
+              <li><a href="#solution">The Solution</a></li>
+              <li><a href="#stripe">Stripe Webhooks</a></li>
+              <li><a href="#github">GitHub Webhooks</a></li>
+              <li><a href="#outgoing">Outgoing Webhooks</a></li>
+              <li><a href="#patterns">Event Patterns</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

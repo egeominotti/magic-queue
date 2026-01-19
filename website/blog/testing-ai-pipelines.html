@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Testing AI Pipelines with flashQ - flashQ Blog</title>
+  <meta name="description" content="Comprehensive guide to testing AI and ML pipelines. Learn unit testing, integration testing, mocking LLM responses, performance testing, and CI/CD strategies.">
+  <meta name="keywords" content="ai testing, ml pipeline testing, llm testing, flashq testing, integration tests, mock responses, performance testing, ci cd ai">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Testing AI Pipelines with flashQ">
+  <meta property="og:description" content="Comprehensive guide to testing AI and ML pipelines with flashQ.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/testing-ai-pipelines.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Testing AI Pipelines with flashQ">
+  <meta name="twitter:description" content="Comprehensive guide to testing AI and ML pipelines.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/testing-ai-pipelines.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Testing AI Pipelines with flashQ",
+    "description": "Comprehensive guide to testing AI and ML pipelines with flashQ.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" },
+    "publisher": { "@type": "Organization", "name": "flashQ", "logo": { "@type": "ImageObject", "url": "https://flashq.dev/logo.png" } }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Testing AI Pipelines</span>
+  </nav>
+
+  <header class="article-header header-testing">
+    <div class="container">
+      <span class="article-tag">Testing</span>
+      <h1>Testing AI Pipelines with flashQ</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 14 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Testing AI pipelines presents unique challenges: non-deterministic outputs, expensive API calls, and complex dependencies. This guide covers strategies for testing AI workloads with flashQ, from unit tests to production monitoring.</p>
+
+      <h2 id="challenges">AI Testing Challenges</h2>
+
+      <ul>
+        <li><strong>Non-deterministic outputs</strong>: Same input, different results</li>
+        <li><strong>Expensive API calls</strong>: $0.01-$0.10 per test run adds up</li>
+        <li><strong>Latency</strong>: AI calls take seconds, not milliseconds</li>
+        <li><strong>Rate limits</strong>: Provider throttling breaks CI</li>
+        <li><strong>Complex dependencies</strong>: Embeddings, vector DBs, LLMs</li>
+      </ul>
+
+      <h2 id="project-setup">Project Setup</h2>
+
+      <pre><code><span class="comment"># Install test dependencies</span>
+npm install -D vitest @vitest/coverage-v8 msw testcontainers</code></pre>
+
+      <pre><code><span class="comment">// vitest.config.ts</span>
+<span class="keyword">import</span> { defineConfig } <span class="keyword">from</span> <span class="string">'vitest/config'</span>;
+
+<span class="keyword">export default</span> defineConfig({
+  test: {
+    globals: <span class="literal">true</span>,
+    environment: <span class="string">'node'</span>,
+    coverage: {
+      provider: <span class="string">'v8'</span>,
+      reporter: [<span class="string">'text'</span>, <span class="string">'json'</span>, <span class="string">'html'</span>],
+      exclude: [<span class="string">'**/mocks/**'</span>, <span class="string">'**/fixtures/**'</span>]
+    },
+    testTimeout: <span class="number">30000</span>, <span class="comment">// AI tests need longer timeouts</span>
+    hookTimeout: <span class="number">30000</span>
+  }
+});</code></pre>
+
+      <h2 id="mocking">Mocking LLM Responses</h2>
+
+      <h3>Mock Service Worker (MSW)</h3>
+
+      <pre><code><span class="comment">// mocks/handlers.ts</span>
+<span class="keyword">import</span> { http, HttpResponse } <span class="keyword">from</span> <span class="string">'msw'</span>;
+
+<span class="keyword">export const</span> handlers = [
+  <span class="comment">// Mock OpenAI Chat Completions</span>
+  http.post(<span class="string">'https://api.openai.com/v1/chat/completions'</span>, <span class="keyword">async</span> ({ request }) => {
+    <span class="keyword">const</span> body = <span class="keyword">await</span> request.json();
+    <span class="keyword">const</span> messages = body.messages;
+
+    <span class="comment">// Return deterministic responses based on input</span>
+    <span class="keyword">const</span> lastMessage = messages[messages.length - <span class="number">1</span>].content;
+
+    <span class="keyword">if</span> (lastMessage.includes(<span class="string">'summarize'</span>)) {
+      <span class="keyword">return</span> HttpResponse.json({
+        choices: [{
+          message: {
+            role: <span class="string">'assistant'</span>,
+            content: <span class="string">'This is a mock summary of the document.'</span>
+          }
+        }],
+        usage: { prompt_tokens: <span class="number">100</span>, completion_tokens: <span class="number">50</span> }
+      });
+    }
+
+    <span class="keyword">if</span> (lastMessage.includes(<span class="string">'translate'</span>)) {
+      <span class="keyword">return</span> HttpResponse.json({
+        choices: [{
+          message: {
+            role: <span class="string">'assistant'</span>,
+            content: <span class="string">'Traducción del texto al español.'</span>
+          }
+        }],
+        usage: { prompt_tokens: <span class="number">80</span>, completion_tokens: <span class="number">40</span> }
+      });
+    }
+
+    <span class="comment">// Default response</span>
+    <span class="keyword">return</span> HttpResponse.json({
+      choices: [{
+        message: {
+          role: <span class="string">'assistant'</span>,
+          content: <span class="string">'Mock response for testing.'</span>
+        }
+      }],
+      usage: { prompt_tokens: <span class="number">50</span>, completion_tokens: <span class="number">25</span> }
+    });
+  }),
+
+  <span class="comment">// Mock OpenAI Embeddings</span>
+  http.post(<span class="string">'https://api.openai.com/v1/embeddings'</span>, () => {
+    <span class="keyword">return</span> HttpResponse.json({
+      data: [{ embedding: Array(<span class="number">1536</span>).fill(<span class="number">0</span>).map(() => Math.random()) }],
+      usage: { prompt_tokens: <span class="number">10</span> }
+    });
+  })
+];
+
+<span class="comment">// mocks/server.ts</span>
+<span class="keyword">import</span> { setupServer } <span class="keyword">from</span> <span class="string">'msw/node'</span>;
+<span class="keyword">import</span> { handlers } <span class="keyword">from</span> <span class="string">'./handlers'</span>;
+
+<span class="keyword">export const</span> server = setupServer(...handlers);
+
+<span class="comment">// tests/setup.ts</span>
+<span class="keyword">import</span> { server } <span class="keyword">from</span> <span class="string">'../mocks/server'</span>;
+
+beforeAll(() => server.listen({ onUnhandledRequest: <span class="string">'error'</span> }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());</code></pre>
+
+      <h3>Response Fixtures</h3>
+
+      <pre><code><span class="comment">// fixtures/llm-responses.ts</span>
+<span class="keyword">export const</span> fixtures = {
+  summarization: {
+    short: {
+      input: <span class="string">'Lorem ipsum dolor sit amet...'</span>,
+      expected: <span class="string">'Brief overview of the Latin placeholder text.'</span>
+    },
+    long: {
+      input: <span class="string">'[10000 word document]'</span>,
+      expected: <span class="string">'Comprehensive summary covering main points...'</span>
+    }
+  },
+
+  classification: {
+    spam: {
+      input: <span class="string">'BUY NOW! Limited offer!'</span>,
+      expected: { label: <span class="string">'spam'</span>, confidence: <span class="number">0.95</span> }
+    },
+    notSpam: {
+      input: <span class="string">'Meeting scheduled for tomorrow.'</span>,
+      expected: { label: <span class="string">'not_spam'</span>, confidence: <span class="number">0.92</span> }
+    }
+  },
+
+  extraction: {
+    contact: {
+      input: <span class="string">'Contact John at john@example.com or 555-1234'</span>,
+      expected: {
+        name: <span class="string">'John'</span>,
+        email: <span class="string">'john@example.com'</span>,
+        phone: <span class="string">'555-1234'</span>
+      }
+    }
+  }
+};</code></pre>
+
+      <h2 id="unit-tests">Unit Testing Workers</h2>
+
+      <pre><code><span class="comment">// tests/workers/summarization.test.ts</span>
+<span class="keyword">import</span> { describe, it, expect, vi, beforeEach } <span class="keyword">from</span> <span class="string">'vitest'</span>;
+<span class="keyword">import</span> { summarizationProcessor } <span class="keyword">from</span> <span class="string">'../../workers/summarization'</span>;
+<span class="keyword">import</span> { fixtures } <span class="keyword">from</span> <span class="string">'../fixtures/llm-responses'</span>;
+
+describe(<span class="string">'Summarization Worker'</span>, () => {
+  <span class="keyword">const</span> mockJob = (data: <span class="keyword">any</span>) => ({
+    id: <span class="string">'test-job-1'</span>,
+    data,
+    attempts: <span class="number">1</span>,
+    timestamp: Date.now()
+  });
+
+  it(<span class="string">'should summarize short documents'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> job = mockJob({
+      document: fixtures.summarization.short.input,
+      maxLength: <span class="number">100</span>
+    });
+
+    <span class="keyword">const</span> result = <span class="keyword">await</span> summarizationProcessor(job);
+
+    expect(result).toBeDefined();
+    expect(result.summary).toBeTypeOf(<span class="string">'string'</span>);
+    expect(result.summary.length).toBeLessThanOrEqual(<span class="number">500</span>);
+  });
+
+  it(<span class="string">'should handle empty documents'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> job = mockJob({ document: <span class="string">''</span> });
+
+    <span class="keyword">await</span> expect(summarizationProcessor(job))
+      .rejects.toThrow(<span class="string">'Document cannot be empty'</span>);
+  });
+
+  it(<span class="string">'should respect token limits'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> job = mockJob({
+      document: <span class="string">'A'</span>.repeat(<span class="number">100000</span>), <span class="comment">// Very long</span>
+      maxTokens: <span class="number">1000</span>
+    });
+
+    <span class="keyword">const</span> result = <span class="keyword">await</span> summarizationProcessor(job);
+
+    expect(result.truncated).toBe(<span class="literal">true</span>);
+    expect(result.tokensUsed).toBeLessThanOrEqual(<span class="number">1000</span>);
+  });
+
+  it(<span class="string">'should track token usage'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> job = mockJob({
+      document: fixtures.summarization.short.input
+    });
+
+    <span class="keyword">const</span> result = <span class="keyword">await</span> summarizationProcessor(job);
+
+    expect(result.usage).toBeDefined();
+    expect(result.usage.promptTokens).toBeGreaterThan(<span class="number">0</span>);
+    expect(result.usage.completionTokens).toBeGreaterThan(<span class="number">0</span>);
+  });
+});</code></pre>
+
+      <h2 id="integration">Integration Testing</h2>
+
+      <h3>Test Containers for flashQ</h3>
+
+      <pre><code><span class="comment">// tests/integration/setup.ts</span>
+<span class="keyword">import</span> { GenericContainer, StartedTestContainer } <span class="keyword">from</span> <span class="string">'testcontainers'</span>;
+<span class="keyword">import</span> { FlashQ, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">let</span> flashqContainer: StartedTestContainer;
+<span class="keyword">let</span> client: FlashQ;
+
+<span class="keyword">export async function</span> setupTestEnvironment() {
+  <span class="comment">// Start flashQ container</span>
+  flashqContainer = <span class="keyword">await new</span> GenericContainer(<span class="string">'flashq/flashq:latest'</span>)
+    .withExposedPorts(<span class="number">6789</span>, <span class="number">6790</span>)
+    .withEnvironment({ HTTP: <span class="string">'1'</span> })
+    .start();
+
+  <span class="keyword">const</span> host = flashqContainer.getHost();
+  <span class="keyword">const</span> port = flashqContainer.getMappedPort(<span class="number">6789</span>);
+
+  client = <span class="keyword">new</span> FlashQ({ host, port });
+  <span class="keyword">await</span> client.connect();
+
+  <span class="keyword">return</span> { client, host, port };
+}
+
+<span class="keyword">export async function</span> teardownTestEnvironment() {
+  <span class="keyword">await</span> client?.close();
+  <span class="keyword">await</span> flashqContainer?.stop();
+}</code></pre>
+
+      <h3>Full Pipeline Test</h3>
+
+      <pre><code><span class="comment">// tests/integration/ai-pipeline.test.ts</span>
+<span class="keyword">import</span> { describe, it, expect, beforeAll, afterAll } <span class="keyword">from</span> <span class="string">'vitest'</span>;
+<span class="keyword">import</span> { setupTestEnvironment, teardownTestEnvironment } <span class="keyword">from</span> <span class="string">'./setup'</span>;
+<span class="keyword">import</span> { FlashQ, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+describe(<span class="string">'AI Pipeline Integration'</span>, () => {
+  <span class="keyword">let</span> client: FlashQ;
+  <span class="keyword">let</span> workers: Worker[] = [];
+
+  beforeAll(<span class="keyword">async</span> () => {
+    <span class="keyword">const</span> env = <span class="keyword">await</span> setupTestEnvironment();
+    client = env.client;
+
+    <span class="comment">// Start workers</span>
+    workers.push(
+      <span class="keyword">new</span> Worker(client, <span class="string">'embedding'</span>, <span class="keyword">async</span> (job) => {
+        <span class="comment">// Mock embedding generation</span>
+        <span class="keyword">return</span> { embedding: Array(<span class="number">1536</span>).fill(<span class="number">0.1</span>) };
+      }),
+      <span class="keyword">new</span> Worker(client, <span class="string">'completion'</span>, <span class="keyword">async</span> (job) => {
+        <span class="keyword">return</span> { response: <span class="string">'Test completion response'</span> };
+      })
+    );
+  });
+
+  afterAll(<span class="keyword">async</span> () => {
+    workers.forEach(w => w.close());
+    <span class="keyword">await</span> teardownTestEnvironment();
+  });
+
+  it(<span class="string">'should process RAG pipeline end-to-end'</span>, <span class="keyword">async</span> () => {
+    <span class="comment">// Step 1: Create embedding job</span>
+    <span class="keyword">const</span> embeddingJob = <span class="keyword">await</span> client.push(<span class="string">'embedding'</span>, {
+      text: <span class="string">'What is flashQ?'</span>
+    });
+
+    <span class="comment">// Wait for embedding</span>
+    <span class="keyword">const</span> embeddingResult = <span class="keyword">await</span> client.finished(embeddingJob.id, <span class="number">10000</span>);
+    expect(embeddingResult.embedding).toHaveLength(<span class="number">1536</span>);
+
+    <span class="comment">// Step 2: Create completion job with context</span>
+    <span class="keyword">const</span> completionJob = <span class="keyword">await</span> client.push(<span class="string">'completion'</span>, {
+      query: <span class="string">'What is flashQ?'</span>,
+      context: [<span class="string">'flashQ is a high-performance job queue.'</span>]
+    });
+
+    <span class="keyword">const</span> completionResult = <span class="keyword">await</span> client.finished(completionJob.id, <span class="number">10000</span>);
+    expect(completionResult.response).toBeDefined();
+  });
+
+  it(<span class="string">'should handle job failures gracefully'</span>, <span class="keyword">async</span> () => {
+    <span class="comment">// Create failing worker</span>
+    <span class="keyword">const</span> failingWorker = <span class="keyword">new</span> Worker(client, <span class="string">'failing-task'</span>, <span class="keyword">async</span> () => {
+      <span class="keyword">throw new</span> Error(<span class="string">'Simulated API failure'</span>);
+    }, { concurrency: <span class="number">1</span> });
+
+    <span class="keyword">const</span> job = <span class="keyword">await</span> client.push(<span class="string">'failing-task'</span>, {}, {
+      max_attempts: <span class="number">3</span>,
+      backoff: <span class="number">100</span>
+    });
+
+    <span class="comment">// Wait for all retries</span>
+    <span class="keyword">await new</span> Promise(resolve => setTimeout(resolve, <span class="number">2000</span>));
+
+    <span class="keyword">const</span> state = <span class="keyword">await</span> client.getState(job.id);
+    expect(state).toBe(<span class="string">'failed'</span>);
+
+    <span class="keyword">const</span> dlq = <span class="keyword">await</span> client.getDlq(<span class="string">'failing-task'</span>);
+    expect(dlq.some(j => j.id === job.id)).toBe(<span class="literal">true</span>);
+
+    failingWorker.close();
+  });
+
+  it(<span class="string">'should process batch jobs efficiently'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> jobs = Array.from({ length: <span class="number">100</span> }, (_, i) => ({
+      data: { text: <span class="string">`Document </span>${i}<span class="string">`</span> }
+    }));
+
+    <span class="keyword">const</span> pushed = <span class="keyword">await</span> client.pushBatch(<span class="string">'embedding'</span>, jobs);
+    expect(pushed).toHaveLength(<span class="number">100</span>);
+
+    <span class="comment">// Wait for all to complete</span>
+    <span class="keyword">const</span> results = <span class="keyword">await</span> Promise.all(
+      pushed.map(j => client.finished(j.id, <span class="number">30000</span>))
+    );
+
+    expect(results.every(r => r.embedding)).toBe(<span class="literal">true</span>);
+  });
+});</code></pre>
+
+      <h2 id="quality">Output Quality Testing</h2>
+
+      <pre><code><span class="comment">// tests/quality/llm-output.test.ts</span>
+<span class="keyword">import</span> { describe, it, expect } <span class="keyword">from</span> <span class="string">'vitest'</span>;
+
+<span class="comment">// Test output structure</span>
+describe(<span class="string">'LLM Output Quality'</span>, () => {
+  it(<span class="string">'should return valid JSON for structured output'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> result = <span class="keyword">await</span> processStructuredTask({
+      prompt: <span class="string">'Extract contact info'</span>,
+      input: <span class="string">'Email: test@example.com'</span>,
+      schema: { email: <span class="string">'string'</span> }
+    });
+
+    expect(() => JSON.parse(result.output)).not.toThrow();
+    expect(result.output).toHaveProperty(<span class="string">'email'</span>);
+  });
+
+  it(<span class="string">'should not hallucinate information'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> input = <span class="string">'The weather is sunny today.'</span>;
+    <span class="keyword">const</span> result = <span class="keyword">await</span> extractInfo(input);
+
+    <span class="comment">// Should not invent details not in input</span>
+    expect(result.temperature).toBeUndefined();
+    expect(result.location).toBeUndefined();
+  });
+
+  it(<span class="string">'should respect length constraints'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> result = <span class="keyword">await</span> generateSummary({
+      text: longDocument,
+      maxWords: <span class="number">50</span>
+    });
+
+    <span class="keyword">const</span> wordCount = result.summary.split(/\s+/).length;
+    expect(wordCount).toBeLessThanOrEqual(<span class="number">60</span>); <span class="comment">// Allow 20% buffer</span>
+  });
+});
+
+<span class="comment">// Semantic similarity testing</span>
+<span class="keyword">import</span> { cosineSimilarity } <span class="keyword">from</span> <span class="string">'../utils/similarity'</span>;
+
+describe(<span class="string">'Semantic Consistency'</span>, () => {
+  it(<span class="string">'should produce consistent embeddings'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> text = <span class="string">'flashQ is a job queue'</span>;
+
+    <span class="keyword">const</span> embedding1 = <span class="keyword">await</span> getEmbedding(text);
+    <span class="keyword">const</span> embedding2 = <span class="keyword">await</span> getEmbedding(text);
+
+    <span class="comment">// Same input should produce identical embeddings</span>
+    expect(cosineSimilarity(embedding1, embedding2)).toBeCloseTo(<span class="number">1.0</span>, <span class="number">5</span>);
+  });
+
+  it(<span class="string">'should find semantically similar content'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> query = <span class="keyword">await</span> getEmbedding(<span class="string">'fast job processing'</span>);
+    <span class="keyword">const</span> relevant = <span class="keyword">await</span> getEmbedding(<span class="string">'high-speed task execution'</span>);
+    <span class="keyword">const</span> irrelevant = <span class="keyword">await</span> getEmbedding(<span class="string">'chocolate cake recipe'</span>);
+
+    expect(cosineSimilarity(query, relevant)).toBeGreaterThan(<span class="number">0.7</span>);
+    expect(cosineSimilarity(query, irrelevant)).toBeLessThan(<span class="number">0.3</span>);
+  });
+});</code></pre>
+
+      <h2 id="performance">Performance Testing</h2>
+
+      <pre><code><span class="comment">// tests/performance/throughput.test.ts</span>
+<span class="keyword">import</span> { describe, it, expect } <span class="keyword">from</span> <span class="string">'vitest'</span>;
+
+describe(<span class="string">'Pipeline Performance'</span>, () => {
+  it(<span class="string">'should meet throughput SLA'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> TARGET_THROUGHPUT = <span class="number">100</span>; <span class="comment">// jobs/second</span>
+    <span class="keyword">const</span> TEST_DURATION = <span class="number">10000</span>; <span class="comment">// 10 seconds</span>
+
+    <span class="keyword">let</span> completed = <span class="number">0</span>;
+    <span class="keyword">const</span> start = Date.now();
+
+    <span class="keyword">while</span> (Date.now() - start < TEST_DURATION) {
+      <span class="keyword">const</span> jobs = Array.from({ length: <span class="number">10</span> }, () => ({
+        data: { text: <span class="string">'test'</span> }
+      }));
+
+      <span class="keyword">const</span> results = <span class="keyword">await</span> client.pushBatch(<span class="string">'embedding'</span>, jobs);
+      <span class="keyword">await</span> Promise.all(results.map(j => client.finished(j.id, <span class="number">5000</span>)));
+      completed += <span class="number">10</span>;
+    }
+
+    <span class="keyword">const</span> duration = (Date.now() - start) / <span class="number">1000</span>;
+    <span class="keyword">const</span> throughput = completed / duration;
+
+    expect(throughput).toBeGreaterThanOrEqual(TARGET_THROUGHPUT);
+  });
+
+  it(<span class="string">'should meet latency P95 SLA'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> TARGET_P95_MS = <span class="number">500</span>;
+    <span class="keyword">const</span> latencies: number[] = [];
+
+    <span class="keyword">for</span> (<span class="keyword">let</span> i = <span class="number">0</span>; i < <span class="number">100</span>; i++) {
+      <span class="keyword">const</span> start = Date.now();
+      <span class="keyword">const</span> job = <span class="keyword">await</span> client.push(<span class="string">'embedding'</span>, { text: <span class="string">'test'</span> });
+      <span class="keyword">await</span> client.finished(job.id, <span class="number">5000</span>);
+      latencies.push(Date.now() - start);
+    }
+
+    latencies.sort((a, b) => a - b);
+    <span class="keyword">const</span> p95 = latencies[Math.floor(latencies.length * <span class="number">0.95</span>)];
+
+    expect(p95).toBeLessThanOrEqual(TARGET_P95_MS);
+  });
+
+  it(<span class="string">'should handle concurrent load'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> CONCURRENT_JOBS = <span class="number">50</span>;
+
+    <span class="keyword">const</span> jobs = <span class="keyword">await</span> Promise.all(
+      Array.from({ length: CONCURRENT_JOBS }, () =>
+        client.push(<span class="string">'embedding'</span>, { text: <span class="string">'concurrent test'</span> })
+      )
+    );
+
+    <span class="keyword">const</span> results = <span class="keyword">await</span> Promise.all(
+      jobs.map(j => client.finished(j.id, <span class="number">10000</span>))
+    );
+
+    expect(results.filter(r => r.embedding)).toHaveLength(CONCURRENT_JOBS);
+  });
+});</code></pre>
+
+      <h2 id="ci-cd">CI/CD Integration</h2>
+
+      <pre><code><span class="comment"># .github/workflows/ai-tests.yml</span>
+name: AI Pipeline Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with mocks
+        run: npm run test:unit
+        env:
+          USE_MOCKS: true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      flashq:
+        image: flashq/flashq:latest
+        ports:
+          - 6789:6789
+          - 6790:6790
+        env:
+          HTTP: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for flashQ
+        run: |
+          timeout 30 bash -c 'until curl -s http://localhost:6790/health; do sleep 1; done'
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          FLASHQ_HOST: localhost
+          FLASHQ_PORT: 6789
+
+  quality-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run quality tests (real API)
+        run: npm run test:quality
+        env:
+          USE_MOCKS: false
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}</code></pre>
+
+      <h2 id="monitoring">Production Monitoring</h2>
+
+      <pre><code><span class="comment">// monitoring/ai-metrics.ts</span>
+<span class="keyword">import</span> { flashq } <span class="keyword">from</span> <span class="string">'./client'</span>;
+
+<span class="keyword">interface</span> AIMetrics {
+  totalJobs: number;
+  successRate: number;
+  avgLatencyMs: number;
+  tokenUsage: number;
+  costEstimate: number;
+  errorsByType: Record&lt;string, number&gt;;
+}
+
+<span class="keyword">async function</span> collectAIMetrics(): Promise&lt;AIMetrics&gt; {
+  <span class="keyword">const</span> metrics = <span class="keyword">await</span> flashq.metrics();
+  <span class="keyword">const</span> aiQueues = Object.entries(metrics.queues)
+    .filter(([name]) => name.startsWith(<span class="string">'ai:'</span>));
+
+  <span class="keyword">let</span> totalJobs = <span class="number">0</span>;
+  <span class="keyword">let</span> completed = <span class="number">0</span>;
+  <span class="keyword">let</span> totalLatency = <span class="number">0</span>;
+
+  <span class="keyword">for</span> (<span class="keyword">const</span> [, queue] <span class="keyword">of</span> aiQueues) {
+    totalJobs += queue.completed + queue.failed;
+    completed += queue.completed;
+    totalLatency += queue.avgProcessingTime * queue.completed;
+  }
+
+  <span class="keyword">return</span> {
+    totalJobs,
+    successRate: completed / totalJobs,
+    avgLatencyMs: totalLatency / completed,
+    tokenUsage: <span class="keyword">await</span> getTokenUsage(),
+    costEstimate: <span class="keyword">await</span> estimateCost(),
+    errorsByType: <span class="keyword">await</span> getErrorBreakdown()
+  };
+}
+
+<span class="comment">// Alerting on anomalies</span>
+<span class="keyword">async function</span> checkHealthAndAlert() {
+  <span class="keyword">const</span> metrics = <span class="keyword">await</span> collectAIMetrics();
+
+  <span class="keyword">if</span> (metrics.successRate < <span class="number">0.95</span>) {
+    <span class="keyword">await</span> sendAlert({
+      severity: <span class="string">'warning'</span>,
+      message: <span class="string">`AI success rate dropped to </span>${(metrics.successRate * <span class="number">100</span>).toFixed(<span class="number">1</span>)}<span class="string">%`</span>
+    });
+  }
+
+  <span class="keyword">if</span> (metrics.avgLatencyMs > <span class="number">5000</span>) {
+    <span class="keyword">await</span> sendAlert({
+      severity: <span class="string">'warning'</span>,
+      message: <span class="string">`AI latency elevated: </span>${metrics.avgLatencyMs}<span class="string">ms`</span>
+    });
+  }
+
+  <span class="keyword">if</span> (metrics.costEstimate > DAILY_BUDGET) {
+    <span class="keyword">await</span> sendAlert({
+      severity: <span class="string">'critical'</span>,
+      message: <span class="string">`AI cost exceeding budget: $</span>${metrics.costEstimate.toFixed(<span class="number">2</span>)}<span class="string">`</span>
+    });
+  }
+}</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">Testing Checklist</div>
+        <p>✓ Mock LLM APIs for fast, deterministic tests<br>✓ Use test containers for integration tests<br>✓ Test output quality and structure<br>✓ Benchmark performance against SLAs<br>✓ Run quality tests on real APIs (nightly)<br>✓ Monitor production metrics continuously</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>Testing AI pipelines requires a multi-layered approach: fast unit tests with mocks, integration tests with real infrastructure, quality tests for output validation, and performance tests for SLA verification. With flashQ's testing-friendly architecture, you can build confidence in your AI systems.</p>
+
+      <div class="article-cta">
+        <h3>Start Testing Today</h3>
+        <p>Build reliable AI pipelines with comprehensive testing.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#challenges">Challenges</a></li>
+              <li><a href="#project-setup">Project Setup</a></li>
+              <li><a href="#mocking">Mocking LLMs</a></li>
+              <li><a href="#unit-tests">Unit Tests</a></li>
+              <li><a href="#integration">Integration Tests</a></li>
+              <li><a href="#quality">Quality Testing</a></li>
+              <li><a href="#performance">Performance</a></li>
+              <li><a href="#ci-cd">CI/CD</a></li>
+              <li><a href="#monitoring">Monitoring</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

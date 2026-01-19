@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cost Optimization for AI APIs with flashQ - flashQ Blog</title>
+  <meta name="description" content="Control your AI API costs with flashQ. Learn rate limiting strategies, budget alerts, token tracking, and smart batching to reduce OpenAI and Anthropic bills by 50%+.">
+  <meta name="keywords" content="openai cost optimization, ai api costs, rate limiting, budget control, token tracking, anthropic pricing, llm cost reduction">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Cost Optimization for AI APIs with flashQ">
+  <meta property="og:description" content="Control your AI API costs with flashQ. Reduce bills by 50%+.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/cost-optimization-ai-apis.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Cost Optimization for AI APIs with flashQ">
+  <meta name="twitter:description" content="Control your AI API costs with flashQ.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/cost-optimization-ai-apis.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Cost Optimization for AI APIs with flashQ",
+    "description": "Control your AI API costs with flashQ.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Cost Optimization</span>
+  </nav>
+
+  <header class="article-header header-ai">
+    <div class="container">
+      <span class="article-tag">Best Practices</span>
+      <h1>Cost Optimization for AI APIs with flashQ</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 11 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>AI API costs can spiral out of control quickly. A single GPT-4 call costs $0.03-0.06 per 1K tokens. At scale, that adds up fast. This guide shows you how to use flashQ to implement cost controls that can reduce your AI bills by 50% or more.</p>
+
+      <h2 id="pricing">Understanding AI API Pricing</h2>
+
+      <table>
+        <thead>
+          <tr><th>Model</th><th>Input (1K tokens)</th><th>Output (1K tokens)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>GPT-4</td><td>$0.03</td><td>$0.06</td></tr>
+          <tr><td>GPT-4-Turbo</td><td>$0.01</td><td>$0.03</td></tr>
+          <tr><td>GPT-3.5-Turbo</td><td>$0.0005</td><td>$0.0015</td></tr>
+          <tr><td>Claude 3 Opus</td><td>$0.015</td><td>$0.075</td></tr>
+          <tr><td>Claude 3 Sonnet</td><td>$0.003</td><td>$0.015</td></tr>
+          <tr><td>text-embedding-3-small</td><td>$0.00002</td><td>-</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="rate-limiting">Strategy 1: Rate Limiting</h2>
+
+      <p>Control throughput to match your budget:</p>
+
+      <pre><code><span class="comment">// Set budget-based rate limit</span>
+<span class="comment">// Budget: $100/day for GPT-4</span>
+<span class="comment">// Average cost per call: ~$0.10</span>
+<span class="comment">// Max calls: 1000/day ≈ 42/hour ≈ 0.7/minute</span>
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'ai-tasks'</span>);
+
+<span class="comment">// Conservative rate limit</span>
+<span class="keyword">await</span> queue.<span class="function">setRateLimit</span>(<span class="number">40</span>);  <span class="comment">// 40 calls per minute max</span>
+
+<span class="comment">// Or use hourly rate for smoother distribution</span>
+<span class="keyword">await</span> queue.<span class="function">setRateLimit</span>(<span class="number">42</span>);  <span class="comment">// Matches $100/day budget</span></code></pre>
+
+      <h2 id="tracking">Strategy 2: Token Tracking</h2>
+
+      <pre><code><span class="comment">// Track costs per job</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'ai-tasks'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.chat.completions.<span class="function">create</span>({
+    model: job.data.model || <span class="string">'gpt-4'</span>,
+    messages: job.data.messages,
+  });
+
+  <span class="keyword">const</span> <span class="variable">usage</span> = response.usage;
+  <span class="keyword">const</span> <span class="variable">cost</span> = <span class="function">calculateCost</span>(job.data.model, usage);
+
+  <span class="comment">// Log cost for tracking</span>
+  <span class="keyword">await</span> db.costs.<span class="function">create</span>({
+    jobId: job.id,
+    userId: job.data.userId,
+    model: job.data.model,
+    promptTokens: usage.prompt_tokens,
+    completionTokens: usage.completion_tokens,
+    cost,
+    timestamp: <span class="keyword">new</span> <span class="function">Date</span>(),
+  });
+
+  <span class="keyword">return</span> {
+    result: response.choices[<span class="number">0</span>].message.content,
+    usage,
+    cost,
+  };
+});
+
+<span class="keyword">function</span> <span class="function">calculateCost</span>(model, usage) {
+  <span class="keyword">const</span> <span class="variable">pricing</span> = {
+    <span class="string">'gpt-4'</span>: { input: <span class="number">0.03</span>, output: <span class="number">0.06</span> },
+    <span class="string">'gpt-4-turbo'</span>: { input: <span class="number">0.01</span>, output: <span class="number">0.03</span> },
+    <span class="string">'gpt-3.5-turbo'</span>: { input: <span class="number">0.0005</span>, output: <span class="number">0.0015</span> },
+  };
+
+  <span class="keyword">const</span> <span class="variable">p</span> = pricing[model] || pricing[<span class="string">'gpt-4'</span>];
+  <span class="keyword">return</span> (
+    (usage.prompt_tokens / <span class="number">1000</span>) * p.input +
+    (usage.completion_tokens / <span class="number">1000</span>) * p.output
+  );
+}</code></pre>
+
+      <h2 id="budgets">Strategy 3: Budget Alerts</h2>
+
+      <pre><code><span class="comment">// Check budget before processing</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'ai-tasks'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { userId } = job.data;
+
+  <span class="comment">// Check user's daily spend</span>
+  <span class="keyword">const</span> <span class="variable">today</span> = <span class="keyword">new</span> <span class="function">Date</span>().<span class="function">toISOString</span>().<span class="function">split</span>(<span class="string">'T'</span>)[<span class="number">0</span>];
+  <span class="keyword">const</span> <span class="variable">dailySpend</span> = <span class="keyword">await</span> db.costs.<span class="function">sum</span>({
+    where: { userId, date: today },
+  });
+
+  <span class="keyword">const</span> <span class="variable">userBudget</span> = <span class="keyword">await</span> db.users.<span class="function">get</span>(userId).<span class="function">then</span>(u => u.dailyBudget);
+
+  <span class="keyword">if</span> (dailySpend >= userBudget) {
+    <span class="comment">// Pause user's jobs instead of failing</span>
+    <span class="keyword">await</span> queue.<span class="function">pause</span>(<span class="string">`user-${userId}`</span>);
+
+    <span class="comment">// Notify user</span>
+    <span class="keyword">await</span> <span class="function">sendEmail</span>({
+      to: user.email,
+      subject: <span class="string">'Daily AI budget reached'</span>,
+      body: <span class="string">`You've reached your $${userBudget} daily limit.`</span>,
+    });
+
+    <span class="keyword">throw</span> <span class="keyword">new</span> <span class="function">Error</span>(<span class="string">'Budget exceeded'</span>);
+  }
+
+  <span class="comment">// Process normally</span>
+  <span class="keyword">return</span> <span class="keyword">await</span> <span class="function">processAITask</span>(job);
+});</code></pre>
+
+      <h2 id="model-routing">Strategy 4: Smart Model Routing</h2>
+
+      <pre><code><span class="comment">// Route to cheaper models when appropriate</span>
+<span class="keyword">function</span> <span class="function">selectModel</span>(task) {
+  <span class="comment">// Simple tasks → GPT-3.5</span>
+  <span class="keyword">if</span> (task.type === <span class="string">'summarize'</span> || task.type === <span class="string">'extract'</span>) {
+    <span class="keyword">return</span> <span class="string">'gpt-3.5-turbo'</span>;
+  }
+
+  <span class="comment">// Complex reasoning → GPT-4</span>
+  <span class="keyword">if</span> (task.type === <span class="string">'analyze'</span> || task.type === <span class="string">'code'</span>) {
+    <span class="keyword">return</span> <span class="string">'gpt-4-turbo'</span>;
+  }
+
+  <span class="comment">// Default</span>
+  <span class="keyword">return</span> <span class="string">'gpt-3.5-turbo'</span>;
+}
+
+<span class="comment">// Add jobs with optimal model</span>
+<span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'process'</span>, {
+  ...taskData,
+  model: <span class="function">selectModel</span>(taskData),
+});</code></pre>
+
+      <h2 id="batching">Strategy 5: Smart Batching</h2>
+
+      <pre><code><span class="comment">// Batch similar requests for embeddings</span>
+<span class="keyword">let</span> batchBuffer = [];
+<span class="keyword">let</span> batchTimeout = <span class="keyword">null</span>;
+
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">queueEmbedding</span>(text, callback) {
+  batchBuffer.<span class="function">push</span>({ text, callback });
+
+  <span class="keyword">if</span> (!batchTimeout) {
+    batchTimeout = <span class="function">setTimeout</span>(<span class="keyword">async</span> () => {
+      <span class="keyword">const</span> <span class="variable">batch</span> = batchBuffer;
+      batchBuffer = [];
+      batchTimeout = <span class="keyword">null</span>;
+
+      <span class="comment">// One API call for entire batch (up to 2048 inputs)</span>
+      <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.embeddings.<span class="function">create</span>({
+        model: <span class="string">'text-embedding-3-small'</span>,
+        input: batch.<span class="function">map</span>(b => b.text),
+      });
+
+      <span class="comment">// Distribute results</span>
+      response.data.<span class="function">forEach</span>((emb, i) => {
+        batch[i].<span class="function">callback</span>(emb.embedding);
+      });
+    }, <span class="number">100</span>); <span class="comment">// Wait 100ms to collect batch</span>
+  }
+}</code></pre>
+
+      <h2 id="caching">Strategy 6: Response Caching</h2>
+
+      <pre><code><span class="comment">// Cache identical requests</span>
+<span class="keyword">import</span> crypto <span class="keyword">from</span> <span class="string">'crypto'</span>;
+
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'ai-tasks'</span>, <span class="keyword">async</span> (job) => {
+  <span class="comment">// Create cache key from request</span>
+  <span class="keyword">const</span> <span class="variable">cacheKey</span> = crypto
+    .<span class="function">createHash</span>(<span class="string">'sha256'</span>)
+    .<span class="function">update</span>(JSON.<span class="function">stringify</span>({
+      model: job.data.model,
+      messages: job.data.messages,
+    }))
+    .<span class="function">digest</span>(<span class="string">'hex'</span>);
+
+  <span class="comment">// Check cache</span>
+  <span class="keyword">const</span> <span class="variable">cached</span> = <span class="keyword">await</span> redis.<span class="function">get</span>(<span class="string">`ai:${cacheKey}`</span>);
+  <span class="keyword">if</span> (cached) {
+    <span class="keyword">return</span> JSON.<span class="function">parse</span>(cached);
+  }
+
+  <span class="comment">// Call API</span>
+  <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> <span class="function">callOpenAI</span>(job.data);
+
+  <span class="comment">// Cache for 1 hour</span>
+  <span class="keyword">await</span> redis.<span class="function">set</span>(<span class="string">`ai:${cacheKey}`</span>, JSON.<span class="function">stringify</span>(result), <span class="string">'EX'</span>, <span class="number">3600</span>);
+
+  <span class="keyword">return</span> result;
+});</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">💰 Cost Reduction Summary</div>
+        <p>
+          <strong>Rate Limiting:</strong> Prevents runaway costs<br>
+          <strong>Model Routing:</strong> 60-90% savings on simple tasks<br>
+          <strong>Batching:</strong> ~20% savings on embeddings<br>
+          <strong>Caching:</strong> 100% savings on repeated requests
+        </p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>flashQ gives you the tools to control AI costs effectively. Implement these strategies to keep your AI budget under control while delivering great user experiences.</p>
+
+      <div class="article-cta">
+        <h3>Start Saving Today</h3>
+        <p>Implement cost controls with flashQ.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#pricing">API Pricing</a></li>
+              <li><a href="#rate-limiting">Rate Limiting</a></li>
+              <li><a href="#tracking">Token Tracking</a></li>
+              <li><a href="#budgets">Budget Alerts</a></li>
+              <li><a href="#model-routing">Model Routing</a></li>
+              <li><a href="#batching">Smart Batching</a></li>
+              <li><a href="#caching">Response Caching</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

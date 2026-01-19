@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deploying flashQ with Docker and Kubernetes - flashQ Blog</title>
+  <meta name="description" content="Production deployment guide for flashQ. Learn Docker best practices, Kubernetes configurations, health checks, scaling strategies, and monitoring setup.">
+  <meta name="keywords" content="flashq docker, flashq kubernetes, k8s deployment, docker compose, helm chart, production deployment, container orchestration">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Deploying flashQ with Docker and Kubernetes">
+  <meta property="og:description" content="Production deployment guide for flashQ with Docker and Kubernetes.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/docker-kubernetes-deployment.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Deploying flashQ with Docker and Kubernetes">
+  <meta name="twitter:description" content="Production deployment guide for flashQ.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/docker-kubernetes-deployment.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Deploying flashQ with Docker and Kubernetes",
+    "description": "Production deployment guide for flashQ with Docker and Kubernetes.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Docker & Kubernetes</span>
+  </nav>
+
+  <header class="article-header header-devops">
+    <div class="container">
+      <span class="article-tag">DevOps</span>
+      <h1>Deploying flashQ with Docker and Kubernetes</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 14 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Deploying flashQ in production requires careful consideration of persistence, scaling, and monitoring. This guide covers everything from basic Docker setups to full Kubernetes deployments with high availability.</p>
+
+      <h2 id="docker">Docker Deployment</h2>
+
+      <h3>Basic Docker Run</h3>
+
+      <pre><code><span class="comment"># Simple deployment</span>
+docker run -d \
+  --name flashq \
+  -p 6789:6789 \
+  -p 6790:6790 \
+  -e HTTP=1 \
+  flashq/flashq
+
+<span class="comment"># With PostgreSQL persistence</span>
+docker run -d \
+  --name flashq \
+  -p 6789:6789 \
+  -p 6790:6790 \
+  -e HTTP=1 \
+  -e DATABASE_URL=postgres://user:pass@host:5432/flashq \
+  flashq/flashq</code></pre>
+
+      <h3>Docker Compose</h3>
+
+      <pre><code><span class="comment"># docker-compose.yml</span>
+version: <span class="string">'3.8'</span>
+
+services:
+  flashq:
+    image: flashq/flashq:latest
+    ports:
+      - <span class="string">"6789:6789"</span>   <span class="comment"># TCP</span>
+      - <span class="string">"6790:6790"</span>   <span class="comment"># HTTP</span>
+    environment:
+      - HTTP=1
+      - DATABASE_URL=postgres://flashq:flashq@postgres:5432/flashq
+      - AUTH_TOKENS=your-secret-token
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [<span class="string">"CMD"</span>, <span class="string">"curl"</span>, <span class="string">"-f"</span>, <span class="string">"http://localhost:6790/health"</span>]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flashq
+      POSTGRES_PASSWORD: flashq
+      POSTGRES_DB: flashq
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [<span class="string">"CMD-SHELL"</span>, <span class="string">"pg_isready -U flashq"</span>]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: ./worker
+    environment:
+      - FLASHQ_HOST=flashq
+      - FLASHQ_PORT=6789
+      - FLASHQ_TOKEN=your-secret-token
+    depends_on:
+      - flashq
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+volumes:
+  postgres_data:</code></pre>
+
+      <h2 id="kubernetes">Kubernetes Deployment</h2>
+
+      <h3>Namespace and ConfigMap</h3>
+
+      <pre><code><span class="comment"># k8s/namespace.yaml</span>
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flashq
+
+---
+<span class="comment"># k8s/configmap.yaml</span>
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flashq-config
+  namespace: flashq
+data:
+  HTTP: <span class="string">"1"</span>
+  GRPC: <span class="string">"0"</span>
+  LOG_LEVEL: <span class="string">"info"</span></code></pre>
+
+      <h3>Secret</h3>
+
+      <pre><code><span class="comment"># k8s/secret.yaml</span>
+apiVersion: v1
+kind: Secret
+metadata:
+  name: flashq-secrets
+  namespace: flashq
+type: Opaque
+stringData:
+  DATABASE_URL: postgres://flashq:password@postgres:5432/flashq
+  AUTH_TOKENS: your-secret-token-here</code></pre>
+
+      <h3>Deployment</h3>
+
+      <pre><code><span class="comment"># k8s/deployment.yaml</span>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flashq
+  namespace: flashq
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: flashq
+  template:
+    metadata:
+      labels:
+        app: flashq
+    spec:
+      containers:
+        - name: flashq
+          image: flashq/flashq:latest
+          ports:
+            - containerPort: 6789
+              name: tcp
+            - containerPort: 6790
+              name: http
+          envFrom:
+            - configMapRef:
+                name: flashq-config
+            - secretRef:
+                name: flashq-secrets
+          resources:
+            requests:
+              memory: <span class="string">"256Mi"</span>
+              cpu: <span class="string">"250m"</span>
+            limits:
+              memory: <span class="string">"1Gi"</span>
+              cpu: <span class="string">"1000m"</span>
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: flashq
+                topologyKey: kubernetes.io/hostname</code></pre>
+
+      <h3>Service</h3>
+
+      <pre><code><span class="comment"># k8s/service.yaml</span>
+apiVersion: v1
+kind: Service
+metadata:
+  name: flashq
+  namespace: flashq
+spec:
+  selector:
+    app: flashq
+  ports:
+    - name: tcp
+      port: 6789
+      targetPort: 6789
+    - name: http
+      port: 6790
+      targetPort: 6790
+  type: ClusterIP
+
+---
+<span class="comment"># External access via Ingress</span>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flashq-ingress
+  namespace: flashq
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: <span class="string">"true"</span>
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - flashq.example.com
+      secretName: flashq-tls
+  rules:
+    - host: flashq.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flashq
+                port:
+                  number: 6790</code></pre>
+
+      <h2 id="scaling">Scaling Strategies</h2>
+
+      <h3>Horizontal Pod Autoscaler</h3>
+
+      <pre><code><span class="comment"># k8s/hpa.yaml</span>
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flashq-hpa
+  namespace: flashq
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flashq
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80</code></pre>
+
+      <h2 id="monitoring">Monitoring</h2>
+
+      <h3>Prometheus ServiceMonitor</h3>
+
+      <pre><code><span class="comment"># k8s/servicemonitor.yaml</span>
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: flashq
+  namespace: flashq
+spec:
+  selector:
+    matchLabels:
+      app: flashq
+  endpoints:
+    - port: http
+      path: /metrics/prometheus
+      interval: 15s</code></pre>
+
+      <h3>Grafana Dashboard</h3>
+
+      <p>Import the flashQ Grafana dashboard from our repository for pre-built visualizations of:</p>
+
+      <ul>
+        <li>Jobs processed per second</li>
+        <li>Queue depths</li>
+        <li>Processing latency</li>
+        <li>Error rates</li>
+        <li>Memory usage</li>
+      </ul>
+
+      <div class="callout callout-success">
+        <div class="callout-title">🚀 Production Checklist</div>
+        <p>✓ Enable PostgreSQL persistence<br>✓ Set up health checks<br>✓ Configure resource limits<br>✓ Enable authentication tokens<br>✓ Set up monitoring and alerting<br>✓ Use pod anti-affinity for HA</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>flashQ is designed to be cloud-native and easy to deploy. Whether you're running a simple Docker setup or a full Kubernetes cluster, flashQ scales with your needs.</p>
+
+      <div class="article-cta">
+        <h3>Deploy flashQ Today</h3>
+        <p>Get production-ready in minutes with our deployment guides.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#docker">Docker Deployment</a></li>
+              <li><a href="#kubernetes">Kubernetes</a></li>
+              <li><a href="#scaling">Scaling</a></li>
+              <li><a href="#monitoring">Monitoring</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

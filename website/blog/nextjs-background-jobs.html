@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>flashQ + Next.js: Background Jobs in Vercel - flashQ Blog</title>
+  <meta name="description" content="Learn how to add background jobs to your Next.js app deployed on Vercel. Process AI tasks, send emails, and handle webhooks without blocking your API routes.">
+  <meta name="keywords" content="nextjs background jobs, vercel background tasks, next.js job queue, serverless background processing, nextjs flashq">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:title" content="flashQ + Next.js: Background Jobs in Vercel">
+  <meta property="og:description" content="Add background jobs to your Next.js app deployed on Vercel.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/nextjs-background-jobs.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="flashQ + Next.js: Background Jobs in Vercel">
+  <meta name="twitter:description" content="Add background jobs to your Next.js app deployed on Vercel.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/nextjs-background-jobs.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "flashQ + Next.js: Background Jobs in Vercel",
+    "description": "Add background jobs to your Next.js app deployed on Vercel.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          Search <span class="kbd">⌘K</span>
+        </button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a>
+    <a href="../blog/">Blog</a>
+    <a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Next.js Background Jobs</span>
+  </nav>
+
+  <header class="article-header header-tutorial">
+    <div class="container">
+      <span class="article-tag tutorial">Tutorial</span>
+      <h1>flashQ + Next.js: Background Jobs in Vercel</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 10 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Next.js is fantastic for building modern web applications, but it has a fundamental limitation: serverless functions have a maximum execution time (typically 10-30 seconds on Vercel). This makes it challenging to handle long-running tasks like AI processing, email sending, or webhook handling.</p>
+
+      <p>Enter flashQ. By offloading work to a background job queue, you can keep your API routes fast while processing heavy tasks asynchronously. In this guide, we'll build a complete solution for adding background jobs to your Next.js application.</p>
+
+      <h2 id="architecture">Architecture Overview</h2>
+
+      <p>Here's how the pieces fit together:</p>
+
+      <pre><code>┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    Next.js      │     │    flashQ       │     │    Worker       │
+│    (Vercel)     │────▶│    Server       │◀────│    (Railway)    │
+│                 │     │    (Railway)    │     │                 │
+│  - API Routes   │     │                 │     │  - AI Tasks     │
+│  - Web App      │     │  - Job Queue    │     │  - Emails       │
+│                 │     │  - Persistence  │     │  - Webhooks     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘</code></pre>
+
+      <p>The key insight: your Next.js app only <em>enqueues</em> jobs (fast), while a separate worker process <em>executes</em> them (can take as long as needed).</p>
+
+      <h2 id="setup">Project Setup</h2>
+
+      <h3>1. Create a Next.js App</h3>
+
+      <pre><code><span class="comment"># Create new Next.js project</span>
+npx create-next-app@latest my-app --typescript --tailwind --app
+<span class="keyword">cd</span> my-app
+
+<span class="comment"># Install flashQ</span>
+npm install flashq</code></pre>
+
+      <h3>2. Environment Variables</h3>
+
+      <p>Create a <code>.env.local</code> file:</p>
+
+      <pre><code><span class="comment"># flashQ server connection</span>
+FLASHQ_HOST=your-flashq-server.railway.app
+FLASHQ_PORT=6789
+FLASHQ_TOKEN=your-secret-token
+
+<span class="comment"># Or use HTTP for serverless environments</span>
+FLASHQ_HTTP_URL=https://your-flashq-server.railway.app</code></pre>
+
+      <h3>3. Create the Queue Client</h3>
+
+      <pre><code><span class="comment">// lib/queue.ts</span>
+<span class="keyword">import</span> { Queue } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">let</span> queue: Queue | <span class="keyword">null</span> = <span class="keyword">null</span>;
+
+<span class="keyword">export</span> <span class="keyword">function</span> <span class="function">getQueue</span>(): Queue {
+  <span class="keyword">if</span> (!queue) {
+    queue = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'tasks'</span>, {
+      connection: {
+        host: process.env.FLASHQ_HOST!,
+        port: <span class="function">parseInt</span>(process.env.FLASHQ_PORT || <span class="string">'6789'</span>),
+        token: process.env.FLASHQ_TOKEN,
+      },
+      <span class="comment">// Use HTTP mode for serverless (no persistent TCP connections)</span>
+      useHttp: <span class="keyword">true</span>,
+    });
+  }
+  <span class="keyword">return</span> queue;
+}</code></pre>
+
+      <div class="callout callout-info">
+        <div class="callout-title">💡 Why HTTP Mode?</div>
+        <p>Serverless functions can't maintain persistent TCP connections. HTTP mode makes a fresh request for each operation, which works perfectly with Vercel's execution model.</p>
+      </div>
+
+      <h2 id="api-routes">Creating API Routes</h2>
+
+      <h3>Example 1: AI Content Generation</h3>
+
+      <pre><code><span class="comment">// app/api/generate/route.ts</span>
+<span class="keyword">import</span> { NextRequest, NextResponse } <span class="keyword">from</span> <span class="string">'next/server'</span>;
+<span class="keyword">import</span> { getQueue } <span class="keyword">from</span> <span class="string">'@/lib/queue'</span>;
+
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">POST</span>(request: NextRequest) {
+  <span class="keyword">const</span> { prompt, userId } = <span class="keyword">await</span> request.<span class="function">json</span>();
+
+  <span class="comment">// Validate input</span>
+  <span class="keyword">if</span> (!prompt || !userId) {
+    <span class="keyword">return</span> NextResponse.<span class="function">json</span>(
+      { error: <span class="string">'Missing required fields'</span> },
+      { status: <span class="number">400</span> }
+    );
+  }
+
+  <span class="comment">// Enqueue the job (returns immediately)</span>
+  <span class="keyword">const</span> <span class="variable">queue</span> = <span class="function">getQueue</span>();
+  <span class="keyword">const</span> <span class="variable">job</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'generate-content'</span>, {
+    prompt,
+    userId,
+    createdAt: <span class="keyword">new</span> <span class="function">Date</span>().<span class="function">toISOString</span>(),
+  }, {
+    <span class="comment">// Job options</span>
+    priority: <span class="number">10</span>,
+    attempts: <span class="number">3</span>,
+    backoff: { type: <span class="string">'exponential'</span>, delay: <span class="number">1000</span> },
+  });
+
+  <span class="comment">// Return job ID for tracking</span>
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({
+    success: <span class="keyword">true</span>,
+    jobId: job.id,
+    message: <span class="string">'Content generation started'</span>,
+  });
+}</code></pre>
+
+      <h3>Example 2: Check Job Status</h3>
+
+      <pre><code><span class="comment">// app/api/jobs/[id]/route.ts</span>
+<span class="keyword">import</span> { NextRequest, NextResponse } <span class="keyword">from</span> <span class="string">'next/server'</span>;
+<span class="keyword">import</span> { getQueue } <span class="keyword">from</span> <span class="string">'@/lib/queue'</span>;
+
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">GET</span>(
+  request: NextRequest,
+  { params }: { params: { id: <span class="keyword">string</span> } }
+) {
+  <span class="keyword">const</span> <span class="variable">queue</span> = <span class="function">getQueue</span>();
+
+  <span class="comment">// Get job status</span>
+  <span class="keyword">const</span> <span class="variable">job</span> = <span class="keyword">await</span> queue.<span class="function">getJob</span>(params.id);
+
+  <span class="keyword">if</span> (!job) {
+    <span class="keyword">return</span> NextResponse.<span class="function">json</span>(
+      { error: <span class="string">'Job not found'</span> },
+      { status: <span class="number">404</span> }
+    );
+  }
+
+  <span class="comment">// Get progress and result</span>
+  <span class="keyword">const</span> <span class="variable">state</span> = <span class="keyword">await</span> queue.<span class="function">getState</span>(params.id);
+  <span class="keyword">const</span> <span class="variable">progress</span> = <span class="keyword">await</span> queue.<span class="function">getProgress</span>(params.id);
+  <span class="keyword">const</span> <span class="variable">result</span> = state === <span class="string">'completed'</span> ? <span class="keyword">await</span> queue.<span class="function">getResult</span>(params.id) : <span class="keyword">null</span>;
+
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({
+    id: job.id,
+    state,
+    progress,
+    result,
+    data: job.data,
+  });
+}</code></pre>
+
+      <h3>Example 3: Send Email Endpoint</h3>
+
+      <pre><code><span class="comment">// app/api/email/route.ts</span>
+<span class="keyword">import</span> { NextRequest, NextResponse } <span class="keyword">from</span> <span class="string">'next/server'</span>;
+<span class="keyword">import</span> { getQueue } <span class="keyword">from</span> <span class="string">'@/lib/queue'</span>;
+
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">POST</span>(request: NextRequest) {
+  <span class="keyword">const</span> { to, subject, template, data } = <span class="keyword">await</span> request.<span class="function">json</span>();
+
+  <span class="keyword">const</span> <span class="variable">queue</span> = <span class="function">getQueue</span>();
+  <span class="keyword">const</span> <span class="variable">job</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'send-email'</span>, {
+    to,
+    subject,
+    template,
+    data,
+  }, {
+    attempts: <span class="number">5</span>,  <span class="comment">// Email delivery can be flaky</span>
+    backoff: { type: <span class="string">'exponential'</span>, delay: <span class="number">5000</span> },
+  });
+
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ queued: <span class="keyword">true</span>, jobId: job.id });
+}</code></pre>
+
+      <h2 id="worker">Creating the Worker</h2>
+
+      <p>The worker runs separately from your Next.js app. You can deploy it on Railway, Fly.io, or any server that supports long-running processes.</p>
+
+      <pre><code><span class="comment">// worker/index.ts</span>
+<span class="keyword">import</span> { Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+<span class="keyword">import</span> OpenAI <span class="keyword">from</span> <span class="string">'openai'</span>;
+<span class="keyword">import</span> { Resend } <span class="keyword">from</span> <span class="string">'resend'</span>;
+
+<span class="keyword">const</span> <span class="variable">openai</span> = <span class="keyword">new</span> <span class="function">OpenAI</span>();
+<span class="keyword">const</span> <span class="variable">resend</span> = <span class="keyword">new</span> <span class="function">Resend</span>(process.env.RESEND_API_KEY);
+
+<span class="comment">// Create worker for the tasks queue</span>
+<span class="keyword">const</span> <span class="variable">worker</span> = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'tasks'</span>, <span class="keyword">async</span> (job) => {
+  console.<span class="function">log</span>(<span class="string">`Processing job ${job.id}: ${job.name}`</span>);
+
+  <span class="keyword">switch</span> (job.name) {
+    <span class="keyword">case</span> <span class="string">'generate-content'</span>:
+      <span class="keyword">return</span> <span class="keyword">await</span> <span class="function">handleContentGeneration</span>(job);
+
+    <span class="keyword">case</span> <span class="string">'send-email'</span>:
+      <span class="keyword">return</span> <span class="keyword">await</span> <span class="function">handleSendEmail</span>(job);
+
+    <span class="keyword">default</span>:
+      <span class="keyword">throw</span> <span class="keyword">new</span> <span class="function">Error</span>(<span class="string">`Unknown job type: ${job.name}`</span>);
+  }
+}, {
+  connection: {
+    host: process.env.FLASHQ_HOST,
+    port: <span class="function">parseInt</span>(process.env.FLASHQ_PORT || <span class="string">'6789'</span>),
+    token: process.env.FLASHQ_TOKEN,
+  },
+  concurrency: <span class="number">5</span>,
+});
+
+<span class="comment">// Handler: AI Content Generation</span>
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">handleContentGeneration</span>(job) {
+  <span class="keyword">const</span> { prompt, userId } = job.data;
+
+  <span class="comment">// Update progress</span>
+  <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">10</span>, <span class="string">'Starting generation...'</span>);
+
+  <span class="comment">// Call OpenAI</span>
+  <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.chat.completions.<span class="function">create</span>({
+    model: <span class="string">'gpt-4'</span>,
+    messages: [{ role: <span class="string">'user'</span>, content: prompt }],
+    max_tokens: <span class="number">2000</span>,
+  });
+
+  <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">90</span>, <span class="string">'Saving result...'</span>);
+
+  <span class="comment">// Save to database (pseudo-code)</span>
+  <span class="keyword">await</span> db.content.<span class="function">create</span>({
+    userId,
+    content: response.choices[<span class="number">0</span>].message.content,
+    jobId: job.id,
+  });
+
+  <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">100</span>, <span class="string">'Complete!'</span>);
+
+  <span class="keyword">return</span> {
+    content: response.choices[<span class="number">0</span>].message.content,
+    tokens: response.usage?.total_tokens,
+  };
+}
+
+<span class="comment">// Handler: Send Email</span>
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">handleSendEmail</span>(job) {
+  <span class="keyword">const</span> { to, subject, template, data } = job.data;
+
+  <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> resend.emails.<span class="function">send</span>({
+    from: <span class="string">'noreply@example.com'</span>,
+    to,
+    subject,
+    html: <span class="function">renderTemplate</span>(template, data),
+  });
+
+  <span class="keyword">return</span> { emailId: result.id };
+}
+
+<span class="comment">// Event handlers</span>
+worker.<span class="function">on</span>(<span class="string">'completed'</span>, (job, result) => {
+  console.<span class="function">log</span>(<span class="string">`✓ Job ${job.id} completed`</span>);
+});
+
+worker.<span class="function">on</span>(<span class="string">'failed'</span>, (job, error) => {
+  console.<span class="function">error</span>(<span class="string">`✗ Job ${job.id} failed:`</span>, error.message);
+});
+
+console.<span class="function">log</span>(<span class="string">'Worker started, waiting for jobs...'</span>);</code></pre>
+
+      <h2 id="frontend">Frontend Integration</h2>
+
+      <h3>React Hook for Job Tracking</h3>
+
+      <pre><code><span class="comment">// hooks/useJob.ts</span>
+<span class="keyword">import</span> { useState, useEffect } <span class="keyword">from</span> <span class="string">'react'</span>;
+
+<span class="keyword">export</span> <span class="keyword">function</span> <span class="function">useJob</span>(jobId: <span class="keyword">string</span> | <span class="keyword">null</span>) {
+  <span class="keyword">const</span> [status, setStatus] = <span class="function">useState</span>&lt;{
+    state: <span class="keyword">string</span>;
+    progress: <span class="keyword">number</span>;
+    result: <span class="keyword">any</span>;
+  } | <span class="keyword">null</span>&gt;(<span class="keyword">null</span>);
+
+  <span class="function">useEffect</span>(() => {
+    <span class="keyword">if</span> (!jobId) <span class="keyword">return</span>;
+
+    <span class="keyword">const</span> <span class="variable">pollStatus</span> = <span class="keyword">async</span> () => {
+      <span class="keyword">const</span> <span class="variable">res</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">`/api/jobs/${jobId}`</span>);
+      <span class="keyword">const</span> <span class="variable">data</span> = <span class="keyword">await</span> res.<span class="function">json</span>();
+      <span class="function">setStatus</span>(data);
+
+      <span class="comment">// Keep polling until completed or failed</span>
+      <span class="keyword">if</span> (data.state !== <span class="string">'completed'</span> && data.state !== <span class="string">'failed'</span>) {
+        <span class="function">setTimeout</span>(pollStatus, <span class="number">1000</span>);
+      }
+    };
+
+    <span class="function">pollStatus</span>();
+  }, [jobId]);
+
+  <span class="keyword">return</span> status;
+}
+
+<span class="comment">// Usage in component</span>
+<span class="keyword">function</span> <span class="function">GenerateButton</span>() {
+  <span class="keyword">const</span> [jobId, setJobId] = <span class="function">useState</span>&lt;<span class="keyword">string</span> | <span class="keyword">null</span>&gt;(<span class="keyword">null</span>);
+  <span class="keyword">const</span> <span class="variable">job</span> = <span class="function">useJob</span>(jobId);
+
+  <span class="keyword">const</span> <span class="function">handleGenerate</span> = <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> <span class="variable">res</span> = <span class="keyword">await</span> <span class="function">fetch</span>(<span class="string">'/api/generate'</span>, {
+      method: <span class="string">'POST'</span>,
+      headers: { <span class="string">'Content-Type'</span>: <span class="string">'application/json'</span> },
+      body: JSON.<span class="function">stringify</span>({ prompt: <span class="string">'Write a poem'</span>, userId: <span class="string">'123'</span> }),
+    });
+    <span class="keyword">const</span> { jobId } = <span class="keyword">await</span> res.<span class="function">json</span>();
+    <span class="function">setJobId</span>(jobId);
+  };
+
+  <span class="keyword">return</span> (
+    &lt;div&gt;
+      &lt;button onClick={handleGenerate}&gt;Generate Content&lt;/button&gt;
+      {job && (
+        &lt;div&gt;
+          &lt;p&gt;Status: {job.state}&lt;/p&gt;
+          &lt;progress value={job.progress} max={100} /&gt;
+          {job.result && &lt;pre&gt;{JSON.stringify(job.result, null, 2)}&lt;/pre&gt;}
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</code></pre>
+
+      <h2 id="deployment">Deployment</h2>
+
+      <h3>Deploy flashQ Server to Railway</h3>
+
+      <pre><code><span class="comment"># railway.toml</span>
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "./flashq-server"
+healthcheckPath = "/health"
+healthcheckTimeout = 30</code></pre>
+
+      <pre><code><span class="comment"># Dockerfile</span>
+FROM debian:bookworm-slim
+WORKDIR /app
+COPY flashq-server .
+RUN chmod +x flashq-server
+EXPOSE 6789 6790
+CMD ["./flashq-server"]</code></pre>
+
+      <h3>Deploy Worker to Railway</h3>
+
+      <pre><code><span class="comment"># worker/Dockerfile</span>
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+CMD ["node", "dist/index.js"]</code></pre>
+
+      <h3>Vercel Environment Variables</h3>
+
+      <p>In your Vercel dashboard, add these environment variables:</p>
+
+      <pre><code>FLASHQ_HOST=your-flashq.railway.app
+FLASHQ_PORT=6789
+FLASHQ_TOKEN=your-secret-token</code></pre>
+
+      <h2 id="patterns">Common Patterns</h2>
+
+      <h3>Webhook Processing</h3>
+
+      <pre><code><span class="comment">// app/api/webhook/stripe/route.ts</span>
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">POST</span>(request: NextRequest) {
+  <span class="keyword">const</span> <span class="variable">event</span> = <span class="keyword">await</span> request.<span class="function">json</span>();
+
+  <span class="comment">// Enqueue for processing (respond to Stripe quickly!)</span>
+  <span class="keyword">await</span> <span class="function">getQueue</span>().<span class="function">add</span>(<span class="string">'stripe-webhook'</span>, event, {
+    jobId: event.id,  <span class="comment">// Idempotency</span>
+  });
+
+  <span class="keyword">return</span> NextResponse.<span class="function">json</span>({ received: <span class="keyword">true</span> });
+}</code></pre>
+
+      <h3>Scheduled Tasks with Cron</h3>
+
+      <pre><code><span class="comment">// Set up cron jobs when worker starts</span>
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'daily-report'</span>, {
+  queue: <span class="string">'tasks'</span>,
+  schedule: <span class="string">'0 0 9 * * *'</span>,  <span class="comment">// 9 AM daily</span>
+  data: { type: <span class="string">'daily-report'</span> },
+});
+
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'cleanup'</span>, {
+  queue: <span class="string">'tasks'</span>,
+  schedule: <span class="string">'0 0 0 * * 0'</span>,  <span class="comment">// Weekly on Sunday</span>
+  data: { type: <span class="string">'cleanup'</span> },
+});</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">🚀 Pro Tip</div>
+        <p>Use job IDs for idempotency on webhooks. If Stripe retries a webhook, the second request will be a no-op since the job ID already exists.</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>With flashQ, you can add powerful background processing to your Next.js app without the complexity of managing Redis. The key points:</p>
+
+      <ul>
+        <li><strong>Use HTTP mode</strong> for serverless environments</li>
+        <li><strong>Enqueue fast, process separately</strong> - keep API routes under timeout limits</li>
+        <li><strong>Track progress</strong> with job IDs and polling</li>
+        <li><strong>Deploy worker separately</strong> on Railway, Fly.io, or your own server</li>
+      </ul>
+
+      <div class="article-cta">
+        <h3>Build Something Amazing</h3>
+        <p>Get started with flashQ and Next.js in minutes.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#architecture">Architecture</a></li>
+              <li><a href="#setup">Project Setup</a></li>
+              <li><a href="#api-routes">API Routes</a></li>
+              <li><a href="#worker">Creating the Worker</a></li>
+              <li><a href="#frontend">Frontend Integration</a></li>
+              <li><a href="#deployment">Deployment</a></li>
+              <li><a href="#patterns">Common Patterns</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search articles and docs...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); document.body.style.overflow = mobileMenu.classList.contains("active") ? "hidden" : ""; });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    const searchData = [{ title: "Next.js Background Jobs", url: "nextjs-background-jobs.html", description: "Add background jobs to Vercel", tag: "Tutorial" }, { title: "Documentation", url: "../docs/", description: "API reference", tag: "Docs" }];
+    let selectedIndex = 0;
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); renderResults(''); }
+    function closeSearch(e) { if (e?.target !== document.getElementById('searchOverlay')) return; document.getElementById('searchOverlay').classList.remove('active'); }
+    function renderResults(q) { const r = q ? searchData.filter(i => i.title.toLowerCase().includes(q.toLowerCase())) : searchData; document.getElementById('searchResults').innerHTML = r.map((i,idx) => `<a href="${i.url}" class="search-result ${idx===0?'active':''}"><div class="search-result-title">${i.title}</div><div class="search-result-description">${i.description}</div></a>`).join('') || '<div class="search-empty">No results</div>'; }
+    document.getElementById('searchInput').addEventListener('input', e => renderResults(e.target.value));
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

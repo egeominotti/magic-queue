@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building AI Agents with flashQ and LangChain - flashQ Blog</title>
+  <meta name="description" content="Build production-ready AI agents using flashQ and LangChain. Learn async tool execution, multi-agent orchestration, memory management, and scaling strategies.">
+  <meta name="keywords" content="flashq langchain, ai agents, langchain tools, multi-agent systems, autonomous agents, llm orchestration, agent memory, tool execution">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Building AI Agents with flashQ and LangChain">
+  <meta property="og:description" content="Build production-ready AI agents with async tool execution and multi-agent orchestration.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/langchain-ai-agents.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Building AI Agents with flashQ and LangChain">
+  <meta name="twitter:description" content="Build production-ready AI agents with async tool execution.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/langchain-ai-agents.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Building AI Agents with flashQ and LangChain",
+    "description": "Build production-ready AI agents using flashQ and LangChain with async tool execution and multi-agent orchestration.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" },
+    "publisher": { "@type": "Organization", "name": "flashQ", "logo": { "@type": "ImageObject", "url": "https://flashq.dev/logo.png" } }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">LangChain AI Agents</span>
+  </nav>
+
+  <header class="article-header header-ai">
+    <div class="container">
+      <span class="article-tag">AI/ML</span>
+      <h1>Building AI Agents with flashQ and LangChain</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 16 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>AI agents are autonomous systems that can plan, reason, and execute complex tasks. When combined with LangChain's agent framework and flashQ's reliable job processing, you can build production-ready agents that scale. This guide covers everything from basic tool execution to multi-agent orchestration.</p>
+
+      <h2 id="what-are-agents">What Are AI Agents?</h2>
+
+      <p>Unlike simple chatbots, AI agents can:</p>
+
+      <ul>
+        <li><strong>Plan</strong>: Break down complex tasks into steps</li>
+        <li><strong>Execute</strong>: Use tools to accomplish subtasks</li>
+        <li><strong>React</strong>: Adapt based on tool results</li>
+        <li><strong>Remember</strong>: Maintain context across interactions</li>
+      </ul>
+
+      <div class="callout callout-info">
+        <div class="callout-title">Why flashQ for Agents?</div>
+        <p>AI agents often execute long-running tasks (web searches, API calls, computations). flashQ ensures reliable execution with retries, timeouts, and progress tracking.</p>
+      </div>
+
+      <h2 id="architecture">Agent Architecture</h2>
+
+      <pre><code><span class="comment">// Architecture Overview</span>
+┌─────────────────────────────────────────────────────────┐
+│                    User Request                          │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Agent Controller                       │
+│  • Parse intent                                          │
+│  • Create execution plan                                 │
+│  • Coordinate tools                                      │
+└─────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │  Search    │  │  Code      │  │  Database  │
+    │  Tool      │  │  Executor  │  │  Tool      │
+    │  (Queue)   │  │  (Queue)   │  │  (Queue)   │
+    └────────────┘  └────────────┘  └────────────┘
+           │               │               │
+           └───────────────┼───────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   flashQ Workers                         │
+│  • Execute tools async                                   │
+│  • Handle retries                                        │
+│  • Track progress                                        │
+└─────────────────────────────────────────────────────────┘</code></pre>
+
+      <h2 id="setup">Project Setup</h2>
+
+      <pre><code><span class="comment"># Install dependencies</span>
+npm install flashq langchain @langchain/openai @langchain/community zod</code></pre>
+
+      <pre><code><span class="comment">// agent-config.ts</span>
+<span class="keyword">import</span> { FlashQ, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+<span class="keyword">import</span> { ChatOpenAI } <span class="keyword">from</span> <span class="string">'@langchain/openai'</span>;
+
+<span class="keyword">export const</span> flashq = <span class="keyword">new</span> FlashQ({
+  host: process.env.FLASHQ_HOST || <span class="string">'localhost'</span>,
+  port: <span class="number">6789</span>,
+  token: process.env.FLASHQ_TOKEN
+});
+
+<span class="keyword">export const</span> llm = <span class="keyword">new</span> ChatOpenAI({
+  modelName: <span class="string">'gpt-4-turbo'</span>,
+  temperature: <span class="number">0</span>,
+  openAIApiKey: process.env.OPENAI_API_KEY
+});
+
+<span class="comment">// Tool queue names</span>
+<span class="keyword">export const</span> QUEUES = {
+  AGENT_TASKS: <span class="string">'agent:tasks'</span>,
+  TOOL_SEARCH: <span class="string">'tool:search'</span>,
+  TOOL_CODE: <span class="string">'tool:code'</span>,
+  TOOL_DATABASE: <span class="string">'tool:database'</span>,
+  TOOL_EMAIL: <span class="string">'tool:email'</span>
+};</code></pre>
+
+      <h2 id="langchain-tools">Creating LangChain Tools with flashQ</h2>
+
+      <h3>Define Async Tools</h3>
+
+      <pre><code><span class="comment">// tools/search-tool.ts</span>
+<span class="keyword">import</span> { DynamicStructuredTool } <span class="keyword">from</span> <span class="string">'langchain/tools'</span>;
+<span class="keyword">import</span> { z } <span class="keyword">from</span> <span class="string">'zod'</span>;
+<span class="keyword">import</span> { flashq, QUEUES } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="keyword">export const</span> searchTool = <span class="keyword">new</span> DynamicStructuredTool({
+  name: <span class="string">'web_search'</span>,
+  description: <span class="string">'Search the web for current information. Use for questions about recent events, facts, or research.'</span>,
+  schema: z.object({
+    query: z.string().describe(<span class="string">'The search query'</span>),
+    maxResults: z.number().default(<span class="number">5</span>).describe(<span class="string">'Maximum results to return'</span>)
+  }),
+  <span class="keyword">func</span>: <span class="keyword">async</span> ({ query, maxResults }) => {
+    <span class="comment">// Push to flashQ for async execution</span>
+    <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.TOOL_SEARCH, {
+      query,
+      maxResults,
+      timestamp: Date.now()
+    }, {
+      timeout: <span class="number">30000</span>,
+      max_attempts: <span class="number">3</span>
+    });
+
+    <span class="comment">// Wait for result (blocks until complete)</span>
+    <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.finished(job.id, <span class="number">60000</span>);
+
+    <span class="keyword">return</span> JSON.stringify(result.data);
+  }
+});
+
+<span class="comment">// tools/code-executor.ts</span>
+<span class="keyword">export const</span> codeExecutorTool = <span class="keyword">new</span> DynamicStructuredTool({
+  name: <span class="string">'execute_code'</span>,
+  description: <span class="string">'Execute Python code in a sandboxed environment. Use for calculations, data analysis, or code testing.'</span>,
+  schema: z.object({
+    code: z.string().describe(<span class="string">'Python code to execute'</span>),
+    timeout: z.number().default(<span class="number">30</span>).describe(<span class="string">'Execution timeout in seconds'</span>)
+  }),
+  <span class="keyword">func</span>: <span class="keyword">async</span> ({ code, timeout }) => {
+    <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.TOOL_CODE, {
+      code,
+      language: <span class="string">'python'</span>,
+      sandboxed: <span class="literal">true</span>
+    }, {
+      timeout: timeout * <span class="number">1000</span>,
+      max_attempts: <span class="number">1</span> <span class="comment">// No retry for code execution</span>
+    });
+
+    <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.finished(job.id);
+
+    <span class="keyword">if</span> (result.error) {
+      <span class="keyword">return</span> <span class="string">`Error: </span>${result.error}<span class="string">`</span>;
+    }
+    <span class="keyword">return</span> result.output;
+  }
+});
+
+<span class="comment">// tools/database-tool.ts</span>
+<span class="keyword">export const</span> databaseTool = <span class="keyword">new</span> DynamicStructuredTool({
+  name: <span class="string">'query_database'</span>,
+  description: <span class="string">'Query the database. Use for retrieving user data, analytics, or stored information.'</span>,
+  schema: z.object({
+    sql: z.string().describe(<span class="string">'SQL query (SELECT only)'</span>),
+    params: z.array(z.any()).default([]).describe(<span class="string">'Query parameters'</span>)
+  }),
+  <span class="keyword">func</span>: <span class="keyword">async</span> ({ sql, params }) => {
+    <span class="comment">// Validate: only SELECT allowed</span>
+    <span class="keyword">if</span> (!sql.trim().toLowerCase().startsWith(<span class="string">'select'</span>)) {
+      <span class="keyword">return</span> <span class="string">'Error: Only SELECT queries are allowed'</span>;
+    }
+
+    <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.TOOL_DATABASE, {
+      sql,
+      params,
+      readOnly: <span class="literal">true</span>
+    }, {
+      timeout: <span class="number">10000</span>
+    });
+
+    <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.finished(job.id);
+    <span class="keyword">return</span> JSON.stringify(result.rows, <span class="literal">null</span>, <span class="number">2</span>);
+  }
+});</code></pre>
+
+      <h3>Tool Workers</h3>
+
+      <pre><code><span class="comment">// workers/search-worker.ts</span>
+<span class="keyword">import</span> { Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+<span class="keyword">import</span> { flashq, QUEUES } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="keyword">const</span> searchWorker = <span class="keyword">new</span> Worker(flashq, QUEUES.TOOL_SEARCH, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { query, maxResults } = job.data;
+
+  <span class="comment">// Use your preferred search API</span>
+  <span class="keyword">const</span> response = <span class="keyword">await</span> fetch(
+    <span class="string">`https://api.search.io/search?q=</span>${encodeURIComponent(query)}<span class="string">&limit=</span>${maxResults}<span class="string">`</span>,
+    { headers: { <span class="string">'Authorization'</span>: <span class="string">`Bearer </span>${process.env.SEARCH_API_KEY}<span class="string">`</span> } }
+  );
+
+  <span class="keyword">const</span> data = <span class="keyword">await</span> response.json();
+
+  <span class="keyword">return</span> {
+    query,
+    results: data.results.map((r: any) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.snippet
+    }))
+  };
+}, { concurrency: <span class="number">10</span> });
+
+<span class="comment">// workers/code-worker.ts</span>
+<span class="keyword">import</span> { spawn } <span class="keyword">from</span> <span class="string">'child_process'</span>;
+
+<span class="keyword">const</span> codeWorker = <span class="keyword">new</span> Worker(flashq, QUEUES.TOOL_CODE, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { code, timeout = <span class="number">30</span> } = job.data;
+
+  <span class="keyword">return new</span> Promise((resolve, reject) => {
+    <span class="keyword">const</span> process = spawn(<span class="string">'python3'</span>, [<span class="string">'-c'</span>, code], {
+      timeout: timeout * <span class="number">1000</span>
+    });
+
+    <span class="keyword">let</span> output = <span class="string">''</span>;
+    <span class="keyword">let</span> error = <span class="string">''</span>;
+
+    process.stdout.on(<span class="string">'data'</span>, (data) => output += data);
+    process.stderr.on(<span class="string">'data'</span>, (data) => error += data);
+
+    process.on(<span class="string">'close'</span>, (code) => {
+      <span class="keyword">if</span> (code === <span class="number">0</span>) {
+        resolve({ output: output.trim() });
+      } <span class="keyword">else</span> {
+        resolve({ error: error.trim() || <span class="string">'Execution failed'</span> });
+      }
+    });
+  });
+}, { concurrency: <span class="number">5</span> });</code></pre>
+
+      <h2 id="react-agent">ReAct Agent Pattern</h2>
+
+      <p>The ReAct (Reasoning + Acting) pattern combines chain-of-thought reasoning with tool execution.</p>
+
+      <pre><code><span class="comment">// agents/react-agent.ts</span>
+<span class="keyword">import</span> { AgentExecutor, createReactAgent } <span class="keyword">from</span> <span class="string">'langchain/agents'</span>;
+<span class="keyword">import</span> { pull } <span class="keyword">from</span> <span class="string">'langchain/hub'</span>;
+<span class="keyword">import</span> { llm, flashq, QUEUES } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+<span class="keyword">import</span> { searchTool, codeExecutorTool, databaseTool } <span class="keyword">from</span> <span class="string">'../tools'</span>;
+
+<span class="keyword">async function</span> createAgent() {
+  <span class="comment">// Pull ReAct prompt from LangChain hub</span>
+  <span class="keyword">const</span> prompt = <span class="keyword">await</span> pull(<span class="string">'hwchase17/react'</span>);
+
+  <span class="keyword">const</span> tools = [
+    searchTool,
+    codeExecutorTool,
+    databaseTool
+  ];
+
+  <span class="keyword">const</span> agent = <span class="keyword">await</span> createReactAgent({
+    llm,
+    tools,
+    prompt
+  });
+
+  <span class="keyword">return new</span> AgentExecutor({
+    agent,
+    tools,
+    verbose: <span class="literal">true</span>,
+    maxIterations: <span class="number">10</span>,
+    returnIntermediateSteps: <span class="literal">true</span>
+  });
+}
+
+<span class="comment">// Run agent as a flashQ job</span>
+<span class="keyword">const</span> agentWorker = <span class="keyword">new</span> Worker(flashq, QUEUES.AGENT_TASKS, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { task, context } = job.data;
+
+  <span class="keyword">const</span> executor = <span class="keyword">await</span> createAgent();
+
+  <span class="comment">// Update progress as agent thinks</span>
+  <span class="keyword">await</span> flashq.progress(job.id, <span class="number">10</span>, <span class="string">'Agent initialized'</span>);
+
+  <span class="keyword">const</span> result = <span class="keyword">await</span> executor.invoke({
+    input: task,
+    chat_history: context?.history || []
+  }, {
+    callbacks: [{
+      handleAgentAction: <span class="keyword">async</span> (action) => {
+        <span class="keyword">await</span> flashq.progress(
+          job.id,
+          <span class="number">50</span>,
+          <span class="string">`Using tool: </span>${action.tool}<span class="string">`</span>
+        );
+      }
+    }]
+  });
+
+  <span class="keyword">await</span> flashq.progress(job.id, <span class="number">100</span>, <span class="string">'Complete'</span>);
+
+  <span class="keyword">return</span> {
+    output: result.output,
+    steps: result.intermediateSteps?.map(s => ({
+      tool: s.action.tool,
+      input: s.action.toolInput,
+      output: s.observation
+    }))
+  };
+}, { concurrency: <span class="number">3</span> });</code></pre>
+
+      <h2 id="multi-agent">Multi-Agent Orchestration</h2>
+
+      <p>For complex tasks, multiple specialized agents can work together.</p>
+
+      <pre><code><span class="comment">// agents/multi-agent-system.ts</span>
+<span class="keyword">import</span> { flashq, llm, QUEUES } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="keyword">interface</span> AgentConfig {
+  name: string;
+  role: string;
+  tools: string[];
+  systemPrompt: string;
+}
+
+<span class="keyword">const</span> AGENTS: AgentConfig[] = [
+  {
+    name: <span class="string">'researcher'</span>,
+    role: <span class="string">'Research and gather information'</span>,
+    tools: [<span class="string">'web_search'</span>, <span class="string">'query_database'</span>],
+    systemPrompt: <span class="string">`You are a research specialist. Your job is to find accurate,
+                   relevant information. Always cite your sources.`</span>
+  },
+  {
+    name: <span class="string">'analyst'</span>,
+    role: <span class="string">'Analyze data and draw conclusions'</span>,
+    tools: [<span class="string">'execute_code'</span>, <span class="string">'query_database'</span>],
+    systemPrompt: <span class="string">`You are a data analyst. Analyze the provided data and extract
+                   meaningful insights. Use code for complex calculations.`</span>
+  },
+  {
+    name: <span class="string">'writer'</span>,
+    role: <span class="string">'Create polished content'</span>,
+    tools: [],
+    systemPrompt: <span class="string">`You are a technical writer. Transform research and analysis
+                   into clear, engaging content.`</span>
+  }
+];
+
+<span class="comment">// Orchestrator coordinates multiple agents</span>
+<span class="keyword">async function</span> orchestrateAgents(task: string): Promise&lt;string&gt; {
+  <span class="comment">// Step 1: Research phase</span>
+  <span class="keyword">const</span> researchJob = <span class="keyword">await</span> flashq.push(<span class="string">'agent:researcher'</span>, {
+    task: <span class="string">`Research the following topic: </span>${task}<span class="string">`</span>,
+    agent: AGENTS[<span class="number">0</span>]
+  });
+
+  <span class="keyword">const</span> research = <span class="keyword">await</span> flashq.finished(researchJob.id, <span class="number">120000</span>);
+
+  <span class="comment">// Step 2: Analysis phase (depends on research)</span>
+  <span class="keyword">const</span> analysisJob = <span class="keyword">await</span> flashq.push(<span class="string">'agent:analyst'</span>, {
+    task: <span class="string">`Analyze this research: </span>${JSON.stringify(research.data)}<span class="string">`</span>,
+    agent: AGENTS[<span class="number">1</span>],
+    context: { research: research.data }
+  }, {
+    depends_on: [researchJob.id]
+  });
+
+  <span class="keyword">const</span> analysis = <span class="keyword">await</span> flashq.finished(analysisJob.id, <span class="number">120000</span>);
+
+  <span class="comment">// Step 3: Writing phase (depends on both)</span>
+  <span class="keyword">const</span> writeJob = <span class="keyword">await</span> flashq.push(<span class="string">'agent:writer'</span>, {
+    task: <span class="string">`Write a report based on: </span>${JSON.stringify(analysis.data)}<span class="string">`</span>,
+    agent: AGENTS[<span class="number">2</span>],
+    context: { research: research.data, analysis: analysis.data }
+  });
+
+  <span class="keyword">const</span> report = <span class="keyword">await</span> flashq.finished(writeJob.id, <span class="number">60000</span>);
+
+  <span class="keyword">return</span> report.data.content;
+}
+
+<span class="comment">// Using flashQ flows for parallel agents</span>
+<span class="keyword">async function</span> parallelAgents(tasks: string[]) {
+  <span class="keyword">const</span> flow = {
+    name: <span class="string">'parallel-research'</span>,
+    children: tasks.map((task, i) => ({
+      name: <span class="string">`research-</span>${i}<span class="string">`</span>,
+      data: { task, agent: AGENTS[<span class="number">0</span>] }
+    }))
+  };
+
+  <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.pushFlow(<span class="string">'agent:researcher'</span>, flow);
+
+  <span class="comment">// Wait for all parallel tasks</span>
+  <span class="keyword">const</span> results = <span class="keyword">await</span> Promise.all(
+    result.children.map(child => flashq.finished(child.id))
+  );
+
+  <span class="keyword">return</span> results.map(r => r.data);
+}</code></pre>
+
+      <h2 id="memory">Agent Memory Management</h2>
+
+      <pre><code><span class="comment">// memory/agent-memory.ts</span>
+<span class="keyword">import</span> { BufferMemory, ConversationSummaryMemory } <span class="keyword">from</span> <span class="string">'langchain/memory'</span>;
+<span class="keyword">import</span> { flashq, llm } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="keyword">interface</span> MemoryEntry {
+  sessionId: string;
+  messages: any[];
+  summary: string;
+  updatedAt: number;
+}
+
+<span class="comment">// Memory persisted via flashQ</span>
+<span class="keyword">class</span> PersistentAgentMemory {
+  <span class="keyword">private</span> sessionId: string;
+  <span class="keyword">private</span> memory: BufferMemory;
+
+  <span class="keyword">constructor</span>(sessionId: string) {
+    <span class="keyword">this</span>.sessionId = sessionId;
+    <span class="keyword">this</span>.memory = <span class="keyword">new</span> BufferMemory({
+      returnMessages: <span class="literal">true</span>,
+      memoryKey: <span class="string">'chat_history'</span>
+    });
+  }
+
+  <span class="keyword">async</span> load(): Promise&lt;<span class="keyword">void</span>&gt; {
+    <span class="comment">// Load from flashQ result storage</span>
+    <span class="keyword">const</span> stored = <span class="keyword">await</span> flashq.getResult(<span class="string">`memory:</span>${<span class="keyword">this</span>.sessionId}<span class="string">`</span>);
+
+    <span class="keyword">if</span> (stored) {
+      <span class="keyword">for</span> (<span class="keyword">const</span> msg <span class="keyword">of</span> stored.messages) {
+        <span class="keyword">await this</span>.memory.saveContext(
+          { input: msg.human },
+          { output: msg.ai }
+        );
+      }
+    }
+  }
+
+  <span class="keyword">async</span> save(human: string, ai: string): Promise&lt;<span class="keyword">void</span>&gt; {
+    <span class="keyword">await this</span>.memory.saveContext({ input: human }, { output: ai });
+
+    <span class="comment">// Persist to flashQ</span>
+    <span class="keyword">const</span> history = <span class="keyword">await this</span>.memory.loadMemoryVariables({});
+
+    <span class="keyword">await</span> flashq.push(<span class="string">'memory:save'</span>, {
+      sessionId: <span class="keyword">this</span>.sessionId,
+      messages: history.chat_history,
+      updatedAt: Date.now()
+    }, {
+      jobId: <span class="string">`memory:</span>${<span class="keyword">this</span>.sessionId}<span class="string">`</span>
+    });
+  }
+
+  <span class="keyword">async</span> getHistory() {
+    <span class="keyword">return this</span>.memory.loadMemoryVariables({});
+  }
+}
+
+<span class="comment">// Agent with memory</span>
+<span class="keyword">async function</span> agentWithMemory(sessionId: string, input: string) {
+  <span class="keyword">const</span> memory = <span class="keyword">new</span> PersistentAgentMemory(sessionId);
+  <span class="keyword">await</span> memory.load();
+
+  <span class="keyword">const</span> history = <span class="keyword">await</span> memory.getHistory();
+
+  <span class="comment">// Run agent with history context</span>
+  <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.AGENT_TASKS, {
+    task: input,
+    context: { history: history.chat_history }
+  });
+
+  <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.finished(job.id);
+
+  <span class="comment">// Save interaction to memory</span>
+  <span class="keyword">await</span> memory.save(input, result.data.output);
+
+  <span class="keyword">return</span> result.data.output;
+}</code></pre>
+
+      <h2 id="streaming">Streaming Agent Responses</h2>
+
+      <pre><code><span class="comment">// streaming/agent-stream.ts</span>
+<span class="keyword">import</span> { flashq, llm } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="comment">// Server-side: Stream agent thoughts via WebSocket</span>
+<span class="keyword">async function</span> streamAgentExecution(ws: WebSocket, taskId: string) {
+  <span class="keyword">const</span> eventSource = <span class="keyword">new</span> EventSource(
+    <span class="string">`http://localhost:6790/events/</span>${taskId}<span class="string">`</span>
+  );
+
+  eventSource.onmessage = (event) => {
+    <span class="keyword">const</span> data = JSON.parse(event.data);
+
+    <span class="keyword">switch</span> (data.event) {
+      <span class="keyword">case</span> <span class="string">'progress'</span>:
+        ws.send(JSON.stringify({
+          type: <span class="string">'thinking'</span>,
+          message: data.message,
+          progress: data.progress
+        }));
+        <span class="keyword">break</span>;
+
+      <span class="keyword">case</span> <span class="string">'completed'</span>:
+        ws.send(JSON.stringify({
+          type: <span class="string">'complete'</span>,
+          result: data.result
+        }));
+        eventSource.close();
+        <span class="keyword">break</span>;
+    }
+  };
+}
+
+<span class="comment">// Client-side: React component for streaming</span>
+<span class="keyword">function</span> AgentChat() {
+  <span class="keyword">const</span> [messages, setMessages] = useState([]);
+  <span class="keyword">const</span> [thinking, setThinking] = useState(<span class="literal">null</span>);
+
+  <span class="keyword">async function</span> sendMessage(input: string) {
+    <span class="comment">// Start agent task</span>
+    <span class="keyword">const</span> response = <span class="keyword">await</span> fetch(<span class="string">'/api/agent'</span>, {
+      method: <span class="string">'POST'</span>,
+      body: JSON.stringify({ input })
+    });
+
+    <span class="keyword">const</span> { taskId } = <span class="keyword">await</span> response.json();
+
+    <span class="comment">// Connect to WebSocket for updates</span>
+    <span class="keyword">const</span> ws = <span class="keyword">new</span> WebSocket(<span class="string">`ws://localhost:6790/ws?token=xxx`</span>);
+
+    ws.onmessage = (event) => {
+      <span class="keyword">const</span> data = JSON.parse(event.data);
+
+      <span class="keyword">if</span> (data.type === <span class="string">'thinking'</span>) {
+        setThinking(data.message);
+      } <span class="keyword">else if</span> (data.type === <span class="string">'complete'</span>) {
+        setThinking(<span class="literal">null</span>);
+        setMessages(prev => [...prev, {
+          role: <span class="string">'assistant'</span>,
+          content: data.result
+        }]);
+        ws.close();
+      }
+    };
+  }
+
+  <span class="keyword">return</span> (
+    &lt;div&gt;
+      {messages.map((msg, i) => &lt;Message key={i} {...msg} /&gt;)}
+      {thinking && &lt;ThinkingIndicator message={thinking} /&gt;}
+    &lt;/div&gt;
+  );
+}</code></pre>
+
+      <h2 id="error-handling">Error Handling & Recovery</h2>
+
+      <pre><code><span class="comment">// error-handling/agent-recovery.ts</span>
+<span class="keyword">import</span> { flashq, QUEUES } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="comment">// Wrap agent execution with recovery</span>
+<span class="keyword">async function</span> resilientAgentExecution(task: string) {
+  <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.AGENT_TASKS, {
+    task,
+    startedAt: Date.now()
+  }, {
+    max_attempts: <span class="number">3</span>,
+    backoff: <span class="number">5000</span>,
+    timeout: <span class="number">300000</span>, <span class="comment">// 5 min timeout</span>
+
+    <span class="comment">// Custom error handling</span>
+    onFailed: <span class="keyword">async</span> (error) => {
+      console.error(<span class="string">`Agent task failed: </span>${error}<span class="string">`</span>);
+
+      <span class="comment">// Push to DLQ for manual review</span>
+      <span class="keyword">await</span> flashq.push(<span class="string">'agent:failed'</span>, {
+        originalTask: task,
+        error: error.message,
+        timestamp: Date.now()
+      });
+    }
+  });
+
+  <span class="keyword">try</span> {
+    <span class="keyword">return await</span> flashq.finished(job.id, <span class="number">300000</span>);
+  } <span class="keyword">catch</span> (error) {
+    <span class="comment">// Timeout or failure - check job state</span>
+    <span class="keyword">const</span> state = <span class="keyword">await</span> flashq.getState(job.id);
+
+    <span class="keyword">if</span> (state === <span class="string">'failed'</span>) {
+      <span class="keyword">const</span> dlqJobs = <span class="keyword">await</span> flashq.getDlq(QUEUES.AGENT_TASKS);
+      <span class="keyword">const</span> failedJob = dlqJobs.find(j => j.id === job.id);
+
+      <span class="keyword">return</span> {
+        success: <span class="literal">false</span>,
+        error: failedJob?.error || <span class="string">'Unknown error'</span>,
+        attempts: failedJob?.attempts
+      };
+    }
+
+    <span class="keyword">throw</span> error;
+  }
+}
+
+<span class="comment">// Tool-level error handling</span>
+<span class="keyword">const</span> robustSearchTool = <span class="keyword">new</span> DynamicStructuredTool({
+  name: <span class="string">'robust_search'</span>,
+  description: <span class="string">'Search with automatic fallback'</span>,
+  schema: z.object({ query: z.string() }),
+  <span class="keyword">func</span>: <span class="keyword">async</span> ({ query }) => {
+    <span class="keyword">const</span> providers = [<span class="string">'google'</span>, <span class="string">'bing'</span>, <span class="string">'duckduckgo'</span>];
+
+    <span class="keyword">for</span> (<span class="keyword">const</span> provider <span class="keyword">of</span> providers) {
+      <span class="keyword">try</span> {
+        <span class="keyword">const</span> job = <span class="keyword">await</span> flashq.push(QUEUES.TOOL_SEARCH, {
+          query,
+          provider
+        }, { timeout: <span class="number">15000</span>, max_attempts: <span class="number">1</span> });
+
+        <span class="keyword">const</span> result = <span class="keyword">await</span> flashq.finished(job.id, <span class="number">20000</span>);
+        <span class="keyword">return</span> JSON.stringify(result.data);
+      } <span class="keyword">catch</span> (error) {
+        console.warn(<span class="string">`</span>${provider}<span class="string"> failed, trying next...`</span>);
+      }
+    }
+
+    <span class="keyword">return</span> <span class="string">'Search temporarily unavailable'</span>;
+  }
+});</code></pre>
+
+      <h2 id="monitoring">Monitoring & Observability</h2>
+
+      <pre><code><span class="comment">// monitoring/agent-metrics.ts</span>
+<span class="keyword">import</span> { flashq } <span class="keyword">from</span> <span class="string">'../agent-config'</span>;
+
+<span class="comment">// Dashboard metrics</span>
+<span class="keyword">async function</span> getAgentMetrics() {
+  <span class="keyword">const</span> metrics = <span class="keyword">await</span> flashq.metrics();
+
+  <span class="keyword">const</span> agentQueues = Object.entries(metrics.queues)
+    .filter(([name]) => name.startsWith(<span class="string">'agent:'</span>) || name.startsWith(<span class="string">'tool:'</span>));
+
+  <span class="keyword">return</span> {
+    totalAgentTasks: agentQueues.reduce((sum, [, q]) =>
+      sum + q.completed + q.active + q.waiting, <span class="number">0</span>),
+
+    activeAgents: agentQueues
+      .filter(([, q]) => q.active > <span class="number">0</span>)
+      .map(([name, q]) => ({ name, active: q.active })),
+
+    toolUsage: agentQueues
+      .filter(([name]) => name.startsWith(<span class="string">'tool:'</span>))
+      .map(([name, q]) => ({
+        tool: name.replace(<span class="string">'tool:'</span>, <span class="string">''</span>),
+        completed: q.completed,
+        failed: q.failed,
+        avgLatency: q.avgProcessingTime
+      })),
+
+    errorRate: agentQueues.reduce((sum, [, q]) => sum + q.failed, <span class="number">0</span>) /
+               agentQueues.reduce((sum, [, q]) => sum + q.completed + q.failed, <span class="number">1</span>)
+  };
+}
+
+<span class="comment">// Prometheus metrics endpoint</span>
+app.get(<span class="string">'/metrics/agents'</span>, <span class="keyword">async</span> (req, res) => {
+  <span class="keyword">const</span> metrics = <span class="keyword">await</span> getAgentMetrics();
+
+  <span class="keyword">const</span> prometheus = <span class="string">`
+# HELP agent_tasks_total Total agent tasks
+# TYPE agent_tasks_total counter
+agent_tasks_total </span>${metrics.totalAgentTasks}<span class="string">
+
+# HELP agent_error_rate Agent error rate
+# TYPE agent_error_rate gauge
+agent_error_rate </span>${metrics.errorRate}<span class="string">
+
+</span>${metrics.toolUsage.map(t => <span class="string">`
+# HELP tool_</span>${t.tool}<span class="string">_completed Tool executions
+# TYPE tool_</span>${t.tool}<span class="string">_completed counter
+tool_</span>${t.tool}<span class="string">_completed </span>${t.completed}<span class="string">
+tool_</span>${t.tool}<span class="string">_latency_ms </span>${t.avgLatency}<span class="string">`</span>).join(<span class="string">'\n'</span>)}<span class="string">
+`</span>;
+
+  res.set(<span class="string">'Content-Type'</span>, <span class="string">'text/plain'</span>);
+  res.send(prometheus);
+});</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">Production Checklist</div>
+        <p>✓ Rate limit LLM API calls<br>✓ Set appropriate timeouts for each tool<br>✓ Implement graceful degradation<br>✓ Monitor token usage and costs<br>✓ Log all agent decisions<br>✓ Test tool error scenarios</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>Combining flashQ with LangChain gives you a robust foundation for production AI agents. The key benefits are reliable tool execution, automatic retries, progress tracking, and scalable worker pools for parallel agent operations.</p>
+
+      <div class="article-cta">
+        <h3>Build AI Agents Today</h3>
+        <p>Start building production-ready AI agents with flashQ and LangChain.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#what-are-agents">What Are AI Agents?</a></li>
+              <li><a href="#architecture">Architecture</a></li>
+              <li><a href="#setup">Project Setup</a></li>
+              <li><a href="#langchain-tools">LangChain Tools</a></li>
+              <li><a href="#react-agent">ReAct Agent</a></li>
+              <li><a href="#multi-agent">Multi-Agent</a></li>
+              <li><a href="#memory">Memory Management</a></li>
+              <li><a href="#streaming">Streaming</a></li>
+              <li><a href="#error-handling">Error Handling</a></li>
+              <li><a href="#monitoring">Monitoring</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>flashQ Cron Jobs: Complete Guide to Scheduled Tasks - flashQ Blog</title>
+  <meta name="description" content="Master scheduled tasks with flashQ cron jobs. Learn cron syntax, use cases, timezone handling, and best practices for reliable job scheduling.">
+  <meta name="keywords" content="cron jobs, scheduled tasks, job scheduling, flashq cron, background jobs scheduler, recurring jobs">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="flashQ Cron Jobs: Complete Guide to Scheduled Tasks">
+  <meta property="og:description" content="Master scheduled tasks with flashQ cron jobs.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/cron-jobs-guide.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="flashQ Cron Jobs: Complete Guide">
+  <meta name="twitter:description" content="Master scheduled tasks with flashQ cron jobs.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/cron-jobs-guide.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "flashQ Cron Jobs: Complete Guide to Scheduled Tasks",
+    "description": "Master scheduled tasks with flashQ cron jobs.",
+    "datePublished": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ" },
+    "publisher": { "@type": "Organization", "name": "flashQ" }
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Search <span class="kbd">⌘K</span></button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">Cron Jobs Guide</span>
+  </nav>
+
+  <header class="article-header header-tutorial">
+    <div class="container">
+      <span class="article-tag">Guide</span>
+      <h1>flashQ Cron Jobs: Complete Guide to Scheduled Tasks</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 10 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Scheduled tasks are essential for any production application. Whether you need to send daily reports, clean up old data, sync external APIs, or run periodic health checks, flashQ's cron jobs have you covered.</p>
+
+      <h2 id="cron-syntax">Understanding Cron Syntax</h2>
+
+      <p>flashQ uses a 6-field cron expression that includes seconds:</p>
+
+      <pre><code>┌──────────── second (0-59)
+│ ┌────────── minute (0-59)
+│ │ ┌──────── hour (0-23)
+│ │ │ ┌────── day of month (1-31)
+│ │ │ │ ┌──── month (1-12)
+│ │ │ │ │ ┌── day of week (0-6, Sunday=0)
+│ │ │ │ │ │
+* * * * * *</code></pre>
+
+      <h3>Common Patterns</h3>
+
+      <table>
+        <thead>
+          <tr><th>Expression</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>0 * * * * *</code></td><td>Every minute</td></tr>
+          <tr><td><code>0 0 * * * *</code></td><td>Every hour</td></tr>
+          <tr><td><code>0 0 9 * * *</code></td><td>Daily at 9 AM</td></tr>
+          <tr><td><code>0 30 9 * * 1-5</code></td><td>Weekdays at 9:30 AM</td></tr>
+          <tr><td><code>0 0 0 * * 0</code></td><td>Weekly on Sunday midnight</td></tr>
+          <tr><td><code>0 0 0 1 * *</code></td><td>Monthly on the 1st</td></tr>
+          <tr><td><code>0 */15 * * * *</code></td><td>Every 15 minutes</td></tr>
+          <tr><td><code>0 0 */2 * * *</code></td><td>Every 2 hours</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="creating-cron">Creating Cron Jobs</h2>
+
+      <pre><code><span class="keyword">import</span> { Queue } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'scheduled-tasks'</span>);
+
+<span class="comment">// Daily report at 9 AM</span>
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'daily-report'</span>, {
+  queue: <span class="string">'scheduled-tasks'</span>,
+  schedule: <span class="string">'0 0 9 * * *'</span>,
+  data: {
+    type: <span class="string">'daily-report'</span>,
+    recipients: [<span class="string">'team@company.com'</span>],
+  },
+});
+
+<span class="comment">// Cleanup every Sunday at midnight</span>
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'weekly-cleanup'</span>, {
+  queue: <span class="string">'scheduled-tasks'</span>,
+  schedule: <span class="string">'0 0 0 * * 0'</span>,
+  data: {
+    type: <span class="string">'cleanup'</span>,
+    olderThanDays: <span class="number">30</span>,
+  },
+});
+
+<span class="comment">// Health check every 5 minutes</span>
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'health-check'</span>, {
+  queue: <span class="string">'scheduled-tasks'</span>,
+  schedule: <span class="string">'0 */5 * * * *'</span>,
+  data: {
+    type: <span class="string">'health-check'</span>,
+    endpoints: [<span class="string">'/api/health'</span>, <span class="string">'/api/db'</span>],
+  },
+});</code></pre>
+
+      <h2 id="managing-cron">Managing Cron Jobs</h2>
+
+      <pre><code><span class="comment">// List all cron jobs</span>
+<span class="keyword">const</span> <span class="variable">crons</span> = <span class="keyword">await</span> queue.<span class="function">listCrons</span>();
+console.<span class="function">log</span>(crons);
+<span class="comment">// [
+//   { name: 'daily-report', schedule: '0 0 9 * * *', ... },
+//   { name: 'weekly-cleanup', schedule: '0 0 0 * * 0', ... },
+// ]</span>
+
+<span class="comment">// Delete a cron job</span>
+<span class="keyword">await</span> queue.<span class="function">deleteCron</span>(<span class="string">'health-check'</span>);
+
+<span class="comment">// Update a cron job (delete + recreate)</span>
+<span class="keyword">await</span> queue.<span class="function">deleteCron</span>(<span class="string">'daily-report'</span>);
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'daily-report'</span>, {
+  queue: <span class="string">'scheduled-tasks'</span>,
+  schedule: <span class="string">'0 0 8 * * *'</span>, <span class="comment">// Changed to 8 AM</span>
+  data: { type: <span class="string">'daily-report'</span> },
+});</code></pre>
+
+      <h2 id="use-cases">Real-World Use Cases</h2>
+
+      <h3>1. Daily Analytics Report</h3>
+
+      <pre><code><span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'analytics-report'</span>, {
+  queue: <span class="string">'reports'</span>,
+  schedule: <span class="string">'0 0 6 * * *'</span>, <span class="comment">// 6 AM daily</span>
+  data: {
+    type: <span class="string">'analytics'</span>,
+    metrics: [<span class="string">'users'</span>, <span class="string">'revenue'</span>, <span class="string">'conversions'</span>],
+    format: <span class="string">'pdf'</span>,
+  },
+});
+
+<span class="comment">// Worker</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'reports'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> { metrics, format } = job.data;
+
+  <span class="comment">// Generate report</span>
+  <span class="keyword">const</span> <span class="variable">report</span> = <span class="keyword">await</span> <span class="function">generateAnalyticsReport</span>(metrics);
+  <span class="keyword">const</span> <span class="variable">pdf</span> = <span class="keyword">await</span> <span class="function">convertToPDF</span>(report);
+
+  <span class="comment">// Send via email</span>
+  <span class="keyword">await</span> <span class="function">sendEmail</span>({
+    to: <span class="string">'executives@company.com'</span>,
+    subject: <span class="string">`Daily Analytics - ${new Date().toDateString()}`</span>,
+    attachments: [pdf],
+  });
+});</code></pre>
+
+      <h3>2. Database Cleanup</h3>
+
+      <pre><code><span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'db-cleanup'</span>, {
+  queue: <span class="string">'maintenance'</span>,
+  schedule: <span class="string">'0 0 3 * * *'</span>, <span class="comment">// 3 AM daily (low traffic)</span>
+  data: {
+    tasks: [
+      { table: <span class="string">'sessions'</span>, olderThan: <span class="string">'7 days'</span> },
+      { table: <span class="string">'logs'</span>, olderThan: <span class="string">'30 days'</span> },
+      { table: <span class="string">'temp_files'</span>, olderThan: <span class="string">'1 day'</span> },
+    ],
+  },
+});</code></pre>
+
+      <h3>3. API Sync</h3>
+
+      <pre><code><span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'sync-stripe'</span>, {
+  queue: <span class="string">'integrations'</span>,
+  schedule: <span class="string">'0 */30 * * * *'</span>, <span class="comment">// Every 30 minutes</span>
+  data: {
+    provider: <span class="string">'stripe'</span>,
+    syncTypes: [<span class="string">'subscriptions'</span>, <span class="string">'invoices'</span>],
+  },
+});</code></pre>
+
+      <h3>4. Cache Warming</h3>
+
+      <pre><code><span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'warm-cache'</span>, {
+  queue: <span class="string">'cache'</span>,
+  schedule: <span class="string">'0 55 * * * *'</span>, <span class="comment">// 5 min before each hour</span>
+  data: {
+    endpoints: [
+      <span class="string">'/api/products'</span>,
+      <span class="string">'/api/categories'</span>,
+      <span class="string">'/api/homepage'</span>,
+    ],
+  },
+});</code></pre>
+
+      <div class="callout callout-info">
+        <div class="callout-title">💡 Timezone Handling</div>
+        <p>Cron jobs run in the server's timezone (typically UTC). For user-facing schedules, store the user's timezone and convert when creating the cron expression.</p>
+      </div>
+
+      <h2 id="best-practices">Best Practices</h2>
+
+      <h3>1. Idempotent Jobs</h3>
+      <p>Design cron jobs to be idempotent—running them twice shouldn't cause issues:</p>
+
+      <pre><code><span class="comment">// Good: Check before processing</span>
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">processDaily</span>() {
+  <span class="keyword">const</span> <span class="variable">lastRun</span> = <span class="keyword">await</span> db.settings.<span class="function">get</span>(<span class="string">'lastDailyRun'</span>);
+  <span class="keyword">const</span> <span class="variable">today</span> = <span class="keyword">new</span> <span class="function">Date</span>().<span class="function">toDateString</span>();
+
+  <span class="keyword">if</span> (lastRun === today) {
+    console.<span class="function">log</span>(<span class="string">'Already ran today, skipping'</span>);
+    <span class="keyword">return</span>;
+  }
+
+  <span class="comment">// Process...</span>
+  <span class="keyword">await</span> db.settings.<span class="function">set</span>(<span class="string">'lastDailyRun'</span>, today);
+}</code></pre>
+
+      <h3>2. Overlap Prevention</h3>
+      <p>Prevent jobs from overlapping if they take longer than expected:</p>
+
+      <pre><code><span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'maintenance'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">const</span> <span class="variable">lockKey</span> = <span class="string">`lock:${job.name}`</span>;
+
+  <span class="comment">// Try to acquire lock</span>
+  <span class="keyword">const</span> <span class="variable">acquired</span> = <span class="keyword">await</span> redis.<span class="function">set</span>(lockKey, <span class="string">'1'</span>, <span class="string">'NX'</span>, <span class="string">'EX'</span>, <span class="number">3600</span>);
+
+  <span class="keyword">if</span> (!acquired) {
+    console.<span class="function">log</span>(<span class="string">'Job already running, skipping'</span>);
+    <span class="keyword">return</span>;
+  }
+
+  <span class="keyword">try</span> {
+    <span class="comment">// Process job...</span>
+  } <span class="keyword">finally</span> {
+    <span class="keyword">await</span> redis.<span class="function">del</span>(lockKey);
+  }
+});</code></pre>
+
+      <h3>3. Error Alerting</h3>
+
+      <pre><code>worker.<span class="function">on</span>(<span class="string">'failed'</span>, <span class="keyword">async</span> (job, error) => {
+  <span class="keyword">if</span> (job.name.<span class="function">startsWith</span>(<span class="string">'cron:'</span>)) {
+    <span class="keyword">await</span> <span class="function">sendSlackAlert</span>({
+      channel: <span class="string">'#ops-alerts'</span>,
+      message: <span class="string">`Cron job failed: ${job.name}\nError: ${error.message}`</span>,
+    });
+  }
+});</code></pre>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>flashQ cron jobs provide a reliable way to schedule recurring tasks. Key takeaways:</p>
+
+      <ul>
+        <li>Use 6-field cron syntax (includes seconds)</li>
+        <li>Design idempotent jobs</li>
+        <li>Implement overlap prevention for long-running tasks</li>
+        <li>Set up alerting for failures</li>
+      </ul>
+
+      <div class="article-cta">
+        <h3>Start Scheduling</h3>
+        <p>Add cron jobs to your application in minutes.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#cron-syntax">Cron Syntax</a></li>
+              <li><a href="#creating-cron">Creating Cron Jobs</a></li>
+              <li><a href="#managing-cron">Managing Cron Jobs</a></li>
+              <li><a href="#use-cases">Use Cases</a></li>
+              <li><a href="#best-practices">Best Practices</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>

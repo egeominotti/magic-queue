@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migrating from BullMQ to flashQ: Complete Guide - flashQ Blog</title>
+  <meta name="description" content="Step-by-step guide to migrate from BullMQ to flashQ. Keep your existing code, drop Redis, and get 10x better performance.">
+  <meta name="keywords" content="bullmq migration, bullmq to flashq, bullmq alternative, redis-free queue, job queue migration">
+  <meta name="robots" content="index, follow">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Migrating from BullMQ to flashQ: Complete Guide">
+  <meta property="og:description" content="Step-by-step guide to migrate from BullMQ to flashQ. Keep your existing code, drop Redis.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/migrating-from-bullmq.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="article:published_time" content="2026-01-19">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Migrating from BullMQ to flashQ: Complete Guide">
+  <meta name="twitter:description" content="Step-by-step guide to migrate from BullMQ to flashQ.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/migrating-from-bullmq.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Article Schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Migrating from BullMQ to flashQ: Complete Guide",
+    "description": "Step-by-step guide to migrate from BullMQ to flashQ.",
+    "datePublished": "2026-01-19",
+    "author": {
+      "@type": "Organization",
+      "name": "flashQ"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo">
+        <span>⚡</span> flashQ
+      </a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          Search
+          <span class="kbd">⌘K</span>
+        </button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a>
+    <a href="../blog/">Blog</a>
+    <a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <!-- Breadcrumb -->
+  <nav class="breadcrumb container">
+    <a href="../">Home</a>
+    <span>›</span>
+    <a href="./">Blog</a>
+    <span>›</span>
+    <span class="current">Migrating from BullMQ</span>
+  </nav>
+
+  <!-- Article Header -->
+  <header class="article-header header-migration">
+    <div class="container">
+      <span class="article-tag">Migration Guide</span>
+      <h1>Migrating from BullMQ to flashQ: Complete Guide</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 12 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Article Content -->
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>If you're running BullMQ in production and considering a switch to flashQ, you're in the right place. This guide will walk you through the entire migration process, from updating your dependencies to handling edge cases. The good news? flashQ's API is designed to be BullMQ-compatible, making the migration straightforward.</p>
+
+      <h2 id="why-migrate">Why Migrate from BullMQ?</h2>
+
+      <p>Before diving into the how, let's briefly cover the why:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th>BullMQ + Redis</th>
+            <th>flashQ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Infrastructure</td>
+            <td>Requires Redis server</td>
+            <td>Single binary, no dependencies</td>
+          </tr>
+          <tr>
+            <td>Performance</td>
+            <td>~50K jobs/sec</td>
+            <td>1.9M jobs/sec</td>
+          </tr>
+          <tr>
+            <td>Latency</td>
+            <td>5-10ms (network hop)</td>
+            <td>&lt;1ms</td>
+          </tr>
+          <tr>
+            <td>Payload size</td>
+            <td>~512KB practical</td>
+            <td>10MB</td>
+          </tr>
+          <tr>
+            <td>Memory cost</td>
+            <td>Redis RAM pricing</td>
+            <td>Included in server</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="migration-checklist">Migration Checklist</h2>
+
+      <p>Here's what we'll cover:</p>
+
+      <ol>
+        <li>Setting up the flashQ server</li>
+        <li>Updating dependencies</li>
+        <li>Updating import statements</li>
+        <li>Migrating Queue instances</li>
+        <li>Migrating Worker instances</li>
+        <li>Handling API differences</li>
+        <li>Testing the migration</li>
+        <li>Production cutover strategy</li>
+      </ol>
+
+      <h2 id="step-1-server">Step 1: Set Up flashQ Server</h2>
+
+      <p>First, you'll need the flashQ server running. Unlike Redis, flashQ is a single binary:</p>
+
+      <pre><code><span class="comment"># Option 1: Docker (recommended)</span>
+docker run -d --name flashq -p 6789:6789 flashq/flashq
+
+<span class="comment"># Option 2: Download binary</span>
+curl -L https://github.com/egeominotti/flashq/releases/latest/download/flashq-linux -o flashq
+chmod +x flashq
+./flashq
+
+<span class="comment"># Option 3: With persistence (PostgreSQL)</span>
+docker run -d --name flashq \
+  -p 6789:6789 \
+  -e DATABASE_URL=postgres://user:pass@host/db \
+  flashq/flashq</code></pre>
+
+      <p>Verify it's running:</p>
+
+      <pre><code>curl http://localhost:6790/health
+<span class="comment"># {"status":"healthy","version":"0.1.5"}</span></code></pre>
+
+      <h2 id="step-2-dependencies">Step 2: Update Dependencies</h2>
+
+      <p>Replace BullMQ with flashQ in your package.json:</p>
+
+      <pre><code><span class="comment"># Remove BullMQ</span>
+npm uninstall bullmq
+
+<span class="comment"># Install flashQ</span>
+npm install flashq</code></pre>
+
+      <p>If you were using ioredis directly for Redis connections, you can remove that too:</p>
+
+      <pre><code>npm uninstall ioredis</code></pre>
+
+      <h2 id="step-3-imports">Step 3: Update Import Statements</h2>
+
+      <p>This is often the only code change needed. Find and replace your imports:</p>
+
+      <pre><code><span class="comment">// Before (BullMQ)</span>
+<span class="keyword">import</span> { Queue, Worker, QueueEvents } <span class="keyword">from</span> <span class="string">'bullmq'</span>;
+
+<span class="comment">// After (flashQ)</span>
+<span class="keyword">import</span> { Queue, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;</code></pre>
+
+      <p>For TypeScript projects, update your types too:</p>
+
+      <pre><code><span class="comment">// Before</span>
+<span class="keyword">import</span> <span class="keyword">type</span> { Job, JobsOptions } <span class="keyword">from</span> <span class="string">'bullmq'</span>;
+
+<span class="comment">// After</span>
+<span class="keyword">import</span> <span class="keyword">type</span> { Job, JobOptions } <span class="keyword">from</span> <span class="string">'flashq'</span>;</code></pre>
+
+      <h2 id="step-4-queue">Step 4: Migrate Queue Instances</h2>
+
+      <p>Queue initialization is almost identical, but connection options differ:</p>
+
+      <pre><code><span class="comment">// Before (BullMQ)</span>
+<span class="keyword">import</span> { Queue } <span class="keyword">from</span> <span class="string">'bullmq'</span>;
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'my-queue'</span>, {
+  connection: {
+    host: <span class="string">'localhost'</span>,
+    port: <span class="number">6379</span>,
+  }
+});
+
+<span class="comment">// After (flashQ)</span>
+<span class="keyword">import</span> { Queue } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'my-queue'</span>, {
+  connection: {
+    host: <span class="string">'localhost'</span>,
+    port: <span class="number">6789</span>,  <span class="comment">// flashQ default port</span>
+  }
+});</code></pre>
+
+      <h3>Adding Jobs</h3>
+
+      <p>The <code>add()</code> method is compatible:</p>
+
+      <pre><code><span class="comment">// Works the same in both!</span>
+<span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'process-order'</span>, {
+  orderId: <span class="string">'12345'</span>,
+  items: [...]
+}, {
+  priority: <span class="number">10</span>,
+  delay: <span class="number">5000</span>,
+  attempts: <span class="number">3</span>,
+  backoff: {
+    type: <span class="string">'exponential'</span>,
+    delay: <span class="number">1000</span>
+  }
+});</code></pre>
+
+      <h3>Bulk Operations</h3>
+
+      <pre><code><span class="comment">// BullMQ</span>
+<span class="keyword">await</span> queue.<span class="function">addBulk</span>([
+  { name: <span class="string">'job1'</span>, data: {...} },
+  { name: <span class="string">'job2'</span>, data: {...} }
+]);
+
+<span class="comment">// flashQ - same API!</span>
+<span class="keyword">await</span> queue.<span class="function">addBulk</span>([
+  { name: <span class="string">'job1'</span>, data: {...} },
+  { name: <span class="string">'job2'</span>, data: {...} }
+]);</code></pre>
+
+      <h2 id="step-5-worker">Step 5: Migrate Worker Instances</h2>
+
+      <p>Workers are also compatible:</p>
+
+      <pre><code><span class="comment">// Before (BullMQ)</span>
+<span class="keyword">import</span> { Worker } <span class="keyword">from</span> <span class="string">'bullmq'</span>;
+
+<span class="keyword">const</span> <span class="variable">worker</span> = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'my-queue'</span>, <span class="keyword">async</span> (job) => {
+  console.<span class="function">log</span>(<span class="string">`Processing ${job.id}`</span>);
+  <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">50</span>);
+  <span class="keyword">return</span> { success: <span class="keyword">true</span> };
+}, {
+  connection: { host: <span class="string">'localhost'</span>, port: <span class="number">6379</span> },
+  concurrency: <span class="number">5</span>
+});
+
+<span class="comment">// After (flashQ)</span>
+<span class="keyword">import</span> { Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="keyword">const</span> <span class="variable">worker</span> = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'my-queue'</span>, <span class="keyword">async</span> (job) => {
+  console.<span class="function">log</span>(<span class="string">`Processing ${job.id}`</span>);
+  <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">50</span>);
+  <span class="keyword">return</span> { success: <span class="keyword">true</span> };
+}, {
+  connection: { host: <span class="string">'localhost'</span>, port: <span class="number">6789</span> },
+  concurrency: <span class="number">5</span>
+});</code></pre>
+
+      <h3>Worker Events</h3>
+
+      <p>Event handling works the same way:</p>
+
+      <pre><code>worker.<span class="function">on</span>(<span class="string">'completed'</span>, (job, result) => {
+  console.<span class="function">log</span>(<span class="string">`Job ${job.id} completed with result:`</span>, result);
+});
+
+worker.<span class="function">on</span>(<span class="string">'failed'</span>, (job, error) => {
+  console.<span class="function">error</span>(<span class="string">`Job ${job.id} failed:`</span>, error.message);
+});
+
+worker.<span class="function">on</span>(<span class="string">'progress'</span>, (job, progress) => {
+  console.<span class="function">log</span>(<span class="string">`Job ${job.id} progress: ${progress}%`</span>);
+});</code></pre>
+
+      <h2 id="step-6-differences">Step 6: Handle API Differences</h2>
+
+      <p>While most APIs are compatible, there are some differences to be aware of:</p>
+
+      <h3>QueueEvents (Not Needed)</h3>
+
+      <p>BullMQ uses a separate <code>QueueEvents</code> class for global events. In flashQ, events are built into the Queue class:</p>
+
+      <pre><code><span class="comment">// BullMQ - separate QueueEvents instance</span>
+<span class="keyword">const</span> <span class="variable">queueEvents</span> = <span class="keyword">new</span> <span class="function">QueueEvents</span>(<span class="string">'my-queue'</span>, { connection });
+queueEvents.<span class="function">on</span>(<span class="string">'completed'</span>, ({ jobId, returnvalue }) => {...});
+
+<span class="comment">// flashQ - events on Queue instance</span>
+queue.<span class="function">on</span>(<span class="string">'completed'</span>, (job, result) => {...});</code></pre>
+
+      <h3>Flow Producer</h3>
+
+      <p>flashQ has a different syntax for job dependencies:</p>
+
+      <pre><code><span class="comment">// BullMQ FlowProducer</span>
+<span class="keyword">const</span> <span class="variable">flow</span> = <span class="keyword">new</span> <span class="function">FlowProducer</span>({ connection });
+<span class="keyword">await</span> flow.<span class="function">add</span>({
+  name: <span class="string">'parent'</span>,
+  queueName: <span class="string">'my-queue'</span>,
+  data: {...},
+  children: [
+    { name: <span class="string">'child1'</span>, queueName: <span class="string">'my-queue'</span>, data: {...} }
+  ]
+});
+
+<span class="comment">// flashQ - use depends_on option</span>
+<span class="keyword">const</span> <span class="variable">child1</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'child1'</span>, {...});
+<span class="keyword">const</span> <span class="variable">parent</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'parent'</span>, {...}, {
+  depends_on: [child1.id]
+});</code></pre>
+
+      <h3>Repeatable Jobs</h3>
+
+      <p>flashQ uses a dedicated cron API:</p>
+
+      <pre><code><span class="comment">// BullMQ - repeat option</span>
+<span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'cleanup'</span>, {}, {
+  repeat: { cron: <span class="string">'0 0 * * *'</span> }
+});
+
+<span class="comment">// flashQ - cron API</span>
+<span class="keyword">await</span> queue.<span class="function">addCron</span>(<span class="string">'daily-cleanup'</span>, {
+  queue: <span class="string">'my-queue'</span>,
+  schedule: <span class="string">'0 0 0 * * *'</span>,  <span class="comment">// 6-field cron (includes seconds)</span>
+  data: {}
+});</code></pre>
+
+      <h3>Rate Limiting</h3>
+
+      <p>Rate limiting is simpler in flashQ:</p>
+
+      <pre><code><span class="comment">// BullMQ - limiter option on worker</span>
+<span class="keyword">const</span> <span class="variable">worker</span> = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'my-queue'</span>, processor, {
+  limiter: { max: <span class="number">100</span>, duration: <span class="number">60000</span> }
+});
+
+<span class="comment">// flashQ - queue-level rate limit</span>
+<span class="keyword">await</span> queue.<span class="function">setRateLimit</span>(<span class="number">100</span>);  <span class="comment">// 100 jobs per minute</span></code></pre>
+
+      <h2 id="step-7-testing">Step 7: Test the Migration</h2>
+
+      <p>Before going to production, test thoroughly:</p>
+
+      <pre><code><span class="comment">// test/queue.test.ts</span>
+<span class="keyword">import</span> { Queue, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+
+<span class="function">describe</span>(<span class="string">'Queue Migration'</span>, () => {
+  <span class="keyword">let</span> queue: Queue;
+  <span class="keyword">let</span> worker: Worker;
+
+  <span class="function">beforeAll</span>(<span class="keyword">async</span> () => {
+    queue = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'test-queue'</span>);
+    <span class="keyword">await</span> queue.<span class="function">connect</span>();
+  });
+
+  <span class="function">afterAll</span>(<span class="keyword">async</span> () => {
+    <span class="keyword">await</span> worker?.<span class="function">close</span>();
+    <span class="keyword">await</span> queue.<span class="function">close</span>();
+  });
+
+  <span class="function">it</span>(<span class="string">'should process jobs'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">const</span> <span class="variable">results</span>: <span class="keyword">any</span>[] = [];
+
+    worker = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'test-queue'</span>, <span class="keyword">async</span> (job) => {
+      results.<span class="function">push</span>(job.data);
+      <span class="keyword">return</span> { processed: <span class="keyword">true</span> };
+    });
+
+    <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'test'</span>, { value: <span class="number">1</span> });
+    <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'test'</span>, { value: <span class="number">2</span> });
+
+    <span class="comment">// Wait for processing</span>
+    <span class="keyword">await</span> <span class="keyword">new</span> <span class="function">Promise</span>(r => <span class="function">setTimeout</span>(r, <span class="number">1000</span>));
+
+    <span class="function">expect</span>(results).<span class="function">toHaveLength</span>(<span class="number">2</span>);
+  });
+
+  <span class="function">it</span>(<span class="string">'should handle retries'</span>, <span class="keyword">async</span> () => {
+    <span class="keyword">let</span> attempts = <span class="number">0</span>;
+
+    worker = <span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'test-queue'</span>, <span class="keyword">async</span> (job) => {
+      attempts++;
+      <span class="keyword">if</span> (attempts < <span class="number">3</span>) <span class="keyword">throw</span> <span class="keyword">new</span> <span class="function">Error</span>(<span class="string">'Retry me'</span>);
+      <span class="keyword">return</span> { success: <span class="keyword">true</span> };
+    });
+
+    <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'retry-test'</span>, {}, { attempts: <span class="number">3</span> });
+
+    <span class="keyword">await</span> <span class="keyword">new</span> <span class="function">Promise</span>(r => <span class="function">setTimeout</span>(r, <span class="number">3000</span>));
+
+    <span class="function">expect</span>(attempts).<span class="function">toBe</span>(<span class="number">3</span>);
+  });
+});</code></pre>
+
+      <h2 id="step-8-production">Step 8: Production Cutover</h2>
+
+      <p>For a safe production migration, follow these steps:</p>
+
+      <h3>Strategy 1: Blue-Green Deployment</h3>
+
+      <pre><code><span class="comment">// 1. Deploy flashQ server alongside existing Redis</span>
+<span class="comment">// 2. Update application to use flashQ</span>
+<span class="comment">// 3. Let existing BullMQ jobs drain</span>
+<span class="comment">// 4. Switch traffic to new deployment</span>
+<span class="comment">// 5. Decommission Redis when empty</span></code></pre>
+
+      <h3>Strategy 2: Gradual Migration</h3>
+
+      <p>Migrate queue by queue:</p>
+
+      <pre><code><span class="comment">// config/queues.ts</span>
+<span class="keyword">const</span> <span class="variable">USE_FLASHQ</span> = {
+  <span class="string">'email-queue'</span>: <span class="keyword">true</span>,      <span class="comment">// Migrated</span>
+  <span class="string">'payment-queue'</span>: <span class="keyword">false</span>,   <span class="comment">// Still on BullMQ</span>
+  <span class="string">'analytics-queue'</span>: <span class="keyword">true</span>,  <span class="comment">// Migrated</span>
+};
+
+<span class="keyword">export</span> <span class="keyword">function</span> <span class="function">createQueue</span>(name: <span class="keyword">string</span>) {
+  <span class="keyword">if</span> (USE_FLASHQ[name]) {
+    <span class="keyword">return</span> <span class="keyword">new</span> FlashQueue(name, { connection: flashQConfig });
+  }
+  <span class="keyword">return</span> <span class="keyword">new</span> BullMQQueue(name, { connection: redisConfig });
+}</code></pre>
+
+      <h3>Monitoring the Migration</h3>
+
+      <pre><code><span class="comment">// Monitor both systems during migration</span>
+<span class="keyword">const</span> <span class="variable">flashQStats</span> = <span class="keyword">await</span> flashQueue.<span class="function">getJobCounts</span>();
+<span class="keyword">const</span> <span class="variable">bullMQStats</span> = <span class="keyword">await</span> bullQueue.<span class="function">getJobCounts</span>();
+
+console.<span class="function">log</span>(<span class="string">'flashQ:'</span>, flashQStats);
+<span class="comment">// { waiting: 45, active: 5, completed: 1230, failed: 2 }</span>
+
+console.<span class="function">log</span>(<span class="string">'BullMQ:'</span>, bullMQStats);
+<span class="comment">// { waiting: 0, active: 0, completed: 5000, failed: 10 }</span></code></pre>
+
+      <div class="callout callout-info">
+        <div class="callout-title">💡 Pro Tip</div>
+        <p>Keep your Redis instance running for a week after migration, just in case you need to rollback. Once you're confident, decommission it to start saving on infrastructure costs.</p>
+      </div>
+
+      <h2 id="common-issues">Common Issues and Solutions</h2>
+
+      <h3>Connection Errors</h3>
+
+      <pre><code><span class="comment">// Ensure flashQ server is running</span>
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'my-queue'</span>, {
+  connection: {
+    host: process.env.FLASHQ_HOST || <span class="string">'localhost'</span>,
+    port: <span class="function">parseInt</span>(process.env.FLASHQ_PORT || <span class="string">'6789'</span>),
+  }
+});
+
+<span class="comment">// Add connection error handling</span>
+queue.<span class="function">on</span>(<span class="string">'error'</span>, (err) => {
+  console.<span class="function">error</span>(<span class="string">'Queue connection error:'</span>, err);
+});</code></pre>
+
+      <h3>TypeScript Errors</h3>
+
+      <p>If you encounter type errors, ensure you're using the correct imports:</p>
+
+      <pre><code><span class="comment">// Correct type imports</span>
+<span class="keyword">import</span> <span class="keyword">type</span> { Job, JobOptions, QueueOptions } <span class="keyword">from</span> <span class="string">'flashq'</span>;</code></pre>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>Migrating from BullMQ to flashQ is straightforward thanks to the compatible API. The key steps are:</p>
+
+      <ol>
+        <li>Start the flashQ server</li>
+        <li>Replace the npm package</li>
+        <li>Update import statements</li>
+        <li>Change connection port from 6379 to 6789</li>
+        <li>Test thoroughly</li>
+        <li>Deploy with a safe cutover strategy</li>
+      </ol>
+
+      <p>After migration, you'll benefit from:</p>
+
+      <ul>
+        <li><strong>No Redis</strong>: One less service to manage</li>
+        <li><strong>10x Performance</strong>: 1.9M jobs/sec vs 50K</li>
+        <li><strong>Lower Latency</strong>: Sub-millisecond response times</li>
+        <li><strong>Larger Payloads</strong>: 10MB vs practical 512KB limit</li>
+        <li><strong>Cost Savings</strong>: No Redis infrastructure costs</li>
+      </ul>
+
+      <!-- CTA -->
+      <div class="article-cta">
+        <h3>Ready to Migrate?</h3>
+        <p>Get started with flashQ in 5 minutes. Your existing code will mostly just work.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div><!-- /.article-main -->
+
+        <!-- Table of Contents -->
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#why-migrate">Why Migrate?</a></li>
+              <li><a href="#migration-checklist">Migration Checklist</a></li>
+              <li><a href="#step-1-server">Step 1: Server Setup</a></li>
+              <li><a href="#step-2-dependencies">Step 2: Dependencies</a></li>
+              <li><a href="#step-3-imports">Step 3: Imports</a></li>
+              <li><a href="#step-4-queue">Step 4: Queue Migration</a></li>
+              <li><a href="#step-5-worker">Step 5: Worker Migration</a></li>
+              <li><a href="#step-6-differences">Step 6: API Differences</a></li>
+              <li><a href="#step-7-testing">Step 7: Testing</a></li>
+              <li><a href="#step-8-production">Step 8: Production</a></li>
+              <li><a href="#common-issues">Common Issues</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div><!-- /.article-layout -->
+    </div>
+  </article>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo">
+        <span>⚡</span> flashQ
+      </a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">
+        © <span id="year"></span> flashQ. MIT License.
+      </div>
+    </div>
+  </footer>
+
+  <!-- Search Modal -->
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search articles and docs..." autofocus>
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="search-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+        <span><kbd>Enter</kbd> to select</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    document.getElementById("year").textContent = new Date().getFullYear();
+    mobileMenuBtn.addEventListener("click", () => {
+      mobileMenuBtn.classList.toggle("active");
+      mobileMenu.classList.toggle("active");
+      document.body.style.overflow = mobileMenu.classList.contains("active") ? "hidden" : "";
+    });
+    mobileMenu.querySelectorAll("a").forEach(link => {
+      link.addEventListener("click", () => {
+        mobileMenuBtn.classList.remove("active");
+        mobileMenu.classList.remove("active");
+        document.body.style.overflow = "";
+      });
+    });
+
+    // TOC active state
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() {
+      let current = '';
+      headings.forEach(heading => {
+        if (window.scrollY >= heading.offsetTop - 120) {
+          current = heading.getAttribute('id');
+        }
+      });
+      tocLinks.forEach(link => {
+        link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+      });
+    }
+    window.addEventListener('scroll', updateTocActive);
+    updateTocActive();
+
+    // Search
+    const searchData = [
+      { title: "Migrating from BullMQ", url: "migrating-from-bullmq.html", description: "Step-by-step BullMQ migration guide", tag: "Migration" },
+      { title: "flashQ in Action", url: "flashq-in-action.html", description: "Interactive feature demo", tag: "Tutorial" },
+      { title: "flashQ Architecture", url: "flashq-architecture.html", description: "1.9M jobs/sec design deep dive", tag: "Deep Dive" },
+      { title: "Building AI Pipelines", url: "building-ai-pipelines.html", description: "RAG and LLM workflows", tag: "Tutorial" },
+      { title: "Documentation", url: "../docs/", description: "Complete API reference", tag: "Docs" }
+    ];
+    let selectedIndex = 0;
+    function openSearch() {
+      document.getElementById('searchOverlay').classList.add('active');
+      document.getElementById('searchInput').focus();
+      document.body.style.overflow = 'hidden';
+      renderResults('');
+    }
+    function closeSearch(e) {
+      if (e && e.target !== document.getElementById('searchOverlay')) return;
+      document.getElementById('searchOverlay').classList.remove('active');
+      document.getElementById('searchInput').value = '';
+      document.body.style.overflow = '';
+    }
+    function renderResults(query) {
+      const results = query ? searchData.filter(item => item.title.toLowerCase().includes(query.toLowerCase()) || item.description.toLowerCase().includes(query.toLowerCase())) : searchData;
+      selectedIndex = 0;
+      const container = document.getElementById('searchResults');
+      if (results.length === 0) { container.innerHTML = '<div class="search-empty">No results found</div>'; return; }
+      container.innerHTML = results.map((item, i) => `<a href="${item.url}" class="search-result ${i === 0 ? 'active' : ''}"><div class="search-result-title">${item.title}</div><div class="search-result-description">${item.description}</div><span class="search-result-tag">${item.tag}</span></a>`).join('');
+    }
+    document.getElementById('searchInput').addEventListener('input', (e) => renderResults(e.target.value));
+    document.addEventListener('keydown', (e) => {
+      const overlay = document.getElementById('searchOverlay');
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+      if (e.key === 'Escape' && overlay.classList.contains('active')) closeSearch({target: overlay});
+      if (overlay.classList.contains('active')) {
+        const results = document.querySelectorAll('.search-result');
+        if (e.key === 'ArrowDown') { e.preventDefault(); selectedIndex = Math.min(selectedIndex + 1, results.length - 1); results.forEach((r, i) => r.classList.toggle('active', i === selectedIndex)); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); selectedIndex = Math.max(selectedIndex - 1, 0); results.forEach((r, i) => r.classList.toggle('active', i === selectedIndex)); }
+        if (e.key === 'Enter') { e.preventDefault(); results[selectedIndex]?.click(); }
+      }
+    });
+  </script>
+</body>
+</html>

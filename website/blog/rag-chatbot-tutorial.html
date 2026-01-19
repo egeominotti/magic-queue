@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building a RAG Chatbot with flashQ and OpenAI - flashQ Blog</title>
+  <meta name="description" content="Complete tutorial on building a production-ready RAG chatbot using flashQ for job orchestration, OpenAI for embeddings and generation, and Pinecone for vector search.">
+  <meta name="keywords" content="rag chatbot, retrieval augmented generation, openai embeddings, pinecone vector search, ai chatbot tutorial, flashq rag">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="flashQ Team">
+
+  <meta property="og:title" content="Building a RAG Chatbot with flashQ and OpenAI">
+  <meta property="og:description" content="Complete tutorial on building a production-ready RAG chatbot.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://flashq.dev/blog/rag-chatbot-tutorial.html">
+  <meta property="og:image" content="https://flashq.dev/og-image.png">
+  <meta property="og:site_name" content="flashQ">
+  <meta property="article:published_time" content="2026-01-19">
+  <meta property="article:section" content="Tutorial">
+  <meta property="article:tag" content="RAG">
+  <meta property="article:tag" content="OpenAI">
+  <meta property="article:tag" content="Chatbot">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Building a RAG Chatbot with flashQ and OpenAI">
+  <meta name="twitter:description" content="Complete tutorial on building a production-ready RAG chatbot.">
+  <meta name="twitter:image" content="https://flashq.dev/og-image.png">
+
+  <link rel="canonical" href="https://flashq.dev/blog/rag-chatbot-tutorial.html">
+  <link rel="alternate" type="application/rss+xml" title="flashQ Blog RSS Feed" href="https://flashq.dev/blog/feed.xml">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Building a RAG Chatbot with flashQ and OpenAI",
+    "description": "Complete tutorial on building a production-ready RAG chatbot using flashQ for job orchestration.",
+    "datePublished": "2026-01-19",
+    "dateModified": "2026-01-19",
+    "author": { "@type": "Organization", "name": "flashQ", "url": "https://flashq.dev" },
+    "publisher": { "@type": "Organization", "name": "flashQ", "url": "https://flashq.dev" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": "https://flashq.dev/blog/rag-chatbot-tutorial.html" },
+    "image": "https://flashq.dev/og-image.png",
+    "keywords": ["RAG", "chatbot", "OpenAI", "embeddings", "vector search", "flashQ"]
+  }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="nav-links">
+        <a href="../#features">Features</a>
+        <a href="../blog/" class="active">Blog</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <button class="search-trigger" onclick="openSearch()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          Search <span class="kbd">⌘K</span>
+        </button>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="mobile-menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+
+  <div class="mobile-menu">
+    <a href="../#features">Features</a><a href="../blog/">Blog</a><a href="../docs/">Docs</a>
+    <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+    <a href="../docs/#quickstart" class="btn btn-primary">Get Started</a>
+  </div>
+
+  <nav class="breadcrumb container">
+    <a href="../">Home</a><span>›</span><a href="./">Blog</a><span>›</span><span class="current">RAG Chatbot Tutorial</span>
+  </nav>
+
+  <header class="article-header header-ai">
+    <div class="container">
+      <span class="article-tag tutorial">Tutorial</span>
+      <h1>Building a RAG Chatbot with flashQ and OpenAI</h1>
+      <div class="article-meta">
+        <span>📅 January 19, 2026</span>
+        <span class="reading-time">⏱️ 18 min read</span>
+      </div>
+    </div>
+  </header>
+
+  <article class="article-content">
+    <div class="container wide">
+      <div class="article-layout">
+        <div class="article-main">
+
+      <p>Retrieval-Augmented Generation (RAG) is the most powerful pattern for building AI chatbots that can answer questions about your own data. Instead of relying solely on the LLM's training data, RAG retrieves relevant context from your knowledge base before generating a response.</p>
+
+      <p>In this tutorial, we'll build a production-ready RAG chatbot using:</p>
+      <ul>
+        <li><strong>flashQ</strong> - Job orchestration for the pipeline</li>
+        <li><strong>OpenAI</strong> - Embeddings and text generation</li>
+        <li><strong>Pinecone</strong> - Vector database for semantic search</li>
+      </ul>
+
+      <h2 id="architecture">RAG Architecture</h2>
+
+      <p>A RAG system has two main flows:</p>
+
+      <pre><code><span class="comment">INDEXING FLOW (one-time or periodic)</span>
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Document │───▶│  Chunk   │───▶│  Embed   │───▶│  Store   │
+│  Upload  │    │  Split   │    │  (OpenAI)│    │(Pinecone)│
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+
+<span class="comment">QUERY FLOW (per user message)</span>
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│   User   │───▶│  Embed   │───▶│  Search  │───▶│ Generate │
+│  Query   │    │  Query   │    │  Context │    │ Response │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘</code></pre>
+
+      <p>flashQ orchestrates both flows, handling retries, rate limiting, and progress tracking.</p>
+
+      <h2 id="setup">Project Setup</h2>
+
+      <pre><code><span class="comment"># Initialize project</span>
+mkdir rag-chatbot && cd rag-chatbot
+npm init -y
+
+<span class="comment"># Install dependencies</span>
+npm install flashq openai @pinecone-database/pinecone
+npm install -D typescript @types/node tsx</code></pre>
+
+      <pre><code><span class="comment">// .env</span>
+FLASHQ_HOST=localhost
+FLASHQ_PORT=6789
+
+OPENAI_API_KEY=sk-...
+PINECONE_API_KEY=...
+PINECONE_INDEX=knowledge-base</code></pre>
+
+      <h2 id="indexing">Document Indexing Pipeline</h2>
+
+      <pre><code><span class="comment">// src/indexing.ts</span>
+<span class="keyword">import</span> { Queue, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+<span class="keyword">import</span> OpenAI <span class="keyword">from</span> <span class="string">'openai'</span>;
+<span class="keyword">import</span> { Pinecone } <span class="keyword">from</span> <span class="string">'@pinecone-database/pinecone'</span>;
+
+<span class="keyword">const</span> <span class="variable">openai</span> = <span class="keyword">new</span> <span class="function">OpenAI</span>();
+<span class="keyword">const</span> <span class="variable">pinecone</span> = <span class="keyword">new</span> <span class="function">Pinecone</span>();
+<span class="keyword">const</span> <span class="variable">index</span> = pinecone.<span class="function">index</span>(process.env.PINECONE_INDEX!);
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'rag-indexing'</span>);
+
+<span class="comment">// Rate limit to stay within OpenAI limits</span>
+<span class="keyword">await</span> queue.<span class="function">setRateLimit</span>(<span class="number">500</span>); <span class="comment">// 500 embeddings/minute</span>
+
+<span class="comment">// Step 1: Chunk the document</span>
+<span class="keyword">async</span> <span class="keyword">function</span> <span class="function">chunkDocument</span>(text: <span class="keyword">string</span>, chunkSize = <span class="number">500</span>, overlap = <span class="number">50</span>) {
+  <span class="keyword">const</span> <span class="variable">chunks</span>: <span class="keyword">string</span>[] = [];
+  <span class="keyword">let</span> start = <span class="number">0</span>;
+
+  <span class="keyword">while</span> (start < text.length) {
+    <span class="keyword">const</span> <span class="variable">end</span> = Math.<span class="function">min</span>(start + chunkSize, text.length);
+    chunks.<span class="function">push</span>(text.<span class="function">slice</span>(start, end));
+    start += chunkSize - overlap;
+  }
+
+  <span class="keyword">return</span> chunks;
+}
+
+<span class="comment">// Main indexing function</span>
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">indexDocument</span>(documentId: <span class="keyword">string</span>, content: <span class="keyword">string</span>, metadata: <span class="keyword">any</span>) {
+  <span class="comment">// Step 1: Chunk</span>
+  <span class="keyword">const</span> <span class="variable">chunkJob</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'chunk'</span>, {
+    documentId,
+    content,
+    metadata,
+  });
+
+  <span class="comment">// Wait for completion</span>
+  <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> queue.<span class="function">finished</span>(chunkJob.id);
+  <span class="keyword">return</span> result;
+}
+
+<span class="comment">// Worker for chunking</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'rag-indexing'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">if</span> (job.name === <span class="string">'chunk'</span>) {
+    <span class="keyword">const</span> { documentId, content, metadata } = job.data;
+
+    <span class="keyword">await</span> job.<span class="function">updateProgress</span>(<span class="number">10</span>, <span class="string">'Chunking document...'</span>);
+    <span class="keyword">const</span> <span class="variable">chunks</span> = <span class="keyword">await</span> <span class="function">chunkDocument</span>(content);
+
+    <span class="comment">// Create embedding jobs for each chunk</span>
+    <span class="keyword">const</span> <span class="variable">embedJobs</span> = <span class="keyword">await</span> Promise.<span class="function">all</span>(
+      chunks.<span class="function">map</span>((chunk, i) =>
+        queue.<span class="function">add</span>(<span class="string">'embed'</span>, {
+          documentId,
+          chunkIndex: i,
+          text: chunk,
+          metadata: { ...metadata, chunkIndex: i },
+        })
+      )
+    );
+
+    <span class="comment">// Create store job that depends on all embeddings</span>
+    <span class="keyword">const</span> <span class="variable">storeJob</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'store'</span>, {
+      documentId,
+      totalChunks: chunks.length,
+    }, {
+      depends_on: embedJobs.<span class="function">map</span>(j => j.id),
+    });
+
+    <span class="keyword">return</span> { storeJobId: storeJob.id, totalChunks: chunks.length };
+  }
+
+  <span class="keyword">if</span> (job.name === <span class="string">'embed'</span>) {
+    <span class="keyword">const</span> { text, documentId, chunkIndex, metadata } = job.data;
+
+    <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.embeddings.<span class="function">create</span>({
+      model: <span class="string">'text-embedding-3-small'</span>,
+      input: text,
+    });
+
+    <span class="keyword">return</span> {
+      id: <span class="string">`${documentId}-${chunkIndex}`</span>,
+      embedding: response.data[<span class="number">0</span>].embedding,
+      text,
+      metadata,
+    };
+  }
+
+  <span class="keyword">if</span> (job.name === <span class="string">'store'</span>) {
+    <span class="keyword">const</span> { documentId, totalChunks } = job.data;
+
+    <span class="comment">// Get all embedding results from parent jobs</span>
+    <span class="keyword">const</span> <span class="variable">vectors</span> = [];
+    <span class="keyword">for</span> (<span class="keyword">let</span> i = <span class="number">0</span>; i < totalChunks; i++) {
+      <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> queue.<span class="function">getResult</span>(<span class="string">`${documentId}-embed-${i}`</span>);
+      vectors.<span class="function">push</span>({
+        id: result.id,
+        values: result.embedding,
+        metadata: { ...result.metadata, text: result.text },
+      });
+    }
+
+    <span class="comment">// Upsert to Pinecone in batches</span>
+    <span class="keyword">const</span> <span class="variable">batchSize</span> = <span class="number">100</span>;
+    <span class="keyword">for</span> (<span class="keyword">let</span> i = <span class="number">0</span>; i < vectors.length; i += batchSize) {
+      <span class="keyword">await</span> index.<span class="function">upsert</span>(vectors.<span class="function">slice</span>(i, i + batchSize));
+    }
+
+    <span class="keyword">return</span> { indexed: vectors.length, documentId };
+  }
+});</code></pre>
+
+      <h2 id="query">Query Pipeline</h2>
+
+      <pre><code><span class="comment">// src/query.ts</span>
+<span class="keyword">import</span> { Queue, Worker } <span class="keyword">from</span> <span class="string">'flashq'</span>;
+<span class="keyword">import</span> OpenAI <span class="keyword">from</span> <span class="string">'openai'</span>;
+<span class="keyword">import</span> { Pinecone } <span class="keyword">from</span> <span class="string">'@pinecone-database/pinecone'</span>;
+
+<span class="keyword">const</span> <span class="variable">openai</span> = <span class="keyword">new</span> <span class="function">OpenAI</span>();
+<span class="keyword">const</span> <span class="variable">pinecone</span> = <span class="keyword">new</span> <span class="function">Pinecone</span>();
+<span class="keyword">const</span> <span class="variable">index</span> = pinecone.<span class="function">index</span>(process.env.PINECONE_INDEX!);
+
+<span class="keyword">const</span> <span class="variable">queue</span> = <span class="keyword">new</span> <span class="function">Queue</span>(<span class="string">'rag-query'</span>);
+
+<span class="comment">// Main query function</span>
+<span class="keyword">export</span> <span class="keyword">async</span> <span class="keyword">function</span> <span class="function">askQuestion</span>(question: <span class="keyword">string</span>, conversationHistory: <span class="keyword">any</span>[] = []) {
+  <span class="comment">// Step 1: Embed the question</span>
+  <span class="keyword">const</span> <span class="variable">embedJob</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'embed-query'</span>, { question });
+
+  <span class="comment">// Step 2: Search (depends on embed)</span>
+  <span class="keyword">const</span> <span class="variable">searchJob</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'search'</span>, {
+    question,
+    topK: <span class="number">5</span>,
+  }, {
+    depends_on: [embedJob.id],
+  });
+
+  <span class="comment">// Step 3: Generate response (depends on search)</span>
+  <span class="keyword">const</span> <span class="variable">generateJob</span> = <span class="keyword">await</span> queue.<span class="function">add</span>(<span class="string">'generate'</span>, {
+    question,
+    conversationHistory,
+  }, {
+    depends_on: [searchJob.id],
+  });
+
+  <span class="comment">// Wait for final result</span>
+  <span class="keyword">return</span> <span class="keyword">await</span> queue.<span class="function">finished</span>(generateJob.id);
+}
+
+<span class="comment">// Query workers</span>
+<span class="keyword">new</span> <span class="function">Worker</span>(<span class="string">'rag-query'</span>, <span class="keyword">async</span> (job) => {
+  <span class="keyword">if</span> (job.name === <span class="string">'embed-query'</span>) {
+    <span class="keyword">const</span> { question } = job.data;
+
+    <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.embeddings.<span class="function">create</span>({
+      model: <span class="string">'text-embedding-3-small'</span>,
+      input: question,
+    });
+
+    <span class="keyword">return</span> { embedding: response.data[<span class="number">0</span>].embedding };
+  }
+
+  <span class="keyword">if</span> (job.name === <span class="string">'search'</span>) {
+    <span class="keyword">const</span> { question, topK } = job.data;
+
+    <span class="comment">// Get embedding from parent job</span>
+    <span class="keyword">const</span> <span class="variable">embedResult</span> = <span class="keyword">await</span> queue.<span class="function">getResult</span>(job.opts.depends_on[<span class="number">0</span>]);
+
+    <span class="comment">// Search Pinecone</span>
+    <span class="keyword">const</span> <span class="variable">results</span> = <span class="keyword">await</span> index.<span class="function">query</span>({
+      vector: embedResult.embedding,
+      topK,
+      includeMetadata: <span class="keyword">true</span>,
+    });
+
+    <span class="keyword">const</span> <span class="variable">context</span> = results.matches
+      .<span class="function">map</span>(m => m.metadata?.text)
+      .<span class="function">filter</span>(Boolean)
+      .<span class="function">join</span>(<span class="string">'\n\n---\n\n'</span>);
+
+    <span class="keyword">return</span> { context, sources: results.matches };
+  }
+
+  <span class="keyword">if</span> (job.name === <span class="string">'generate'</span>) {
+    <span class="keyword">const</span> { question, conversationHistory } = job.data;
+
+    <span class="comment">// Get context from search job</span>
+    <span class="keyword">const</span> <span class="variable">searchResult</span> = <span class="keyword">await</span> queue.<span class="function">getResult</span>(job.opts.depends_on[<span class="number">0</span>]);
+
+    <span class="keyword">const</span> <span class="variable">systemPrompt</span> = <span class="string">`You are a helpful assistant. Answer questions based on the provided context.
+If you cannot find the answer in the context, say "I don't have information about that."
+Always cite which part of the context you used.
+
+Context:
+${searchResult.context}`</span>;
+
+    <span class="keyword">const</span> <span class="variable">messages</span> = [
+      { role: <span class="string">'system'</span>, content: systemPrompt },
+      ...conversationHistory,
+      { role: <span class="string">'user'</span>, content: question },
+    ];
+
+    <span class="keyword">const</span> <span class="variable">response</span> = <span class="keyword">await</span> openai.chat.completions.<span class="function">create</span>({
+      model: <span class="string">'gpt-4'</span>,
+      messages,
+      temperature: <span class="number">0.7</span>,
+      max_tokens: <span class="number">1000</span>,
+    });
+
+    <span class="keyword">return</span> {
+      answer: response.choices[<span class="number">0</span>].message.content,
+      sources: searchResult.sources,
+      usage: response.usage,
+    };
+  }
+}, {
+  concurrency: <span class="number">10</span>,
+});</code></pre>
+
+      <h2 id="api">REST API</h2>
+
+      <pre><code><span class="comment">// src/server.ts</span>
+<span class="keyword">import</span> express <span class="keyword">from</span> <span class="string">'express'</span>;
+<span class="keyword">import</span> { indexDocument } <span class="keyword">from</span> <span class="string">'./indexing'</span>;
+<span class="keyword">import</span> { askQuestion } <span class="keyword">from</span> <span class="string">'./query'</span>;
+
+<span class="keyword">const</span> <span class="variable">app</span> = <span class="function">express</span>();
+app.<span class="function">use</span>(express.<span class="function">json</span>({ limit: <span class="string">'10mb'</span> }));
+
+<span class="comment">// Index a document</span>
+app.<span class="function">post</span>(<span class="string">'/api/index'</span>, <span class="keyword">async</span> (req, res) => {
+  <span class="keyword">const</span> { documentId, content, metadata } = req.body;
+
+  <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> <span class="function">indexDocument</span>(documentId, content, metadata);
+  res.<span class="function">json</span>(result);
+});
+
+<span class="comment">// Ask a question</span>
+app.<span class="function">post</span>(<span class="string">'/api/chat'</span>, <span class="keyword">async</span> (req, res) => {
+  <span class="keyword">const</span> { question, history } = req.body;
+
+  <span class="keyword">const</span> <span class="variable">result</span> = <span class="keyword">await</span> <span class="function">askQuestion</span>(question, history || []);
+  res.<span class="function">json</span>(result);
+});
+
+app.<span class="function">listen</span>(<span class="number">3000</span>, () => {
+  console.<span class="function">log</span>(<span class="string">'RAG Chatbot API running on port 3000'</span>);
+});</code></pre>
+
+      <h2 id="usage">Using the Chatbot</h2>
+
+      <pre><code><span class="comment"># Index a document</span>
+curl -X POST http://localhost:3000/api/index \
+  -H "Content-Type: application/json" \
+  -d '{
+    "documentId": "doc-1",
+    "content": "flashQ is a high-performance job queue...",
+    "metadata": { "source": "docs", "title": "flashQ Overview" }
+  }'
+
+<span class="comment"># Ask a question</span>
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is flashQ and how fast is it?"
+  }'
+
+<span class="comment"># Response</span>
+{
+  "answer": "flashQ is a high-performance job queue that can process up to 1.9 million jobs per second...",
+  "sources": [{ "id": "doc-1-0", "score": 0.92 }],
+  "usage": { "prompt_tokens": 450, "completion_tokens": 120 }
+}</code></pre>
+
+      <div class="callout callout-success">
+        <div class="callout-title">🚀 Production Tips</div>
+        <p>1. Use <code>text-embedding-3-large</code> for better accuracy. 2. Implement caching for frequent queries. 3. Add conversation memory with a sliding window. 4. Monitor token usage for cost control.</p>
+      </div>
+
+      <h2 id="conclusion">Conclusion</h2>
+
+      <p>You've built a production-ready RAG chatbot with:</p>
+      <ul>
+        <li><strong>Document indexing</strong> with chunking and embeddings</li>
+        <li><strong>Semantic search</strong> using Pinecone</li>
+        <li><strong>Context-aware generation</strong> with GPT-4</li>
+        <li><strong>Job orchestration</strong> with flashQ for reliability</li>
+      </ul>
+
+      <p>flashQ handles the complex orchestration—retries, rate limiting, progress tracking—so you can focus on building great AI experiences.</p>
+
+      <div class="article-cta">
+        <h3>Build Your Own RAG Chatbot</h3>
+        <p>Get started with flashQ and build intelligent AI applications.</p>
+        <a href="../docs/#quickstart" class="btn btn-primary">Get Started →</a>
+      </div>
+        </div>
+
+        <aside class="toc-sidebar">
+          <nav class="toc">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list">
+              <li><a href="#architecture">RAG Architecture</a></li>
+              <li><a href="#setup">Project Setup</a></li>
+              <li><a href="#indexing">Indexing Pipeline</a></li>
+              <li><a href="#query">Query Pipeline</a></li>
+              <li><a href="#api">REST API</a></li>
+              <li><a href="#usage">Using the Chatbot</a></li>
+              <li><a href="#conclusion">Conclusion</a></li>
+            </ul>
+          </nav>
+        </aside>
+      </div>
+    </div>
+  </article>
+
+  <footer>
+    <div class="container wide">
+      <a href="../" class="logo"><span>⚡</span> flashQ</a>
+      <div class="footer-links">
+        <a href="https://github.com/egeominotti/flashq" target="_blank">GitHub</a>
+        <a href="https://npmjs.com/package/flashq" target="_blank">npm</a>
+        <a href="../docs/">Docs</a>
+        <a href="../blog/">Blog</a>
+      </div>
+      <div class="footer-copy">© <span id="year"></span> flashQ. MIT License.</div>
+    </div>
+  </footer>
+
+  <div class="search-overlay" id="searchOverlay" onclick="closeSearch(event)">
+    <div class="search-modal" onclick="event.stopPropagation()">
+      <div class="search-input-wrapper">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" class="search-modal-input" id="searchInput" placeholder="Search...">
+        <span class="search-shortcut">ESC</span>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+    const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
+    const mobileMenu = document.querySelector(".mobile-menu");
+    mobileMenuBtn.addEventListener("click", () => { mobileMenuBtn.classList.toggle("active"); mobileMenu.classList.toggle("active"); });
+    const tocLinks = document.querySelectorAll('.toc-list a');
+    const headings = document.querySelectorAll('h2[id]');
+    function updateTocActive() { let current = ''; headings.forEach(h => { if (window.scrollY >= h.offsetTop - 120) current = h.id; }); tocLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + current)); }
+    window.addEventListener('scroll', updateTocActive); updateTocActive();
+    function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+    function closeSearch(e) { if (e?.target === document.getElementById('searchOverlay')) document.getElementById('searchOverlay').classList.remove('active'); }
+    document.addEventListener('keydown', e => { if ((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); openSearch(); } if (e.key==='Escape') closeSearch({target:document.getElementById('searchOverlay')}); });
+  </script>
+</body>
+</html>
